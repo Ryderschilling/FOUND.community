@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "FOUND",
+    "slug": "found-community-app",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#F7F4EF"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.found.community"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#F7F4EF"
+      },
+      "package": "com.found.community"
+    },
+    "plugins": [
+      "expo-font"
+    ]
+  }
+}

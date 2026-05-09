@@ -1,0 +1,138 @@
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Pressable,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
+import { Pill } from './Atoms';
+
+/**
+ * GroupCard — used in GroupsScreen for joined + suggested groups
+ * Props:
+ *   group    { id, name, description, icon, iconColor, memberCount, meetingDay, category, joined }
+ *   onJoin   () => void
+ *   onPress  () => void
+ */
+export default function GroupCard({ group, onJoin, onPress }) {
+  const [joined, setJoined] = useState(group.joined ?? false);
+
+  const handleJoin = (e) => {
+    e.stopPropagation?.();
+    setJoined(true);
+    onJoin?.();
+  };
+
+  return (
+    <Pressable
+      style={({ pressed }) => [styles.card, pressed && { opacity: 0.97 }]}
+      onPress={onPress}
+    >
+      {/* Icon + name row */}
+      <View style={styles.header}>
+        <View style={[styles.iconWrap, { backgroundColor: group.iconBg ?? COLORS.sageBg }]}>
+          <Ionicons name={group.icon ?? 'people-outline'} size={22} color={group.iconColor ?? COLORS.sage} />
+        </View>
+        <View style={styles.headerInfo}>
+          <Text style={styles.name}>{group.name}</Text>
+          <View style={styles.metaRow}>
+            <Ionicons name="people-outline" size={11} color={COLORS.textTertiary} />
+            <Text style={styles.meta}>{group.memberCount} members</Text>
+            {group.meetingDay ? (
+              <>
+                <Text style={styles.metaDot}>·</Text>
+                <Text style={styles.meta}>{group.meetingDay}</Text>
+              </>
+            ) : null}
+          </View>
+        </View>
+
+        {/* Category pill */}
+        {group.category ? (
+          <Pill label={group.category} variant="neutral" />
+        ) : null}
+      </View>
+
+      {/* Description */}
+      {group.description ? (
+        <Text style={styles.description} numberOfLines={2}>{group.description}</Text>
+      ) : null}
+
+      {/* Footer: join state */}
+      <View style={styles.footer}>
+        {joined ? (
+          <View style={styles.joinedRow}>
+            <Ionicons name="checkmark-circle" size={15} color={COLORS.sage} />
+            <Text style={styles.joinedText}>Joined</Text>
+          </View>
+        ) : (
+          <TouchableOpacity style={styles.joinBtn} onPress={handleJoin} activeOpacity={0.8}>
+            <Text style={styles.joinBtnText}>Join Group</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    </Pressable>
+  );
+}
+
+const styles = StyleSheet.create({
+  card: {
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.xl,
+    padding: SPACING.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    ...SHADOW.sm,
+    gap: SPACING.sm,
+  },
+
+  header: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: SPACING.sm,
+  },
+  iconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: RADIUS.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  headerInfo: { flex: 1, gap: 3 },
+  name: { fontFamily: FONT.serifItalic, fontSize: 17, color: COLORS.text, letterSpacing: -0.2 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  metaDot: { fontFamily: FONT.regular, fontSize: 12, color: COLORS.textTertiary },
+  meta:    { fontFamily: FONT.regular, fontSize: 12, color: COLORS.textSecondary },
+
+  description: {
+    fontFamily: FONT.regular,
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    lineHeight: 20,
+  },
+
+  footer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  joinedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  joinedText: { fontFamily: FONT.semiBold, fontSize: 13, color: COLORS.sage },
+  joinBtn: {
+    backgroundColor: COLORS.bg,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+  },
+  joinBtnText: { fontFamily: FONT.semiBold, fontSize: 13, color: COLORS.text },
+});
