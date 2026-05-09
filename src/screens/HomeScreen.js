@@ -1,15 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   FlatList,
   StatusBar,
   SafeAreaView,
+  Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, FONT, SPACING, RADIUS } from '../theme';
+import { COLORS, FONT, SPACING } from '../theme';
 import PersonCard from '../components/PersonCard';
 import { Wordmark, Chip, Pill, IconButton } from '../components/Atoms';
 import { MATCHES } from '../data/mock';
@@ -22,38 +22,55 @@ const FILTERS = [
   { id: 'new',    label: 'New'         },
 ];
 
+// Height of the FOUND + bell header block
+const HEADER_HEIGHT = 72;
+
 export default function HomeScreen({ navigation }) {
   const [activeFilter, setActiveFilter] = useState('all');
   const matches = MATCHES;
 
-  return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
+  const headerTranslate = useRef(new Animated.Value(0)).current;
+  const lastScrollY    = useRef(0);
+  const headerVisible  = useRef(true);
 
-      {/* Header */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.headerMeta}>30A Area · Friday</Text>
-          <Wordmark size="md" />
-        </View>
-        <IconButton onPress={() => {}}>
-          <Ionicons name="notifications-outline" size={18} color={COLORS.text} />
-        </IconButton>
-      </View>
+  const handleScroll = ({ nativeEvent }) => {
+    const y    = nativeEvent.contentOffset.y;
+    const diff = y - lastScrollY.current;
 
-      {/* Page title + count */}
+    if (diff > 6 && headerVisible.current) {
+      // Scrolling down — slide header out
+      headerVisible.current = false;
+      Animated.timing(headerTranslate, {
+        toValue: -HEADER_HEIGHT,
+        duration: 220,
+        useNativeDriver: true,
+      }).start();
+    } else if (diff < -6 && !headerVisible.current) {
+      // Scrolling up — slide header back in
+      headerVisible.current = true;
+      Animated.timing(headerTranslate, {
+        toValue: 0,
+        duration: 220,
+        useNativeDriver: true,
+      }).start();
+    }
+
+    lastScrollY.current = y;
+  };
+
+  // Title row + filter chips rendered as the FlatList's list header
+  const ListHeader = () => (
+    <View style={styles.listHeader}>
       <View style={styles.titleRow}>
         <Text style={styles.pageTitle}>Your Matches</Text>
-        <Pill label={`${matches.length} nearby`} variant="sage" />
+        <Pill
+          label={`${matches.length} nearby`}
+          variant="sage"
+          style={{ alignSelf: 'flex-end', marginBottom: 4 }}
+        />
       </View>
 
-      {/* Filter chips */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.filterRow}
-        style={styles.filterWrap}
-      >
+      <View style={styles.filterRow}>
         {FILTERS.map((f) => (
           <Chip
             key={f.id}
@@ -62,12 +79,30 @@ export default function HomeScreen({ navigation }) {
             onPress={() => setActiveFilter(f.id)}
           />
         ))}
-      </ScrollView>
+      </View>
+    </View>
+  );
 
-      {/* Match cards */}
+  return (
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
+
+      {/* ── Sticky header — absolutely positioned so it floats above the list ── */}
+      <Animated.View style={[styles.header, { transform: [{ translateY: headerTranslate }] }]}>
+        <View>
+          <Text style={styles.headerMeta}>30A Area · Friday</Text>
+          <Wordmark size="md" />
+        </View>
+        <IconButton onPress={() => {}}>
+          <Ionicons name="notifications-outline" size={18} color={COLORS.text} />
+        </IconButton>
+      </Animated.View>
+
+      {/* ── Match cards — paddingTop reserves room under the fixed header ── */}
       <FlatList
         data={matches}
         keyExtractor={(item) => item.id}
+        ListHeaderComponent={ListHeader}
         renderItem={({ item }) => (
           <PersonCard
             match={item}
@@ -79,6 +114,8 @@ export default function HomeScreen({ navigation }) {
         contentContainerStyle={styles.list}
         ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
         showsVerticalScrollIndicator={false}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
       />
     </SafeAreaView>
   );
@@ -87,13 +124,21 @@ export default function HomeScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
 
+  // Absolutely positioned so it overlays the list and can animate out
   header: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+    height: HEADER_HEIGHT,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: SPACING.lg,
     paddingTop: SPACING.sm,
     paddingBottom: SPACING.md,
+    backgroundColor: COLORS.bg,
   },
   headerMeta: {
     fontFamily: FONT.mono,
@@ -103,9 +148,14 @@ const styles = StyleSheet.create({
     color: COLORS.textTertiary,
     marginBottom: 3,
   },
+
+  // The FlatList's ListHeaderComponent
+  listHeader: {
+    paddingTop: SPACING.md,
+  },
   titleRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-end',
     gap: SPACING.sm,
     paddingHorizontal: SPACING.lg,
     marginBottom: SPACING.md,
@@ -116,15 +166,16 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     letterSpacing: -0.3,
   },
-  filterWrap: { flexGrow: 0, marginBottom: SPACING.md, overflow: 'visible' },
   filterRow: {
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: 4,
-    gap: SPACING.sm,
     flexDirection: 'row',
-    alignItems: 'center',
+    flexWrap: 'wrap',
+    paddingHorizontal: SPACING.lg,
+    gap: SPACING.sm,
+    marginBottom: SPACING.md,
   },
+
   list: {
+    paddingTop: HEADER_HEIGHT,   // content starts below the fixed header
     paddingHorizontal: SPACING.lg,
     paddingBottom: 110,
   },
