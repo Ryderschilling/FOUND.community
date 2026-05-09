@@ -2,7 +2,7 @@
  * FOUND — Shared Atom Components
  *
  * Exports:
- *   Wordmark        — "FOUND" logotype (serif italic)
+ *   Wordmark        — "FOUND" logotype (Inter Bold — matches found.community nav)
  *   AppBar          — screen top bar with title + optional right action
  *   Avatar          — initials circle with gradient or solid color
  *   Pill            — small label badge (sage, clay, neutral variants)
@@ -26,12 +26,13 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS, FONT, TYPE, SPACING, RADIUS, SHADOW } from '../theme';
 
 // ─── Wordmark ────────────────────────────────────────────────────
+// Uses Inter Bold to match found.community nav logo
 export function Wordmark({ size = 'md', color = COLORS.text, style }) {
-  const sizes = { sm: 22, md: 28, lg: 36, xl: 48 };
+  const sizes = { sm: 20, md: 26, lg: 34, xl: 46 };
   const fs = sizes[size] ?? sizes.md;
   return (
-    <Text style={[{ fontFamily: FONT.serifItalic, fontSize: fs, color, letterSpacing: -0.3 }, style]}>
-      found.
+    <Text style={[{ fontFamily: FONT.bold, fontSize: fs, color, letterSpacing: -0.5 }, style]}>
+      FOUND
     </Text>
   );
 }

@@ -24,23 +24,76 @@ export const CURRENT_USER = {
 };
 
 export const LIFE_STAGES = [
-  { id: 'college',      label: 'College Student',        icon: 'school-outline',     iconColor: '#4A6FA5' },
-  { id: 'young-pro',    label: 'Young Professional',     icon: 'briefcase-outline',  iconColor: '#4A6FA5' },
-  { id: 'newlywed',     label: 'Newlywed / No Kids',     icon: 'heart-outline',      iconColor: '#C0795A' },
-  { id: 'parent',       label: 'Parent with Young Kids', icon: 'people-outline',     iconColor: '#7A5AA8' },
-  { id: 'empty-nester', label: 'Empty Nester',           icon: 'home-outline',       iconColor: '#5A7A4A' },
-  { id: 'senior',       label: 'Senior / Retired',       icon: 'sunny-outline',      iconColor: '#A8793A' },
+  { id: 'student',         label: 'Student',                      icon: 'school-outline',          iconColor: '#4A6FA5' },
+  { id: 'single',          label: 'Single',                       icon: 'person-outline',          iconColor: '#4A6FA5' },
+  { id: 'married-no-kids', label: 'Married — No Kids',            icon: 'heart-outline',           iconColor: '#C0795A' },
+  { id: 'married-babies',  label: 'Married w/ Babies (0–2)',      icon: 'happy-outline',           iconColor: '#7A5AA8' },
+  { id: 'married-young',   label: 'Married w/ Young Kids (2–12)', icon: 'people-outline',          iconColor: '#5A7A4A' },
+  { id: 'married-teens',   label: 'Married w/ Teens (14–18)',     icon: 'bicycle-outline',         iconColor: '#A8793A' },
+  { id: 'married-mixed',   label: 'Married w/ Mixed Ages',        icon: 'people-circle-outline',   iconColor: '#4A8A6A' },
+  { id: 'empty-nester',    label: 'Empty Nester',                 icon: 'home-outline',            iconColor: '#5A8A6A' },
+  { id: 'grandparent',     label: 'Grandparent',                  icon: 'sunny-outline',           iconColor: '#C0795A' },
 ];
 
-export const INTERESTS = [
-  { id: 'bible',    label: 'Bible Study',       icon: 'book-outline',           iconColor: '#5A7A4A' },
-  { id: 'sports',   label: 'Sports & Fitness',  icon: 'football-outline',       iconColor: '#4A8A6A' },
-  { id: 'coffee',   label: 'Coffee & Hangouts', icon: 'cafe-outline',           iconColor: '#A8793A' },
-  { id: 'worship',  label: 'Worship & Music',   icon: 'musical-notes-outline',  iconColor: '#7A5AA8' },
-  { id: 'outdoors', label: 'Outdoors & Hiking', icon: 'leaf-outline',           iconColor: '#5A8A6A' },
-  { id: 'service',  label: 'Service & Outreach',icon: 'heart-circle-outline',   iconColor: '#C0795A' },
-  { id: 'hosting',  label: 'Food & Hosting',    icon: 'restaurant-outline',     iconColor: '#C0795A' },
-  { id: 'parenting',label: 'Parenting & Kids',  icon: 'happy-outline',          iconColor: '#4A6FA5' },
+// Life stages where school-type question is relevant
+export const HAS_KIDS_STAGES = ['married-babies', 'married-young', 'married-teens', 'married-mixed'];
+
+export const ACTIVITIES = [
+  { id: 'surfing',     label: 'Surfing',              icon: 'water-outline',            iconColor: '#4A6FA5' },
+  { id: 'skating',     label: 'Skating',              icon: 'body-outline',             iconColor: '#7A5AA8' },
+  { id: 'beach',       label: 'Beach / Lake / River', icon: 'sunny-outline',            iconColor: '#A8793A' },
+  { id: 'music',       label: 'Playing Music',        icon: 'musical-notes-outline',    iconColor: '#7A5AA8' },
+  { id: 'sports',      label: 'Sports',               icon: 'football-outline',         iconColor: '#4A8A6A' },
+  { id: 'camping',     label: 'Camping',              icon: 'bonfire-outline',          iconColor: '#A8793A' },
+  { id: 'hiking',      label: 'Hiking',               icon: 'leaf-outline',             iconColor: '#5A8A6A' },
+  { id: 'fitness',     label: 'Working Out',          icon: 'barbell-outline',          iconColor: '#C0795A' },
+  { id: 'playgrounds', label: 'Playgrounds / MDO',    icon: 'happy-outline',            iconColor: '#4A6FA5' },
+  { id: 'hunting',     label: 'Hunting / Fishing',    icon: 'fish-outline',             iconColor: '#5A7A4A' },
+  { id: 'dining',      label: 'Dinner Out',           icon: 'restaurant-outline',       iconColor: '#C0795A' },
+  { id: 'concerts',    label: 'Concerts',             icon: 'musical-note-outline',     iconColor: '#7A5AA8' },
+  { id: 'shopping',    label: 'Mall / Shopping',      icon: 'bag-outline',              iconColor: '#A8793A' },
+];
+
+// Kept for backward compat with existing match cards that reference interests
+export const INTERESTS = ACTIVITIES;
+
+export const FAMILY_VALUES = [
+  { id: 'no-alcohol',     label: 'No Alcohol',             icon: 'wine-outline',                iconColor: '#C0795A' },
+  { id: 'no-cussing',     label: 'No Cussing',             icon: 'chatbubble-outline',           iconColor: '#A8793A' },
+  { id: 'no-smoking',     label: 'No Smoking',             icon: 'ban-outline',                  iconColor: '#4A6FA5' },
+  { id: 'healthy-eating', label: 'Eating Healthy',         icon: 'nutrition-outline',            iconColor: '#5A7A4A' },
+  { id: 'family-worship', label: 'Family Worship',         icon: 'book-outline',                 iconColor: '#5A7A4A' },
+  { id: 'limit-phones',   label: 'Limit Phones for Kids',  icon: 'phone-portrait-outline',       iconColor: '#4A6FA5' },
+];
+
+export const SCHOOL_TYPES = [
+  { id: 'public',     label: 'Public School',      icon: 'school-outline',    iconColor: '#4A6FA5' },
+  { id: 'private',    label: 'Private School',     icon: 'business-outline',  iconColor: '#A8793A' },
+  { id: 'christian',  label: 'Christian School',   icon: 'book-outline',      iconColor: '#5A7A4A' },
+  { id: 'classical',  label: 'Classical Christian',icon: 'library-outline',   iconColor: '#7A5AA8' },
+  { id: 'homeschool', label: 'Homeschool',          icon: 'home-outline',      iconColor: '#C0795A' },
+];
+
+export const LOVE_LANGUAGES = [
+  { id: 'acts-of-service', label: 'Acts of Service',       icon: 'hammer-outline',                 iconColor: '#5A7A4A' },
+  { id: 'receiving-gifts', label: 'Receiving Gifts',       icon: 'gift-outline',                   iconColor: '#A8793A' },
+  { id: 'quality-time',    label: 'Quality Time',          icon: 'time-outline',                   iconColor: '#4A6FA5' },
+  { id: 'words',           label: 'Words of Affirmation',  icon: 'chatbubble-ellipses-outline',    iconColor: '#7A5AA8' },
+  { id: 'physical-touch',  label: 'Physical Touch',        icon: 'hand-left-outline',              iconColor: '#C0795A' },
+];
+
+export const COMMUNITY_GOALS = [
+  { id: 'couple-friends',  label: 'Couple Friends',         icon: 'people-outline',           iconColor: '#C0795A' },
+  { id: 'family-community',label: 'Family Community',       icon: 'home-outline',             iconColor: '#5A7A4A' },
+  { id: 'mentorship',      label: 'Mentorship',             icon: 'trending-up-outline',      iconColor: '#4A6FA5' },
+  { id: 'bible-study',     label: 'Bible Study',            icon: 'book-outline',             iconColor: '#5A7A4A' },
+  { id: 'activity-partners',label: 'Activity Partners',     icon: 'bicycle-outline',          iconColor: '#4A8A6A' },
+  { id: 'prayer',          label: 'Prayer Community',       icon: 'heart-outline',            iconColor: '#C0795A' },
+  { id: 'accountability',  label: 'Accountability',         icon: 'shield-outline',           iconColor: '#7A5AA8' },
+  { id: 'church-connect',  label: 'Church Connections',     icon: 'business-outline',         iconColor: '#A8793A' },
+  { id: 'mom-friends',     label: 'Mom Friends',            icon: 'happy-outline',            iconColor: '#4A6FA5' },
+  { id: 'networking',      label: 'Business Networking',    icon: 'briefcase-outline',        iconColor: '#A8793A' },
+  { id: 'young-adult',     label: 'Young Adult Community',  icon: 'people-circle-outline',    iconColor: '#5A8A6A' },
 ];
 
 export const NEARBY_CHURCHES = [

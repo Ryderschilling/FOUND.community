@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -13,10 +13,32 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
 import { PrimaryButton } from '../components/Atoms';
-import { LIFE_STAGES, INTERESTS, NEARBY_CHURCHES } from '../data/mock';
+import {
+  LIFE_STAGES,
+  HAS_KIDS_STAGES,
+  ACTIVITIES,
+  FAMILY_VALUES,
+  SCHOOL_TYPES,
+  LOVE_LANGUAGES,
+  COMMUNITY_GOALS,
+  NEARBY_CHURCHES,
+} from '../data/mock';
 
-const TOTAL_STEPS = 4;
+// ─── Step ID sequence ────────────────────────────────────────────────────────
+// School-type is conditionally inserted based on life stage answer
+const BASE_STEPS = ['life-stage', 'activities', 'location', 'family-values', 'love-language', 'personality', 'community-goals', 'church', 'reveal'];
 
+function buildSteps(lifeStage) {
+  const steps = [...BASE_STEPS];
+  if (HAS_KIDS_STAGES.includes(lifeStage)) {
+    // Insert school-type after family-values
+    const idx = steps.indexOf('family-values');
+    steps.splice(idx + 1, 0, 'school-type');
+  }
+  return steps;
+}
+
+// ─── Shared sub-components ───────────────────────────────────────────────────
 function OptionCard({ item, selected, onPress }) {
   return (
     <Pressable
@@ -24,7 +46,11 @@ function OptionCard({ item, selected, onPress }) {
       onPress={onPress}
     >
       <View style={[styles.optIconWrap, selected && styles.optIconWrapSelected]}>
-        <Ionicons name={item.icon} size={24} color={selected ? (item.iconColor ?? COLORS.accent) : COLORS.textSecondary} />
+        <Ionicons
+          name={item.icon}
+          size={22}
+          color={selected ? (item.iconColor ?? COLORS.accent) : COLORS.textSecondary}
+        />
       </View>
       <Text style={[styles.optLabel, selected && styles.optLabelSelected]}>
         {item.label}
@@ -33,10 +59,25 @@ function OptionCard({ item, selected, onPress }) {
   );
 }
 
+function BinaryCard({ label, subLabel, selected, onPress }) {
+  return (
+    <Pressable
+      style={[styles.binaryCard, selected && styles.binaryCardSelected]}
+      onPress={onPress}
+    >
+      <Text style={[styles.binaryLabel, selected && styles.binaryLabelSelected]}>{label}</Text>
+      {subLabel ? (
+        <Text style={[styles.binarySubLabel, selected && styles.binarySubLabelSelected]}>{subLabel}</Text>
+      ) : null}
+    </Pressable>
+  );
+}
+
+// ─── Step components ─────────────────────────────────────────────────────────
 function StepLifeStage({ selection, onSelect }) {
   return (
     <>
-      <Text style={styles.stepTitle}>What's your life stage right now?</Text>
+      <Text style={styles.stepTitle}>What's your life stage?</Text>
       <Text style={styles.stepSub}>We'll find others who get where you're at.</Text>
       <View style={styles.optGrid}>
         {LIFE_STAGES.map((item) => (
@@ -47,13 +88,120 @@ function StepLifeStage({ selection, onSelect }) {
   );
 }
 
-function StepInterests({ selections, onToggle }) {
+function StepActivities({ selections, onToggle }) {
   return (
     <>
-      <Text style={styles.stepTitle}>What are you into?</Text>
+      <Text style={styles.stepTitle}>What do you enjoy?</Text>
       <Text style={styles.stepSub}>Pick everything that fits — we'll find your people.</Text>
       <View style={styles.optGrid}>
-        {INTERESTS.map((item) => (
+        {ACTIVITIES.map((item) => (
+          <OptionCard key={item.id} item={item} selected={selections.includes(item.id)} onPress={() => onToggle(item.id)} />
+        ))}
+      </View>
+    </>
+  );
+}
+
+function StepLocation({ value, onChange }) {
+  return (
+    <>
+      <Text style={styles.stepTitle}>Where are you located?</Text>
+      <Text style={styles.stepSub}>Helps us surface people nearby.</Text>
+      <TextInput
+        style={styles.textInput}
+        placeholder="City, State (e.g. Nashville, TN)"
+        placeholderTextColor={COLORS.textTertiary}
+        value={value}
+        onChangeText={onChange}
+        autoCapitalize="words"
+        returnKeyType="done"
+      />
+      <Text style={styles.optionalNote}>Optional — you can skip this step.</Text>
+    </>
+  );
+}
+
+function StepFamilyValues({ selections, onToggle }) {
+  return (
+    <>
+      <Text style={styles.stepTitle}>What values matter in your home?</Text>
+      <Text style={styles.stepSub}>Select all that apply. Skip if none fit.</Text>
+      <View style={styles.optGrid}>
+        {FAMILY_VALUES.map((item) => (
+          <OptionCard key={item.id} item={item} selected={selections.includes(item.id)} onPress={() => onToggle(item.id)} />
+        ))}
+      </View>
+    </>
+  );
+}
+
+function StepSchoolType({ selection, onSelect }) {
+  return (
+    <>
+      <Text style={styles.stepTitle}>What type of school are your kids in?</Text>
+      <Text style={styles.stepSub}>Helps connect you with families in similar environments.</Text>
+      <View style={styles.optGrid}>
+        {SCHOOL_TYPES.map((item) => (
+          <OptionCard key={item.id} item={item} selected={selection === item.id} onPress={() => onSelect(item.id)} />
+        ))}
+      </View>
+      <Text style={styles.optionalNote}>Optional — you can skip this step.</Text>
+    </>
+  );
+}
+
+function StepLoveLanguage({ selection, onSelect }) {
+  return (
+    <>
+      <Text style={styles.stepTitle}>What's your love language?</Text>
+      <Text style={styles.stepSub}>Helps us match you with compatible people.</Text>
+      <View style={styles.optGrid}>
+        {LOVE_LANGUAGES.map((item) => (
+          <OptionCard key={item.id} item={item} selected={selection === item.id} onPress={() => onSelect(item.id)} />
+        ))}
+      </View>
+    </>
+  );
+}
+
+function StepPersonality({ initiator, onSelectInitiator, outgoing, onSelectOutgoing }) {
+  return (
+    <>
+      <Text style={styles.stepTitle}>A little about your personality.</Text>
+      <Text style={styles.stepSub}>Helps us match you with people who complement you.</Text>
+
+      <Text style={styles.subQuestion}>Are you an initiator?</Text>
+      <View style={styles.binaryRow}>
+        <BinaryCard label="Yes" selected={initiator === true} onPress={() => onSelectInitiator(true)} />
+        <BinaryCard label="Not Really" selected={initiator === false} onPress={() => onSelectInitiator(false)} />
+      </View>
+
+      <Text style={[styles.subQuestion, { marginTop: SPACING.xl }]}>How would you describe yourself?</Text>
+      <View style={styles.binaryRow}>
+        <BinaryCard
+          label="Outgoing"
+          subLabel="I'll talk to anybody!"
+          selected={outgoing === true}
+          onPress={() => onSelectOutgoing(true)}
+        />
+        <BinaryCard
+          label="More Reserved"
+          subLabel="Once I get to know you."
+          selected={outgoing === false}
+          onPress={() => onSelectOutgoing(false)}
+        />
+      </View>
+    </>
+  );
+}
+
+function StepCommunityGoals({ selections, onToggle }) {
+  return (
+    <>
+      <Text style={styles.stepTitle}>What are you hoping to find?</Text>
+      <Text style={styles.stepSub}>Pick everything that resonates.</Text>
+      <View style={styles.optGrid}>
+        {COMMUNITY_GOALS.map((item) => (
           <OptionCard key={item.id} item={item} selected={selections.includes(item.id)} onPress={() => onToggle(item.id)} />
         ))}
       </View>
@@ -73,7 +221,7 @@ function StepChurch({ selection, onSelect }) {
       <Text style={styles.stepSub}>Optional — helps us connect you with your congregation.</Text>
 
       <TextInput
-        style={styles.searchInput}
+        style={styles.textInput}
         placeholder="Search for your church..."
         placeholderTextColor={COLORS.textTertiary}
         value={query}
@@ -88,7 +236,7 @@ function StepChurch({ selection, onSelect }) {
           <Pressable
             key={church.id}
             style={[styles.churchRow, selection === church.id && styles.churchRowSelected]}
-            onPress={() => onSelect(church.id)}
+            onPress={() => onSelect(church.id === selection ? null : church.id)}
           >
             <View style={styles.churchIcon}>
               <Ionicons name="business-outline" size={18} color={COLORS.sage} />
@@ -107,6 +255,8 @@ function StepChurch({ selection, onSelect }) {
           </Pressable>
         ))}
       </View>
+
+      <Text style={styles.optionalNote}>Optional — you can skip this step.</Text>
     </>
   );
 }
@@ -114,42 +264,66 @@ function StepChurch({ selection, onSelect }) {
 function StepMatchReveal({ onFinish }) {
   return (
     <View style={styles.revealWrap}>
-      {/* Big serif stat */}
       <View style={styles.revealStat}>
         <Text style={styles.revealNumber}>14</Text>
         <Text style={styles.revealUnit}>people nearby</Text>
       </View>
-
       <Text style={styles.revealTitle}>You're all set.</Text>
       <Text style={styles.revealBody}>
         We found people near you who share your interests and life stage. Go find your community.
       </Text>
-
       <PrimaryButton label="See My Matches" onPress={onFinish} style={styles.revealBtn} />
     </View>
   );
 }
 
+// ─── Main screen ─────────────────────────────────────────────────────────────
 export default function OnboardingScreen({ navigation }) {
-  const [step, setStep] = useState(1);
-  const [lifeStage, setLifeStage] = useState(null);
-  const [interests, setInterests] = useState([]);
-  const [church, setChurch] = useState(null);
+  const [step, setStep]                     = useState(1);
+  const [lifeStage, setLifeStage]           = useState(null);
+  const [activities, setActivities]         = useState([]);
+  const [location, setLocation]             = useState('');
+  const [familyValues, setFamilyValues]     = useState([]);
+  const [schoolType, setSchoolType]         = useState(null);
+  const [loveLanguage, setLoveLanguage]     = useState(null);
+  const [initiator, setInitiator]           = useState(null);
+  const [outgoing, setOutgoing]             = useState(null);
+  const [communityGoals, setCommunityGoals] = useState([]);
+  const [church, setChurch]                 = useState(null);
+
+  // Recompute step list whenever lifeStage changes
+  const steps = useMemo(() => buildSteps(lifeStage), [lifeStage]);
+  const totalSteps = steps.length;
+  const currentStepId = steps[step - 1];
+
+  const toggle = (setter) => (id) =>
+    setter((prev) => prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]);
 
   const canContinue = () => {
-    if (step === 1) return lifeStage !== null;
-    if (step === 2) return interests.length >= 1;
-    return true;
+    switch (currentStepId) {
+      case 'life-stage':      return lifeStage !== null;
+      case 'activities':      return activities.length >= 1;
+      case 'location':        return true; // optional
+      case 'family-values':   return true; // optional
+      case 'school-type':     return true; // optional
+      case 'love-language':   return loveLanguage !== null;
+      case 'personality':     return initiator !== null && outgoing !== null;
+      case 'community-goals': return communityGoals.length >= 1;
+      case 'church':          return true; // optional
+      default:                return true;
+    }
   };
 
   const handleContinue = () => {
-    if (step < TOTAL_STEPS) setStep((s) => s + 1);
+    if (step < totalSteps) setStep((s) => s + 1);
+  };
+
+  const handleBack = () => {
+    if (step > 1) setStep((s) => s - 1);
+    else navigation.goBack();
   };
 
   const handleFinish = () => navigation.replace('Main');
-
-  const toggleInterest = (id) =>
-    setInterests((prev) => prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -157,31 +331,64 @@ export default function OnboardingScreen({ navigation }) {
 
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => step > 1 ? setStep((s) => s - 1) : navigation.goBack()}
-          style={styles.backBtn}
-        >
+        <TouchableOpacity onPress={handleBack} style={styles.backBtn}>
           <Text style={styles.backArrow}>←</Text>
         </TouchableOpacity>
-        <Text style={styles.stepCounter}>{step} / {TOTAL_STEPS}</Text>
+        <Text style={styles.stepCounter}>{step} / {totalSteps}</Text>
         <View style={{ width: 40 }} />
       </View>
 
       {/* Progress bar */}
       <View style={styles.progressTrack}>
-        <View style={[styles.progressFill, { width: `${(step / TOTAL_STEPS) * 100}%` }]} />
+        <View style={[styles.progressFill, { width: `${(step / totalSteps) * 100}%` }]} />
       </View>
 
       {/* Step content */}
-      <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent} showsVerticalScrollIndicator={false}>
-        {step === 1 && <StepLifeStage selection={lifeStage} onSelect={setLifeStage} />}
-        {step === 2 && <StepInterests selections={interests} onToggle={toggleInterest} />}
-        {step === 3 && <StepChurch selection={church} onSelect={setChurch} />}
-        {step === 4 && <StepMatchReveal onFinish={handleFinish} />}
+      <ScrollView
+        style={styles.body}
+        contentContainerStyle={styles.bodyContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        {currentStepId === 'life-stage' && (
+          <StepLifeStage selection={lifeStage} onSelect={setLifeStage} />
+        )}
+        {currentStepId === 'activities' && (
+          <StepActivities selections={activities} onToggle={toggle(setActivities)} />
+        )}
+        {currentStepId === 'location' && (
+          <StepLocation value={location} onChange={setLocation} />
+        )}
+        {currentStepId === 'family-values' && (
+          <StepFamilyValues selections={familyValues} onToggle={toggle(setFamilyValues)} />
+        )}
+        {currentStepId === 'school-type' && (
+          <StepSchoolType selection={schoolType} onSelect={setSchoolType} />
+        )}
+        {currentStepId === 'love-language' && (
+          <StepLoveLanguage selection={loveLanguage} onSelect={setLoveLanguage} />
+        )}
+        {currentStepId === 'personality' && (
+          <StepPersonality
+            initiator={initiator}
+            onSelectInitiator={setInitiator}
+            outgoing={outgoing}
+            onSelectOutgoing={setOutgoing}
+          />
+        )}
+        {currentStepId === 'community-goals' && (
+          <StepCommunityGoals selections={communityGoals} onToggle={toggle(setCommunityGoals)} />
+        )}
+        {currentStepId === 'church' && (
+          <StepChurch selection={church} onSelect={setChurch} />
+        )}
+        {currentStepId === 'reveal' && (
+          <StepMatchReveal onFinish={handleFinish} />
+        )}
       </ScrollView>
 
       {/* Footer CTA */}
-      {step < 4 && (
+      {currentStepId !== 'reveal' && (
         <View style={styles.footer}>
           <PrimaryButton
             label="Continue"
@@ -194,6 +401,7 @@ export default function OnboardingScreen({ navigation }) {
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
 
@@ -216,7 +424,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   backArrow: { fontSize: 20, color: COLORS.text },
-  stepCounter: { fontFamily: FONT.mono, fontSize: 11, letterSpacing: 1, color: COLORS.textTertiary },
+  stepCounter: {
+    fontFamily: FONT.mono,
+    fontSize: 11,
+    letterSpacing: 1,
+    color: COLORS.textTertiary,
+  },
 
   progressTrack: {
     height: 2,
@@ -249,7 +462,21 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     marginBottom: SPACING.lg,
   },
+  subQuestion: {
+    fontFamily: FONT.semiBold,
+    fontSize: 15,
+    color: COLORS.text,
+    marginBottom: SPACING.sm,
+  },
+  optionalNote: {
+    fontFamily: FONT.regular,
+    fontSize: 13,
+    color: COLORS.textTertiary,
+    textAlign: 'center',
+    marginTop: SPACING.md,
+  },
 
+  // Option grid
   optGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   optCard: {
     width: '47.5%',
@@ -267,18 +494,58 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surfaceAlt,
   },
   optIconWrap: {
-    width: 48,
-    height: 48,
+    width: 44,
+    height: 44,
     borderRadius: RADIUS.lg,
     backgroundColor: COLORS.bg,
     alignItems: 'center',
     justifyContent: 'center',
   },
   optIconWrapSelected: { backgroundColor: COLORS.sageBg },
-  optLabel: { fontFamily: FONT.medium, fontSize: 13, color: COLORS.textSecondary, textAlign: 'center', lineHeight: 18 },
+  optLabel: {
+    fontFamily: FONT.medium,
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    lineHeight: 17,
+  },
   optLabelSelected: { color: COLORS.text },
 
-  searchInput: {
+  // Binary cards
+  binaryRow: { flexDirection: 'row', gap: 10 },
+  binaryCard: {
+    flex: 1,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.md,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    gap: 4,
+    ...SHADOW.sm,
+  },
+  binaryCardSelected: {
+    borderColor: COLORS.accent,
+    backgroundColor: COLORS.surfaceAlt,
+  },
+  binaryLabel: {
+    fontFamily: FONT.semiBold,
+    fontSize: 15,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+  },
+  binaryLabelSelected: { color: COLORS.text },
+  binarySubLabel: {
+    fontFamily: FONT.regular,
+    fontSize: 12,
+    color: COLORS.textTertiary,
+    textAlign: 'center',
+    lineHeight: 16,
+  },
+  binarySubLabelSelected: { color: COLORS.textSecondary },
+
+  // Text input
+  textInput: {
     backgroundColor: COLORS.surface,
     borderWidth: 1.5,
     borderColor: COLORS.border,
@@ -288,8 +555,10 @@ const styles = StyleSheet.create({
     fontFamily: FONT.regular,
     fontSize: 15,
     color: COLORS.text,
-    marginBottom: SPACING.md,
+    marginBottom: SPACING.sm,
   },
+
+  // Church step
   nearbyLabel: {
     fontFamily: FONT.mono,
     fontSize: 9,
@@ -297,6 +566,7 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     color: COLORS.textTertiary,
     marginBottom: SPACING.sm,
+    marginTop: SPACING.md,
   },
   churchList: { gap: 8 },
   churchRow: {
@@ -365,6 +635,7 @@ const styles = StyleSheet.create({
   },
   revealBtn: { marginTop: SPACING.sm, alignSelf: 'stretch' },
 
+  // Footer
   footer: {
     paddingHorizontal: SPACING.lg,
     paddingBottom: SPACING.lg,
