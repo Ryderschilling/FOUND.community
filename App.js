@@ -10,13 +10,10 @@ import {
   Inter_800ExtraBold,
 } from '@expo-google-fonts/inter';
 import {
-  InstrumentSerif_400Regular,
-  InstrumentSerif_400Regular_Italic,
-} from '@expo-google-fonts/instrument-serif';
-import {
   JetBrainsMono_400Regular,
 } from '@expo-google-fonts/jetbrains-mono';
 import AppNavigator from './src/navigation';
+import { AuthProvider } from './src/auth/AuthContext';
 
 export default function App() {
   const [fontsLoaded] = useFonts({
@@ -26,9 +23,7 @@ export default function App() {
     Inter_600SemiBold,
     Inter_700Bold,
     Inter_800ExtraBold,
-    // Serif headlines
-    InstrumentSerif_400Regular,
-    InstrumentSerif_400Regular_Italic,
+    // Serif headlines use Georgia (system font on iOS/web), no async load needed
     // Mono overlines
     JetBrainsMono_400Regular,
   });
@@ -43,7 +38,9 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <AppNavigator />
+      <AuthProvider>
+        <AppNavigator />
+      </AuthProvider>
     </SafeAreaProvider>
   );
 }

@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   StatusBar,
   SafeAreaView,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
@@ -57,6 +58,18 @@ export default function MatchDetailScreen({ route, navigation }) {
         </View>
 
         <View style={styles.content}>
+
+          {/* Highlight Reel */}
+          {match.photos?.length > 0 && (
+            <View style={styles.section}>
+              <SectionHeader label="Highlight Reel" />
+              <View style={styles.reelGrid}>
+                {match.photos.map((uri, i) => (
+                  <Image key={i} source={{ uri }} style={styles.reelImage} />
+                ))}
+              </View>
+            </View>
+          )}
 
           {/* Interests */}
           <View style={styles.section}>
@@ -218,6 +231,19 @@ const styles = StyleSheet.create({
   commonText: { fontFamily: FONT.regular, fontSize: 14, color: COLORS.text },
 
   rule: { marginVertical: SPACING.md },
+
+  // Highlight Reel (read-only)
+  reelGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  reelImage: {
+    width: '31.5%',
+    aspectRatio: 1,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.border,
+  },
 
   // Sticky CTA
   ctaBar: {

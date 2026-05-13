@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -7,6 +7,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { COLORS, FONT, SHADOW } from '../theme';
+import { useAuth } from '../auth/AuthContext';
 
 import SplashScreen       from '../screens/SplashScreen';
 import OnboardingScreen   from '../screens/OnboardingScreen';
@@ -16,6 +17,8 @@ import MessagesScreen     from '../screens/MessagesScreen';
 import ProfileScreen      from '../screens/ProfileScreen';
 import MatchDetailScreen  from '../screens/MatchDetailScreen';
 import ChatScreen         from '../screens/ChatScreen';
+import SignInScreen       from '../screens/auth/SignInScreen';
+import SignUpScreen       from '../screens/auth/SignUpScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab   = createBottomTabNavigator();
@@ -86,20 +89,52 @@ function MainTabNavigator() {
   );
 }
 
-// ── Root stack ─────────────────────────────────────────────────────
+// ── Auth stack (unauthenticated users) ─────────────────────────────
+function AuthStack() {
+  return (
+    <Stack.Navigator
+      initialRouteName="Splash"
+      screenOptions={{ headerShown: false, animation: 'fade' }}
+    >
+      <Stack.Screen name="Splash" component={SplashScreen} />
+      <Stack.Screen name="SignIn" component={SignInScreen} options={{ animation: 'slide_from_right' }} />
+      <Stack.Screen name="SignUp" component={SignUpScreen} options={{ animation: 'slide_from_right' }} />
+    </Stack.Navigator>
+  );
+}
+
+// ── App stack (signed-in users) ────────────────────────────────────
+function AppStack({ needsOnboarding }) {
+  return (
+    <Stack.Navigator
+      initialRouteName={needsOnboarding ? 'Onboarding' : 'Main'}
+      screenOptions={{ headerShown: false, animation: 'fade' }}
+    >
+      <Stack.Screen name="Onboarding"   component={OnboardingScreen}  options={{ animation: 'slide_from_right' }} />
+      <Stack.Screen name="Main"         component={MainTabNavigator}  options={{ animation: 'fade' }} />
+      <Stack.Screen name="MatchDetail"  component={MatchDetailScreen} options={{ animation: 'slide_from_right' }} />
+      <Stack.Screen name="Chat"         component={ChatScreen}        options={{ animation: 'slide_from_right' }} />
+    </Stack.Navigator>
+  );
+}
+
+// ── Root: gate on auth ─────────────────────────────────────────────
 export default function AppNavigator() {
+  const { session, profile, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.bg }}>
+        <ActivityIndicator color={COLORS.text} />
+      </View>
+    );
+  }
+
+  const needsOnboarding = !!session && !profile?.onboarding_complete;
+
   return (
     <NavigationContainer>
-      <Stack.Navigator
-        initialRouteName="Splash"
-        screenOptions={{ headerShown: false, animation: 'fade' }}
-      >
-        <Stack.Screen name="Splash"       component={SplashScreen}      />
-        <Stack.Screen name="Onboarding"   component={OnboardingScreen}  options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="Main"         component={MainTabNavigator}  options={{ animation: 'fade' }} />
-        <Stack.Screen name="MatchDetail"  component={MatchDetailScreen} options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="Chat"         component={ChatScreen}        options={{ animation: 'slide_from_right' }} />
-      </Stack.Navigator>
+      {session ? <AppStack needsOnboarding={needsOnboarding} /> : <AuthStack />}
     </NavigationContainer>
   );
 }

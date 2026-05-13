@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   StatusBar,
   SafeAreaView,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
@@ -18,6 +19,29 @@ function StatCard({ value, label }) {
     <View style={styles.statCard}>
       <Text style={styles.statValue}>{value}</Text>
       <Text style={styles.statLabel}>{label}</Text>
+    </View>
+  );
+}
+
+// Editable highlight reel — shows filled photos + empty add-slots up to MAX_PHOTOS
+const MAX_PHOTOS = 9;
+
+function HighlightReel({ photos = [] }) {
+  const slots = Array.from({ length: MAX_PHOTOS }, (_, i) => photos[i] ?? null);
+
+  return (
+    <View style={styles.reelGrid}>
+      {slots.map((uri, i) => (
+        <TouchableOpacity key={i} style={styles.reelSlot} activeOpacity={0.8}>
+          {uri ? (
+            <Image source={{ uri }} style={styles.reelImage} />
+          ) : (
+            <View style={styles.reelEmpty}>
+              <Ionicons name="add" size={22} color={COLORS.textTertiary} />
+            </View>
+          )}
+        </TouchableOpacity>
+      ))}
     </View>
   );
 }
@@ -104,6 +128,12 @@ export default function ProfileScreen() {
                 <Text style={styles.churchMeta}>{user.church.distance} away · Member</Text>
               </View>
             </View>
+          </View>
+
+          {/* Highlight Reel */}
+          <View style={styles.section}>
+            <SectionHeader label="Your Highlight Reel" action="Edit" />
+            <HighlightReel photos={user.photos ?? []} />
           </View>
 
           {/* Settings */}
@@ -255,4 +285,32 @@ const styles = StyleSheet.create({
   settingsIconWrap: { width: 24, alignItems: 'center' },
   settingsLabel: { fontFamily: FONT.regular, fontSize: 15, color: COLORS.text, flex: 1 },
   settingsDanger: { color: '#C0392B' },
+
+  // Highlight Reel
+  reelGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  reelSlot: {
+    width: '31.5%',
+    aspectRatio: 1,
+    borderRadius: RADIUS.md,
+    overflow: 'hidden',
+  },
+  reelImage: {
+    width: '100%',
+    height: '100%',
+  },
+  reelEmpty: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderStyle: 'dashed',
+    borderRadius: RADIUS.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });

@@ -62,8 +62,8 @@ export default function SplashScreen({ navigation }) {
 
       {/* CTAs */}
       <View style={styles.ctaWrap}>
-        <PrimaryButton label="Get Started" onPress={() => navigation.navigate('Onboarding')} />
-        <GhostButton label="I already have an account" onPress={() => navigation.navigate('Main')} />
+        <PrimaryButton label="Get Started" onPress={() => navigation.navigate('SignUp')} />
+        <GhostButton label="I already have an account" onPress={() => navigation.navigate('SignIn')} />
       </View>
 
       <View style={{ height: SPACING['2xl'] }} />

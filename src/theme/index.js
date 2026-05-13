@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────────
-// FOUND Design System — Editorial / warm-cream aesthetic
+// FOUND Design System — matches found.community website
 // Typography stack:
-//   Display / H1 / H2 → Instrument Serif italic (editorial feel)
+//   Display / H1 / H2 → Georgia (editorial serif, matches site)
 //   Body / UI          → Inter (clean, legible)
 //   Overlines          → JetBrains Mono (mechanical label contrast)
 // ─────────────────────────────────────────────────────────────────
@@ -53,9 +53,13 @@ export const COLORS = {
   warmBg: '#FBF0EA',
 };
 
+// Georgia is built into iOS, macOS, and all major browsers (Expo web).
+// On Android it falls back to the platform's default serif, which is a close visual match.
+const SERIF = 'Georgia';
+
 export const FONT = {
-  serifRegular: 'InstrumentSerif_400Regular',
-  serifItalic:  'InstrumentSerif_400Regular_Italic',
+  serifRegular: SERIF,
+  serifItalic:  SERIF, // legacy alias — site design is non-italic; kept to avoid touching every screen
   regular:      'Inter_400Regular',
   medium:       'Inter_500Medium',
   semiBold:     'Inter_600SemiBold',
@@ -66,21 +70,21 @@ export const FONT = {
 
 export const TYPE = {
   display: {
-    fontFamily: 'InstrumentSerif_400Regular_Italic',
+    fontFamily: SERIF,
     fontSize: 44,
     color: '#1A1A1A',
     letterSpacing: -0.5,
     lineHeight: 50,
   },
   h1: {
-    fontFamily: 'InstrumentSerif_400Regular_Italic',
+    fontFamily: SERIF,
     fontSize: 30,
     color: '#1A1A1A',
     letterSpacing: -0.3,
     lineHeight: 36,
   },
   h2: {
-    fontFamily: 'InstrumentSerif_400Regular_Italic',
+    fontFamily: SERIF,
     fontSize: 22,
     color: '#1A1A1A',
     letterSpacing: -0.2,
