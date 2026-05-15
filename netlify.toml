@@ -1,0 +1,66 @@
+# =============================================================================
+# Netlify build config for FOUND.community
+# Lives at the repo root. When Netlify is connected to GitHub, this file is
+# auto-detected and overrides any dashboard config.
+# =============================================================================
+
+[build]
+  # The folder Netlify deploys (static HTML — no build step needed).
+  # Path is relative to repo root, which is the `found-app/` directory.
+  publish = "website"
+
+# ---- Headers -----------------------------------------------------------------
+# Sensible security defaults. Tighten later as we add features.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options       = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy        = "strict-origin-when-cross-origin"
+    Permissions-Policy     = "geolocation=(), microphone=(), camera=()"
+
+# Cache static assets aggressively (1 year). HTML stays uncached for fast rollouts.
+[[headers]]
+  for = "/*.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/*.css"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/*.js"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/*.png"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/*.jpg"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/*.svg"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# ---- Redirects ---------------------------------------------------------------
+# Force HTTPS (Netlify does this by default, but explicit is safer).
+[[redirects]]
+  from   = "http://found.community/*"
+  to     = "https://found.community/:splat"
+  status = 301
+  force  = true
+
+# Canonicalize www → apex (or flip both lines if you prefer www).
+[[redirects]]
+  from   = "https://www.found.community/*"
+  to     = "https://found.community/:splat"
+  status = 301
+  force  = true

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,27 +8,57 @@ import {
   StatusBar,
   SafeAreaView,
   Image,
+  ActivityIndicator,
+  Alert,
+  RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
 import { Avatar, Pill, SectionHeader } from '../components/Atoms';
-import { CURRENT_USER } from '../data/mock';
+import { supabase } from '../lib/supabase';
+import { useAuth } from '../auth/AuthContext';
 
+// ─── Helpers ──────────────────────────────────────────────────────────────
+const AVATAR_GRADIENTS = [
+  ['#4A6FA5', '#2D4E8A'],
+  ['#5A8A6A', '#3D6B55'],
+  ['#C0795A', '#A0593A'],
+  ['#7A5AA8', '#5A3A88'],
+  ['#A8793A', '#886020'],
+  ['#5A7A4A', '#3D6B3E'],
+  ['#4A8A6A', '#2D6B55'],
+  ['#7A846A', '#5A6450'],
+];
+
+function gradientFor(id) {
+  if (!id) return AVATAR_GRADIENTS[0];
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
+  return AVATAR_GRADIENTS[Math.abs(h) % AVATAR_GRADIENTS.length];
+}
+
+function initialsFor(name) {
+  if (!name) return '··';
+  const parts = name.trim().split(/\s+/);
+  const a = parts[0]?.[0] ?? '';
+  const b = parts.length > 1 ? parts[parts.length - 1][0] : '';
+  return (a + b).toUpperCase() || '··';
+}
+
+// ─── Sub-components ───────────────────────────────────────────────────────
 function StatCard({ value, label }) {
   return (
     <View style={styles.statCard}>
-      <Text style={styles.statValue}>{value}</Text>
+      <Text style={styles.statValue}>{value ?? '—'}</Text>
       <Text style={styles.statLabel}>{label}</Text>
     </View>
   );
 }
 
-// Editable highlight reel — shows filled photos + empty add-slots up to MAX_PHOTOS
 const MAX_PHOTOS = 9;
 
 function HighlightReel({ photos = [] }) {
   const slots = Array.from({ length: MAX_PHOTOS }, (_, i) => photos[i] ?? null);
-
   return (
     <View style={styles.reelGrid}>
       {slots.map((uri, i) => (
@@ -58,14 +88,115 @@ function SettingsItem({ iconName, label, onPress, danger }) {
   );
 }
 
+// ─── Main screen ──────────────────────────────────────────────────────────
 export default function ProfileScreen() {
-  const user = CURRENT_USER;
+  const { user, signOut } = useAuth();
+
+  const [profile, setProfile]     = useState(null);
+  const [stats, setStats]         = useState({ matches: null, connections: null, groups: null });
+  const [loading, setLoading]     = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const load = useCallback(async ({ isRefresh } = {}) => {
+    if (!user) return;
+    if (isRefresh) setRefreshing(true); else setLoading(true);
+    try {
+      // Joined profile + taxonomy details, single round trip
+      const profileQ = supabase
+        .from('profiles')
+        .select(`
+          id, full_name, handle, bio, city, state, is_initiator, is_outgoing,
+          life_stage:life_stages(id,label,icon,icon_color),
+          church:churches(id,name,city,state),
+          profile_activities(activity:activities(id,label,icon,icon_color))
+        `)
+        .eq('id', user.id)
+        .maybeSingle();
+
+      // Stats — three small head-only counts in parallel
+      const connectionsQ = supabase
+        .from('connections')
+        .select('*', { count: 'exact', head: true })
+        .eq('from_profile', user.id)
+        .eq('kind', 'like');
+
+      const groupsQ = supabase
+        .from('group_members')
+        .select('*', { count: 'exact', head: true })
+        .eq('profile_id', user.id);
+
+      const matchesQ = supabase.rpc('top_matches_detailed', { p_limit: 99 });
+
+      const [pRes, cRes, gRes, mRes] = await Promise.all([
+        profileQ,
+        connectionsQ,
+        groupsQ,
+        matchesQ,
+      ]);
+
+      if (pRes.error) throw pRes.error;
+      setProfile(pRes.data);
+      setStats({
+        matches:     mRes.error ? null : (mRes.data?.length ?? 0),
+        connections: cRes.error ? null : (cRes.count ?? 0),
+        groups:      gRes.error ? null : (gRes.count ?? 0),
+      });
+    } catch (e) {
+      console.warn('[profile] load failed', e?.message);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [user]);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function handleSignOut() {
+    Alert.alert('Sign out?', 'You can sign back in anytime.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Sign out',
+        style: 'destructive',
+        onPress: async () => {
+          try { await signOut(); } catch (e) {
+            Alert.alert('Sign out failed', e?.message ?? 'Try again.');
+          }
+        },
+      },
+    ]);
+  }
+
+  if (loading || !profile) {
+    return (
+      <SafeAreaView style={[styles.container, styles.centered]}>
+        <ActivityIndicator color={COLORS.textTertiary} />
+      </SafeAreaView>
+    );
+  }
+
+  const name        = profile.full_name || profile.handle || 'You';
+  const initials    = initialsFor(name);
+  const grad        = gradientFor(profile.id);
+  const locationStr = [profile.city, profile.state].filter(Boolean).join(', ') || 'Location not set';
+  const interests   = (profile.profile_activities ?? [])
+    .map((row) => row.activity)
+    .filter(Boolean);
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 120 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => load({ isRefresh: true })}
+            tintColor={COLORS.textTertiary}
+          />
+        }
+      >
 
         {/* Page header */}
         <View style={styles.pageHeader}>
@@ -75,12 +206,12 @@ export default function ProfileScreen() {
 
         {/* Hero card */}
         <View style={styles.heroCard}>
-          <Avatar initials={user.initials} size={68} gradientColors={user.avatarColor} />
+          <Avatar initials={initials} size={68} gradientColors={grad} />
           <View style={styles.heroInfo}>
-            <Text style={styles.heroName}>{user.name}</Text>
+            <Text style={styles.heroName}>{name}</Text>
             <View style={styles.locationRow}>
               <Ionicons name="location-outline" size={12} color={COLORS.textSecondary} />
-              <Text style={styles.heroLocation}>{user.location}</Text>
+              <Text style={styles.heroLocation}>{locationStr}</Text>
             </View>
           </View>
           <TouchableOpacity style={styles.editBtn}>
@@ -92,48 +223,70 @@ export default function ProfileScreen() {
 
           {/* Stats */}
           <View style={styles.statsRow}>
-            <StatCard value={user.matchCount}      label="Matches"   />
-            <StatCard value={user.connectionCount} label="Connected" />
-            <StatCard value={user.groupCount}      label="Groups"    />
+            <StatCard value={stats.matches}     label="Matches"   />
+            <StatCard value={stats.connections} label="Connected" />
+            <StatCard value={stats.groups}      label="Groups"    />
           </View>
+
+          {/* Bio */}
+          {profile.bio ? (
+            <View style={styles.section}>
+              <SectionHeader label="About" />
+              <View style={styles.bioCard}>
+                <Text style={styles.bioText}>{profile.bio}</Text>
+              </View>
+            </View>
+          ) : null}
 
           {/* Life stage */}
-          <View style={styles.section}>
-            <SectionHeader label="Life Stage" />
-            <View style={styles.lifeStageCard}>
-              <Ionicons name={user.lifeStage.icon} size={20} color={user.lifeStage.iconColor ?? COLORS.textSecondary} />
-              <Text style={styles.lifeStageText}>{user.lifeStage.label}</Text>
+          {profile.life_stage ? (
+            <View style={styles.section}>
+              <SectionHeader label="Life Stage" />
+              <View style={styles.lifeStageCard}>
+                <Ionicons
+                  name={profile.life_stage.icon || 'person-outline'}
+                  size={20}
+                  color={profile.life_stage.icon_color ?? COLORS.textSecondary}
+                />
+                <Text style={styles.lifeStageText}>{profile.life_stage.label}</Text>
+              </View>
             </View>
-          </View>
+          ) : null}
 
           {/* Interests */}
-          <View style={styles.section}>
-            <SectionHeader label="Interests" action="Edit" />
-            <View style={styles.pillsWrap}>
-              {user.interests.map((i) => (
-                <Pill key={i.id} label={i.label} variant="neutral" />
-              ))}
+          {interests.length > 0 ? (
+            <View style={styles.section}>
+              <SectionHeader label="Interests" action="Edit" />
+              <View style={styles.pillsWrap}>
+                {interests.map((i) => (
+                  <Pill key={i.id} label={i.label} variant="neutral" />
+                ))}
+              </View>
             </View>
-          </View>
+          ) : null}
 
           {/* Church */}
-          <View style={styles.section}>
-            <SectionHeader label="Church" />
-            <View style={styles.churchCard}>
-              <View style={styles.churchIconWrap}>
-                <Ionicons name="business-outline" size={22} color={COLORS.sage} />
-              </View>
-              <View>
-                <Text style={styles.churchName}>{user.church.name}</Text>
-                <Text style={styles.churchMeta}>{user.church.distance} away · Member</Text>
+          {profile.church ? (
+            <View style={styles.section}>
+              <SectionHeader label="Church" />
+              <View style={styles.churchCard}>
+                <View style={styles.churchIconWrap}>
+                  <Ionicons name="business-outline" size={22} color={COLORS.sage} />
+                </View>
+                <View>
+                  <Text style={styles.churchName}>{profile.church.name}</Text>
+                  <Text style={styles.churchMeta}>
+                    {[profile.church.city, profile.church.state].filter(Boolean).join(', ')}
+                  </Text>
+                </View>
               </View>
             </View>
-          </View>
+          ) : null}
 
-          {/* Highlight Reel */}
+          {/* Highlight Reel — UI shell only; photos wiring is next pass */}
           <View style={styles.section}>
             <SectionHeader label="Your Highlight Reel" action="Edit" />
-            <HighlightReel photos={user.photos ?? []} />
+            <HighlightReel photos={[]} />
           </View>
 
           {/* Settings */}
@@ -145,7 +298,7 @@ export default function ProfileScreen() {
               <SettingsItem iconName="lock-closed-outline"   label="Privacy"             />
               <SettingsItem iconName="business-outline"      label="My Church Dashboard" />
               <SettingsItem iconName="help-circle-outline"   label="Help & Support"      />
-              <SettingsItem iconName="log-out-outline"       label="Sign Out" danger      />
+              <SettingsItem iconName="log-out-outline"       label="Sign Out" danger onPress={handleSignOut} />
             </View>
           </View>
 
@@ -157,6 +310,7 @@ export default function ProfileScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
+  centered: { alignItems: 'center', justifyContent: 'center' },
 
   pageHeader: {
     paddingHorizontal: SPACING.lg,
@@ -229,6 +383,15 @@ const styles = StyleSheet.create({
   },
 
   section: { gap: SPACING.sm },
+
+  bioCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  bioText: { fontFamily: FONT.regular, fontSize: 14, color: COLORS.text, lineHeight: 20 },
 
   lifeStageCard: {
     flexDirection: 'row',

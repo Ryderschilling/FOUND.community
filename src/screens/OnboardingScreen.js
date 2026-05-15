@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,10 +9,14 @@ import {
   SafeAreaView,
   TextInput,
   Pressable,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
 import { PrimaryButton } from '../components/Atoms';
+import { supabase } from '../lib/supabase';
+import { useAuth } from '../auth/AuthContext';
 import {
   LIFE_STAGES,
   HAS_KIDS_STAGES,
@@ -21,8 +25,21 @@ import {
   SCHOOL_TYPES,
   LOVE_LANGUAGES,
   COMMUNITY_GOALS,
-  NEARBY_CHURCHES,
 } from '../data/mock';
+
+// ─── Helpers ──────────────────────────────────────────────────────────────
+// Parse "Nashville, TN" -> { city: 'Nashville', state: 'TN' }.
+// Split on the LAST comma so multi-comma city names ("Washington, D.C.") still work.
+function parseLocation(text) {
+  if (!text || !text.trim()) return { city: null, state: null };
+  const trimmed = text.trim();
+  const idx = trimmed.lastIndexOf(',');
+  if (idx < 0) return { city: trimmed, state: null };
+  return {
+    city:  trimmed.slice(0, idx).trim() || null,
+    state: trimmed.slice(idx + 1).trim() || null,
+  };
+}
 
 // ─── Step ID sequence ────────────────────────────────────────────────────────
 // School-type is conditionally inserted based on life stage answer
@@ -209,9 +226,9 @@ function StepCommunityGoals({ selections, onToggle }) {
   );
 }
 
-function StepChurch({ selection, onSelect }) {
+function StepChurch({ selection, onSelect, churches, loading }) {
   const [query, setQuery] = useState('');
-  const filtered = NEARBY_CHURCHES.filter((c) =>
+  const filtered = (churches ?? []).filter((c) =>
     c.name.toLowerCase().includes(query.toLowerCase())
   );
 
@@ -231,37 +248,50 @@ function StepChurch({ selection, onSelect }) {
 
       <Text style={styles.nearbyLabel}>Nearby Churches</Text>
 
-      <View style={styles.churchList}>
-        {filtered.map((church) => (
-          <Pressable
-            key={church.id}
-            style={[styles.churchRow, selection === church.id && styles.churchRowSelected]}
-            onPress={() => onSelect(church.id === selection ? null : church.id)}
-          >
-            <View style={styles.churchIcon}>
-              <Ionicons name="business-outline" size={18} color={COLORS.sage} />
-            </View>
-            <View style={styles.churchInfo}>
-              <Text style={[styles.churchName, selection === church.id && { color: COLORS.text }]}>
-                {church.name}
-              </Text>
-              <Text style={styles.churchMeta}>{church.distance} away · {church.members} members</Text>
-            </View>
-            {selection === church.id && (
-              <View style={styles.check}>
-                <Ionicons name="checkmark" size={14} color={COLORS.white} />
-              </View>
-            )}
-          </Pressable>
-        ))}
-      </View>
+      {loading ? (
+        <View style={{ paddingVertical: SPACING.lg, alignItems: 'center' }}>
+          <ActivityIndicator color={COLORS.textTertiary} />
+        </View>
+      ) : filtered.length === 0 ? (
+        <Text style={[styles.optionalNote, { textAlign: 'left' }]}>
+          {query ? 'No churches match that search.' : 'No churches loaded yet.'}
+        </Text>
+      ) : (
+        <View style={styles.churchList}>
+          {filtered.map((church) => {
+            const meta = [church.city, church.state].filter(Boolean).join(', ');
+            return (
+              <Pressable
+                key={church.id}
+                style={[styles.churchRow, selection === church.id && styles.churchRowSelected]}
+                onPress={() => onSelect(church.id === selection ? null : church.id)}
+              >
+                <View style={styles.churchIcon}>
+                  <Ionicons name="business-outline" size={18} color={COLORS.sage} />
+                </View>
+                <View style={styles.churchInfo}>
+                  <Text style={[styles.churchName, selection === church.id && { color: COLORS.text }]}>
+                    {church.name}
+                  </Text>
+                  {meta ? <Text style={styles.churchMeta}>{meta}</Text> : null}
+                </View>
+                {selection === church.id && (
+                  <View style={styles.check}>
+                    <Ionicons name="checkmark" size={14} color={COLORS.white} />
+                  </View>
+                )}
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
 
       <Text style={styles.optionalNote}>Optional — you can skip this step.</Text>
     </>
   );
 }
 
-function StepMatchReveal({ onFinish }) {
+function StepMatchReveal({ onFinish, busy }) {
   return (
     <View style={styles.revealWrap}>
       <View style={styles.revealStat}>
@@ -272,13 +302,21 @@ function StepMatchReveal({ onFinish }) {
       <Text style={styles.revealBody}>
         We found people near you who share your interests and life stage. Go find your community.
       </Text>
-      <PrimaryButton label="See My Matches" onPress={onFinish} style={styles.revealBtn} />
+      <PrimaryButton
+        label={busy ? 'Saving…' : 'See My Matches'}
+        onPress={onFinish}
+        loading={busy}
+        disabled={busy}
+        style={styles.revealBtn}
+      />
     </View>
   );
 }
 
 // ─── Main screen ─────────────────────────────────────────────────────────────
 export default function OnboardingScreen({ navigation }) {
+  const { refreshProfile } = useAuth();
+
   const [step, setStep]                     = useState(1);
   const [lifeStage, setLifeStage]           = useState(null);
   const [activities, setActivities]         = useState([]);
@@ -290,6 +328,35 @@ export default function OnboardingScreen({ navigation }) {
   const [outgoing, setOutgoing]             = useState(null);
   const [communityGoals, setCommunityGoals] = useState([]);
   const [church, setChurch]                 = useState(null);
+
+  // Real churches from Supabase (replaces NEARBY_CHURCHES mock)
+  const [churches, setChurches]             = useState([]);
+  const [churchesLoading, setChurchesLoading] = useState(true);
+
+  // Submit state
+  const [busy, setBusy] = useState(false);
+
+  // Fetch churches once on mount. Cheap query — no pagination yet, we have ~4 rows.
+  // When the church list gets large, add a search-as-you-type RPC with PostGIS distance.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from('churches')
+        .select('id, name, city, state')
+        .order('name', { ascending: true })
+        .limit(200);
+      if (cancelled) return;
+      if (error) {
+        console.warn('[onboarding] churches fetch failed', error.message);
+        setChurches([]);
+      } else {
+        setChurches(data ?? []);
+      }
+      setChurchesLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // Recompute step list whenever lifeStage changes
   const steps = useMemo(() => buildSteps(lifeStage), [lifeStage]);
@@ -323,7 +390,35 @@ export default function OnboardingScreen({ navigation }) {
     else navigation.goBack();
   };
 
-  const handleFinish = () => navigation.replace('Main');
+  // Submit: write profile to Supabase via the complete_onboarding RPC.
+  // The RPC sets onboarding_complete=true; after refreshProfile() the root
+  // navigator (in src/navigation/index.js) will auto-route to the Main stack.
+  async function handleFinish() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const { city, state } = parseLocation(location);
+      const { error } = await supabase.rpc('complete_onboarding', {
+        p_life_stage:    lifeStage,
+        p_school_type:   schoolType,
+        p_love_language: loveLanguage,
+        p_church_id:     church,
+        p_city:          city,
+        p_state:         state,
+        p_is_initiator:  initiator,
+        p_is_outgoing:   outgoing,
+        p_activities:    activities,
+        p_goals:         communityGoals,
+        p_values:        familyValues,
+      });
+      if (error) throw error;
+      await refreshProfile();
+      // No navigation.replace needed — AppNavigator swaps stacks on onboarding_complete.
+    } catch (e) {
+      Alert.alert('Could not save your profile', e?.message ?? 'Unknown error. Try again.');
+      setBusy(false);
+    }
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -380,10 +475,15 @@ export default function OnboardingScreen({ navigation }) {
           <StepCommunityGoals selections={communityGoals} onToggle={toggle(setCommunityGoals)} />
         )}
         {currentStepId === 'church' && (
-          <StepChurch selection={church} onSelect={setChurch} />
+          <StepChurch
+            selection={church}
+            onSelect={setChurch}
+            churches={churches}
+            loading={churchesLoading}
+          />
         )}
         {currentStepId === 'reveal' && (
-          <StepMatchReveal onFinish={handleFinish} />
+          <StepMatchReveal onFinish={handleFinish} busy={busy} />
         )}
       </ScrollView>
 

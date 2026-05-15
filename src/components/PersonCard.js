@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -22,6 +22,12 @@ import ScoreRing from './ScoreRing';
 export default function PersonCard({ match, onConnect, onWave, onPress }) {
   const [connected, setConnected] = useState(match.connected ?? false);
   const [waved, setWaved] = useState(false);
+
+  // If the parent re-fetches and the match is now connected upstream
+  // (e.g. another device, or a successful insert), reflect that here.
+  useEffect(() => {
+    if (match.connected) setConnected(true);
+  }, [match.connected]);
 
   return (
     <Pressable

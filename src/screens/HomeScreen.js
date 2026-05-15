@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,12 +7,15 @@ import {
   StatusBar,
   SafeAreaView,
   Animated,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING } from '../theme';
 import PersonCard from '../components/PersonCard';
 import { Wordmark, Chip, Pill, IconButton } from '../components/Atoms';
-import { MATCHES } from '../data/mock';
+import { supabase } from '../lib/supabase';
+import { useAuth } from '../auth/AuthContext';
 
 const FILTERS = [
   { id: 'all',    label: 'All'         },
@@ -25,20 +28,137 @@ const FILTERS = [
 // Height of the FOUND + bell header block
 const HEADER_HEIGHT = 72;
 
+// ─── Helpers ──────────────────────────────────────────────────────────────
+// Fixed gradient palette for avatars (matches existing visual language)
+const AVATAR_GRADIENTS = [
+  ['#4A6FA5', '#2D4E8A'],
+  ['#5A8A6A', '#3D6B55'],
+  ['#C0795A', '#A0593A'],
+  ['#7A5AA8', '#5A3A88'],
+  ['#A8793A', '#886020'],
+  ['#5A7A4A', '#3D6B3E'],
+  ['#4A8A6A', '#2D6B55'],
+  ['#7A846A', '#5A6450'],
+];
+
+// Deterministic hash → palette index, so each profile always picks the same colors
+function gradientFor(id) {
+  if (!id) return AVATAR_GRADIENTS[0];
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
+  return AVATAR_GRADIENTS[Math.abs(h) % AVATAR_GRADIENTS.length];
+}
+
+function initialsFor(name) {
+  if (!name) return '··';
+  const parts = name.trim().split(/\s+/);
+  const a = parts[0]?.[0] ?? '';
+  const b = parts.length > 1 ? parts[parts.length - 1][0] : '';
+  return (a + b).toUpperCase() || '··';
+}
+
+function formatDistance(mi) {
+  if (mi == null) return null;
+  const n = Number(mi);
+  if (!isFinite(n)) return null;
+  if (n < 0.1) return '0.1 mi';
+  if (n < 10)  return `${n.toFixed(1)} mi`;
+  return `${Math.round(n)} mi`;
+}
+
+// RPC row → PersonCard shape
+function rowToMatch(row) {
+  return {
+    id:          row.profile_id,
+    name:        row.full_name || row.handle || 'Someone',
+    initials:    initialsFor(row.full_name || row.handle),
+    avatarColor: gradientFor(row.profile_id),
+    matchScore:  row.score ?? 0,
+    lifeStage:   row.life_stage_label || '',
+    distance:    formatDistance(row.distance_mi) || [row.city, row.state].filter(Boolean).join(', ') || '',
+    church:      row.church_name,
+    interests:   (row.activities ?? []).map((a) => ({
+      id:        a.id,
+      label:     a.label,
+      icon:      a.icon,
+      iconColor: a.icon_color,
+    })),
+    connected:   false,
+  };
+}
+
 export default function HomeScreen({ navigation }) {
+  const { user } = useAuth();
+
   const [activeFilter, setActiveFilter] = useState('all');
-  const matches = MATCHES;
+  const [matches, setMatches]           = useState([]);
+  const [loading, setLoading]           = useState(true);
+  const [refreshing, setRefreshing]     = useState(false);
+  const [error, setError]               = useState(null);
 
   const headerTranslate = useRef(new Animated.Value(0)).current;
-  const lastScrollY    = useRef(0);
-  const headerVisible  = useRef(true);
+  const lastScrollY     = useRef(0);
+  const headerVisible   = useRef(true);
+
+  const loadMatches = useCallback(async ({ isRefresh } = {}) => {
+    if (isRefresh) setRefreshing(true); else setLoading(true);
+    setError(null);
+    try {
+      // Fetch matches + my existing 'like' connections in parallel so cards
+      // show the right Connect/Connected state on first paint.
+      const [matchesRes, connectionsRes] = await Promise.all([
+        supabase.rpc('top_matches_detailed', { p_limit: 25 }),
+        user
+          ? supabase.from('connections')
+              .select('to_profile')
+              .eq('from_profile', user.id)
+              .eq('kind', 'like')
+          : Promise.resolve({ data: [], error: null }),
+      ]);
+      if (matchesRes.error) throw matchesRes.error;
+
+      const connectedSet = new Set((connectionsRes.data ?? []).map((r) => r.to_profile));
+      const rows = (matchesRes.data ?? []).map((row) => ({
+        ...rowToMatch(row),
+        connected: connectedSet.has(row.profile_id),
+      }));
+      setMatches(rows);
+    } catch (e) {
+      console.warn('[discover] load failed', e?.message);
+      setError(e?.message ?? 'Could not load matches.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    loadMatches();
+  }, [loadMatches]);
+
+  // Optimistic Connect: card already flipped its own state on press; we just
+  // persist. RLS allows insert where from_profile = auth.uid().
+  // PK is (from_profile, to_profile, kind) so re-tap is a no-op (handled by
+  // on conflict do nothing via upsert).
+  const handleConnect = useCallback(async (toProfileId) => {
+    if (!user || !toProfileId) return;
+    const { error: insErr } = await supabase
+      .from('connections')
+      .upsert(
+        { from_profile: user.id, to_profile: toProfileId, kind: 'like' },
+        { onConflict: 'from_profile,to_profile,kind', ignoreDuplicates: true }
+      );
+    if (insErr) {
+      console.warn('[discover] connect failed', insErr.message);
+      // Don't revert the UI; user can retry on next session.
+    }
+  }, [user]);
 
   const handleScroll = ({ nativeEvent }) => {
     const y    = nativeEvent.contentOffset.y;
     const diff = y - lastScrollY.current;
 
     if (diff > 6 && headerVisible.current) {
-      // Scrolling down — slide header out
       headerVisible.current = false;
       Animated.timing(headerTranslate, {
         toValue: -HEADER_HEIGHT,
@@ -46,7 +166,6 @@ export default function HomeScreen({ navigation }) {
         useNativeDriver: true,
       }).start();
     } else if (diff < -6 && !headerVisible.current) {
-      // Scrolling up — slide header back in
       headerVisible.current = true;
       Animated.timing(headerTranslate, {
         toValue: 0,
@@ -83,6 +202,36 @@ export default function HomeScreen({ navigation }) {
     </View>
   );
 
+  const EmptyState = () => {
+    if (loading) {
+      return (
+        <View style={styles.stateBox}>
+          <ActivityIndicator color={COLORS.textTertiary} />
+          <Text style={styles.stateBody}>Finding your community…</Text>
+        </View>
+      );
+    }
+    if (error) {
+      return (
+        <View style={styles.stateBox}>
+          <Ionicons name="cloud-offline-outline" size={28} color={COLORS.textTertiary} />
+          <Text style={styles.stateTitle}>Couldn't load matches</Text>
+          <Text style={styles.stateBody}>{error}</Text>
+          <Text style={styles.stateHint}>Pull down to retry.</Text>
+        </View>
+      );
+    }
+    return (
+      <View style={styles.stateBox}>
+        <Ionicons name="people-outline" size={28} color={COLORS.textTertiary} />
+        <Text style={styles.stateTitle}>No matches yet</Text>
+        <Text style={styles.stateBody}>
+          As more local Christians join, we'll surface the best fits for you here.
+        </Text>
+      </View>
+    );
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
@@ -103,10 +252,11 @@ export default function HomeScreen({ navigation }) {
         data={matches}
         keyExtractor={(item) => item.id}
         ListHeaderComponent={ListHeader}
+        ListEmptyComponent={EmptyState}
         renderItem={({ item }) => (
           <PersonCard
             match={item}
-            onConnect={() => {}}
+            onConnect={() => handleConnect(item.id)}
             onWave={() => {}}
             onPress={() => navigation?.navigate('MatchDetail', { match: item })}
           />
@@ -116,6 +266,13 @@ export default function HomeScreen({ navigation }) {
         showsVerticalScrollIndicator={false}
         onScroll={handleScroll}
         scrollEventThrottle={16}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => loadMatches({ isRefresh: true })}
+            tintColor={COLORS.textTertiary}
+          />
+        }
       />
     </SafeAreaView>
   );
@@ -178,5 +335,33 @@ const styles = StyleSheet.create({
     paddingTop: HEADER_HEIGHT,   // content starts below the fixed header
     paddingHorizontal: SPACING.lg,
     paddingBottom: 110,
+  },
+
+  // Empty / loading / error states
+  stateBox: {
+    alignItems: 'center',
+    paddingVertical: SPACING.xl,
+    paddingHorizontal: SPACING.lg,
+    gap: SPACING.sm,
+  },
+  stateTitle: {
+    fontFamily: FONT.serifItalic,
+    fontSize: 18,
+    color: COLORS.text,
+  },
+  stateBody: {
+    fontFamily: FONT.regular,
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  stateHint: {
+    fontFamily: FONT.mono,
+    fontSize: 10,
+    letterSpacing: 1.4,
+    textTransform: 'uppercase',
+    color: COLORS.textTertiary,
+    marginTop: SPACING.xs,
   },
 });
