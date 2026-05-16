@@ -8,16 +8,52 @@ import { COLORS, FONT, TYPE, SPACING, RADIUS } from '../../theme';
 import { PrimaryButton } from '../../components/Atoms';
 import { useAuth } from '../../auth/AuthContext';
 
+const MARKETING_URL = 'https://sweet-capybara-3e213a.netlify.app/';
+
 export default function SignUpScreen({ navigation }) {
   const { signUpWithPassword } = useAuth();
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
+  const [errorMsg, setErrorMsg] = useState(null);
+  const [infoMsg, setInfoMsg]   = useState(null);
+
+  function friendlySignUpError(raw) {
+    const msg = (raw || '').toLowerCase();
+    if (msg.includes('already registered') || msg.includes('already exists') || msg.includes('user_already_exists')) {
+      return 'That email is already registered. Try signing in instead.';
+    }
+    if (msg.includes('password') && msg.includes('weak')) {
+      return 'That password is too weak. Try a longer one.';
+    }
+    if (msg.includes('rate limit') || msg.includes('too many')) {
+      return 'Too many sign-up attempts. Wait a minute and try again.';
+    }
+    return raw || 'Sign up failed. Try again.';
+  }
+
+  // Web → marketing site. Native → previous screen (Splash or SignIn).
+  function handleBack() {
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined') window.location.href = MARKETING_URL;
+      return;
+    }
+    if (navigation.canGoBack()) navigation.goBack();
+    else navigation.navigate('Splash');
+  }
 
   async function handleSignUp() {
-    if (!email || !password) return Alert.alert('Enter your email and a password');
-    if (password.length < 8) return Alert.alert('Password must be at least 8 characters');
+    setErrorMsg(null);
+    setInfoMsg(null);
+    if (!email || !password) {
+      setErrorMsg('Enter your email and a password.');
+      return;
+    }
+    if (password.length < 8) {
+      setErrorMsg('Password must be at least 8 characters.');
+      return;
+    }
     setBusy(true);
     try {
       const { session } = await signUpWithPassword({
@@ -25,18 +61,14 @@ export default function SignUpScreen({ navigation }) {
         password,
         fullName: fullName.trim(),
       });
-      // If "Confirm email" is disabled in Supabase auth settings, `session` is set
-      // and the AuthContext will route the user into the app. If confirmation is
-      // required, prompt them to verify.
+      // If "Confirm email" is disabled in Supabase: session is set and the
+      // AuthContext auto-routes into onboarding. If confirmation is required
+      // (default), session is null and we tell them to check their inbox.
       if (!session) {
-        Alert.alert(
-          'Check your email',
-          'We sent you a confirmation link. Tap it, then come back and sign in.'
-        );
-        navigation.goBack();
+        setInfoMsg('Account created. Check your inbox for the confirmation link, then come back and sign in.');
       }
     } catch (e) {
-      Alert.alert('Sign up failed', e.message);
+      setErrorMsg(friendlySignUpError(e?.message));
     } finally {
       setBusy(false);
     }
@@ -46,6 +78,10 @@ export default function SignUpScreen({ navigation }) {
     <SafeAreaView style={s.safe} edges={['top']}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
+          <TouchableOpacity onPress={handleBack} style={s.backLink} hitSlop={8}>
+            <Text style={s.backLinkText}>← Back to home</Text>
+          </TouchableOpacity>
+
           <View style={s.header}>
             <Text style={s.overline}>FOUND</Text>
             <Text style={s.title}>Create your account.</Text>
@@ -85,6 +121,17 @@ export default function SignUpScreen({ navigation }) {
               style={s.input}
             />
 
+            {errorMsg ? (
+              <View style={s.errorBox}>
+                <Text style={s.errorText}>{errorMsg}</Text>
+              </View>
+            ) : null}
+            {infoMsg ? (
+              <View style={s.infoBox}>
+                <Text style={s.infoText}>{infoMsg}</Text>
+              </View>
+            ) : null}
+
             <View style={{ height: SPACING.lg }} />
             {busy ? (
               <ActivityIndicator color={COLORS.text} />
@@ -122,4 +169,26 @@ const s = StyleSheet.create({
   footer:  { alignItems: 'center', paddingVertical: SPACING.xl, gap: 4 },
   footerText: { ...TYPE.body, color: COLORS.textSecondary },
   link:       { ...TYPE.h3 },
+
+  errorBox: {
+    marginTop: SPACING.md,
+    backgroundColor: '#FBECEC',
+    borderColor: '#E6BBBB',
+    borderWidth: 1,
+    borderRadius: RADIUS.md,
+    padding: SPACING.md,
+  },
+  errorText: { ...TYPE.body, color: '#8A2D2D', fontSize: 14, lineHeight: 20 },
+  infoBox: {
+    marginTop: SPACING.md,
+    backgroundColor: COLORS.sageBg,
+    borderColor: COLORS.sageLight,
+    borderWidth: 1,
+    borderRadius: RADIUS.md,
+    padding: SPACING.md,
+  },
+  infoText: { ...TYPE.body, color: COLORS.sage, fontSize: 14, lineHeight: 20 },
+
+  backLink: { alignSelf: 'flex-start', paddingVertical: 4 },
+  backLinkText: { ...TYPE.body, fontSize: 14, color: COLORS.textSecondary },
 });

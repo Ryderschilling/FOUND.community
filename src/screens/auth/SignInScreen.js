@@ -1,39 +1,82 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, StyleSheet, KeyboardAvoidingView, Platform,
-  TouchableOpacity, ActivityIndicator, Alert, ScrollView,
+  TouchableOpacity, ActivityIndicator, Alert, ScrollView, Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { COLORS, FONT, TYPE, SPACING, RADIUS } from '../../theme';
 import { PrimaryButton } from '../../components/Atoms';
 import { useAuth } from '../../auth/AuthContext';
 
+// Marketing website URL. Used for the "Back to home" link on the web build —
+// when found.community is properly attached, swap this over.
+const MARKETING_URL = 'https://sweet-capybara-3e213a.netlify.app/';
+
 export default function SignInScreen({ navigation }) {
   const { signInWithPassword, signInWithMagicLink } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
+  const [errorMsg, setErrorMsg] = useState(null);
+  const [infoMsg, setInfoMsg]   = useState(null);
+
+  // Map Supabase auth errors to plain-English copy users can act on.
+  function friendlySignInError(raw) {
+    const msg = (raw || '').toLowerCase();
+    if (msg.includes('invalid login credentials')) {
+      return 'No account found with that email and password. Double-check, or create an account below.';
+    }
+    if (msg.includes('email not confirmed')) {
+      return "You haven't confirmed your email yet. Check your inbox for the confirmation link.";
+    }
+    if (msg.includes('rate limit') || msg.includes('too many')) {
+      return 'Too many attempts. Wait a minute and try again.';
+    }
+    return raw || 'Sign in failed. Try again.';
+  }
 
   async function handleSignIn() {
-    if (!email || !password) return Alert.alert('Enter your email and password');
+    setErrorMsg(null);
+    setInfoMsg(null);
+    if (!email || !password) {
+      setErrorMsg('Enter your email and password.');
+      return;
+    }
     setBusy(true);
     try {
       await signInWithPassword({ email: email.trim().toLowerCase(), password });
     } catch (e) {
-      Alert.alert('Sign in failed', e.message);
+      setErrorMsg(friendlySignInError(e?.message));
     } finally {
       setBusy(false);
     }
   }
 
+  // Back-to-landing handler:
+  //   Web   → marketing site (the app's web build isn't the marketing site)
+  //   Native → previous screen in the auth stack (Splash)
+  function handleBack() {
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined') window.location.href = MARKETING_URL;
+      return;
+    }
+    if (navigation.canGoBack()) navigation.goBack();
+    else navigation.navigate('Splash');
+  }
+
   async function handleMagicLink() {
-    if (!email) return Alert.alert('Enter your email first');
+    setErrorMsg(null);
+    setInfoMsg(null);
+    if (!email) {
+      setErrorMsg('Enter your email first.');
+      return;
+    }
     setBusy(true);
     try {
       await signInWithMagicLink({ email: email.trim().toLowerCase() });
-      Alert.alert('Check your inbox', 'We sent you a sign-in link.');
+      setInfoMsg('Check your inbox — we sent you a sign-in link.');
     } catch (e) {
-      Alert.alert('Could not send link', e.message);
+      setErrorMsg(e?.message || 'Could not send link. Try again.');
     } finally {
       setBusy(false);
     }
@@ -43,6 +86,10 @@ export default function SignInScreen({ navigation }) {
     <SafeAreaView style={s.safe} edges={['top']}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
+          <TouchableOpacity onPress={handleBack} style={s.backLink} hitSlop={8}>
+            <Text style={s.backLinkText}>← Back to home</Text>
+          </TouchableOpacity>
+
           <View style={s.header}>
             <Text style={s.overline}>FOUND</Text>
             <Text style={s.title}>Welcome back.</Text>
@@ -71,6 +118,17 @@ export default function SignInScreen({ navigation }) {
               placeholderTextColor={COLORS.textTertiary}
               style={s.input}
             />
+
+            {errorMsg ? (
+              <View style={s.errorBox}>
+                <Text style={s.errorText}>{errorMsg}</Text>
+              </View>
+            ) : null}
+            {infoMsg ? (
+              <View style={s.infoBox}>
+                <Text style={s.infoText}>{infoMsg}</Text>
+              </View>
+            ) : null}
 
             <View style={{ height: SPACING.lg }} />
             {busy ? (
@@ -114,4 +172,28 @@ const s = StyleSheet.create({
   footerText: { ...TYPE.body, color: COLORS.textSecondary },
   link:       { ...TYPE.h3 },
   linkSubtle: { ...TYPE.caption, color: COLORS.textSecondary, textDecorationLine: 'underline' },
+
+  // Inline error / info banners — replaces Alert.alert for auth feedback
+  errorBox: {
+    marginTop: SPACING.md,
+    backgroundColor: '#FBECEC',
+    borderColor: '#E6BBBB',
+    borderWidth: 1,
+    borderRadius: RADIUS.md,
+    padding: SPACING.md,
+  },
+  errorText: { ...TYPE.body, color: '#8A2D2D', fontSize: 14, lineHeight: 20 },
+  infoBox: {
+    marginTop: SPACING.md,
+    backgroundColor: COLORS.sageBg,
+    borderColor: COLORS.sageLight,
+    borderWidth: 1,
+    borderRadius: RADIUS.md,
+    padding: SPACING.md,
+  },
+  infoText: { ...TYPE.body, color: COLORS.sage, fontSize: 14, lineHeight: 20 },
+
+  // Back-to-home link at the top of the screen
+  backLink: { alignSelf: 'flex-start', paddingVertical: 4 },
+  backLinkText: { ...TYPE.body, fontSize: 14, color: COLORS.textSecondary },
 });

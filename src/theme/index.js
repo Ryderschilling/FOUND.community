@@ -10,7 +10,7 @@ export const COLORS = {
   // ── Backgrounds
   bg: '#F7F4EF',
   surface: '#FFFFFF',
-  surfaceAlt: '#F0EBE3',
+  surfaceAlt: '#EFE9E1',          // matches website "sand" tone
 
   // ── Text
   text: '#1A1A1A',
@@ -19,25 +19,25 @@ export const COLORS = {
 
   // ── Borders
   border: '#E8E2DA',
-  borderLight: '#F0EBE3',
+  borderLight: '#EFE9E1',
 
   // ── Primary CTA
   accent: '#1A1A1A',
   accentText: '#FFFFFF',
 
-  // ── Sage (match score, success)
-  sage: '#5A7A4A',
-  sageBg: '#EDF3EA',
-  sageMid: '#A8C49A',
-  sageLight: '#C8DEC0',
+  // ── Sage — pastel-shifted to match website olive (#7a846a)
+  sage: '#7A846A',
+  sageBg: '#EFF1EA',
+  sageMid: '#B5BFA8',
+  sageLight: '#D6DACE',
 
-  // ── Clay / terracotta
-  clay: '#B87155',
-  clayBg: '#FBF0EA',
+  // ── Clay — dusty pink-clay, softer than original terracotta
+  clay: '#C99880',
+  clayBg: '#F7EDE6',
 
-  // ── Gold
-  gold: '#C9994A',
-  goldBg: '#FBF5EA',
+  // ── Gold — honey/sand, less mustard
+  gold: '#D6B57E',
+  goldBg: '#F7F0E2',
 
   // ── Utility
   white: '#FFFFFF',
@@ -49,8 +49,8 @@ export const COLORS = {
   tabInactive: '#C0B8B0',
 
   // Legacy aliases
-  warm: '#B87155',
-  warmBg: '#FBF0EA',
+  warm: '#C99880',
+  warmBg: '#F7EDE6',
 };
 
 // Georgia is built into iOS, macOS, and all major browsers (Expo web).
