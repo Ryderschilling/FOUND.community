@@ -1,16 +1,12 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, StyleSheet, KeyboardAvoidingView, Platform,
-  TouchableOpacity, ActivityIndicator, Alert, ScrollView, Linking,
+  TouchableOpacity, ActivityIndicator, Alert, ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { COLORS, FONT, TYPE, SPACING, RADIUS } from '../../theme';
 import { PrimaryButton } from '../../components/Atoms';
 import { useAuth } from '../../auth/AuthContext';
-
-// Marketing website URL. Used for the "Back to home" link on the web build —
-// when found.community is properly attached, swap this over.
-const MARKETING_URL = 'https://sweet-capybara-3e213a.netlify.app/';
 
 export default function SignInScreen({ navigation }) {
   const { signInWithPassword, signInWithMagicLink } = useAuth();
@@ -52,14 +48,9 @@ export default function SignInScreen({ navigation }) {
     }
   }
 
-  // Back-to-landing handler:
-  //   Web   → marketing site (the app's web build isn't the marketing site)
-  //   Native → previous screen in the auth stack (Splash)
+  // Back to the app's splash (the screen with "Get Started" / "I already have
+  // an account"). Same behavior on web and native.
   function handleBack() {
-    if (Platform.OS === 'web') {
-      if (typeof window !== 'undefined') window.location.href = MARKETING_URL;
-      return;
-    }
     if (navigation.canGoBack()) navigation.goBack();
     else navigation.navigate('Splash');
   }

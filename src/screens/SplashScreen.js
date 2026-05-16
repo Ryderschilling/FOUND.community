@@ -1,36 +1,27 @@
 import React from 'react';
 import { View, Text, StyleSheet, StatusBar, SafeAreaView } from 'react-native';
+import Svg, { Circle, Rect } from 'react-native-svg';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
 import { Wordmark, PrimaryButton, GhostButton } from '../components/Atoms';
 
-// Clean Latin cross — stroke weight matched to Inter Bold
-function CrossIcon({ size = 64, color = COLORS.text }) {
-  const barW = Math.round(size * 0.21);       // thick bars to match Inter Bold stroke weight
-  const hOffset = Math.round(size * 0.27);    // horizontal bar at 27% from top (Latin cross proportion)
-  const hWidth = Math.round(size * 0.68);     // horizontal arm width
+// FOUND mark — F + dot inside a black circle.
+// Same geometry as the website's header SVG (viewBox 0 0 40 40).
+function FoundLogo({ size = 64, color = COLORS.text, bg = COLORS.bg }) {
   return (
-    <View style={{ width: hWidth, height: size }}>
-      {/* Vertical bar */}
-      <View style={{
-        position: 'absolute',
-        left: (hWidth - barW) / 2,
-        top: 0,
-        width: barW,
-        height: size,
-        backgroundColor: color,
-        borderRadius: barW / 2,
-      }} />
-      {/* Horizontal bar */}
-      <View style={{
-        position: 'absolute',
-        left: 0,
-        top: hOffset,
-        width: hWidth,
-        height: barW,
-        backgroundColor: color,
-        borderRadius: barW / 2,
-      }} />
-    </View>
+    <Svg width={size} height={size} viewBox="0 0 40 40">
+      {/* Outer ring */}
+      <Circle cx="20" cy="20" r="20" fill={color} />
+      {/* Inner field */}
+      <Circle cx="20" cy="20" r="17" fill={bg} />
+      {/* F vertical stem */}
+      <Rect x="11" y="8" width="5" height="23" rx="2" fill={color} />
+      {/* F top bar */}
+      <Rect x="11" y="8" width="14" height="5" rx="2" fill={color} />
+      {/* F middle bar */}
+      <Rect x="11" y="17.5" width="10.5" height="4.5" rx="2" fill={color} />
+      {/* Dot */}
+      <Circle cx="27" cy="29.5" r="3" fill={color} />
+    </Svg>
   );
 }
 
@@ -43,7 +34,7 @@ export default function SplashScreen({ navigation }) {
 
       {/* Brand */}
       <View style={styles.brand}>
-        <CrossIcon size={52} color={COLORS.text} />
+        <FoundLogo size={72} color={COLORS.text} bg={COLORS.bg} />
         <Wordmark size="xl" />
         <Text style={styles.tagline}>Find real Christian{'\n'}community near you.</Text>
       </View>

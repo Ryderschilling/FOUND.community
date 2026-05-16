@@ -8,7 +8,6 @@ import { COLORS, FONT, TYPE, SPACING, RADIUS } from '../../theme';
 import { PrimaryButton } from '../../components/Atoms';
 import { useAuth } from '../../auth/AuthContext';
 
-const MARKETING_URL = 'https://sweet-capybara-3e213a.netlify.app/';
 
 export default function SignUpScreen({ navigation }) {
   const { signUpWithPassword } = useAuth();
@@ -33,12 +32,8 @@ export default function SignUpScreen({ navigation }) {
     return raw || 'Sign up failed. Try again.';
   }
 
-  // Web → marketing site. Native → previous screen (Splash or SignIn).
+  // Back to the app's splash. Same behavior on web and native.
   function handleBack() {
-    if (Platform.OS === 'web') {
-      if (typeof window !== 'undefined') window.location.href = MARKETING_URL;
-      return;
-    }
     if (navigation.canGoBack()) navigation.goBack();
     else navigation.navigate('Splash');
   }
