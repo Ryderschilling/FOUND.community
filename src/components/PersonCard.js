@@ -40,6 +40,7 @@ export default function PersonCard({ match, onConnect, onWave, onPress }) {
           initials={match.initials}
           size={52}
           gradientColors={match.avatarColor ?? [COLORS.sage, COLORS.clay]}
+          uri={match.avatarUrl || undefined}
         />
 
         <View style={styles.headerInfo}>

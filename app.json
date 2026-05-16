@@ -13,7 +13,12 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.found.community"
+      "bundleIdentifier": "com.found.community",
+      "infoPlist": {
+        "NSCameraUsageDescription": "FOUND uses your camera so you can take a profile photo.",
+        "NSPhotoLibraryUsageDescription": "FOUND uses your photo library so you can choose a profile photo.",
+        "NSPhotoLibraryAddUsageDescription": "FOUND saves photos you take in the app to your photo library."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -26,7 +31,14 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-font"
+      "expo-font",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "FOUND uses your photo library so you can choose a profile photo.",
+          "cameraPermission": "FOUND uses your camera so you can take a profile photo."
+        }
+      ]
     ]
   }
 }

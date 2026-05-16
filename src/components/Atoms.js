@@ -21,6 +21,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   Platform,
+  Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS, FONT, TYPE, SPACING, RADIUS, SHADOW } from '../theme';
@@ -67,10 +68,32 @@ export function AppBar({ title, subtitle, onBack, right, style }) {
 }
 
 // ─── Avatar ──────────────────────────────────────────────────────
-// gradientColors: [string, string] for gradient, or null for solid bg
-export function Avatar({ initials, size = 48, gradientColors, bgColor, style }) {
+// Priority: uri (real photo) → gradientColors (initials on gradient) → bgColor (initials on solid)
+//   uri:            optional image URL — when present, renders the photo
+//   initials:       fallback letters shown if uri fails/absent
+//   size:           pixel diameter
+//   gradientColors: [start, end] for LinearGradient bg (used when no uri)
+//   bgColor:        solid bg color (used when no uri and no gradient)
+export function Avatar({ initials, size = 48, gradientColors, bgColor, uri, style }) {
   const radius = size / 2;
   const fontSize = size * 0.36;
+
+  if (uri) {
+    return (
+      <Image
+        source={{ uri }}
+        style={[
+          {
+            width: size,
+            height: size,
+            borderRadius: radius,
+            backgroundColor: COLORS.surfaceAlt,
+          },
+          style,
+        ]}
+      />
+    );
+  }
 
   if (gradientColors) {
     return (

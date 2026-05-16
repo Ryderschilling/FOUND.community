@@ -11,12 +11,14 @@ import {
   ActivityIndicator,
   Alert,
   RefreshControl,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
 import { Avatar, Pill, SectionHeader } from '../components/Atoms';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../auth/AuthContext';
+import { pickAndUploadAvatar } from '../lib/uploadAvatar';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 const AVATAR_GRADIENTS = [
@@ -96,6 +98,7 @@ export default function ProfileScreen() {
   const [stats, setStats]         = useState({ matches: null, connections: null, groups: null });
   const [loading, setLoading]     = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   const load = useCallback(async ({ isRefresh } = {}) => {
     if (!user) return;
@@ -105,7 +108,7 @@ export default function ProfileScreen() {
       const profileQ = supabase
         .from('profiles')
         .select(`
-          id, full_name, handle, bio, city, state, is_initiator, is_outgoing,
+          id, full_name, handle, bio, city, state, is_initiator, is_outgoing, avatar_url,
           life_stage:life_stages(id,label,icon,icon_color),
           church:churches(id,name,city,state),
           profile_activities(activity:activities(id,label,icon,icon_color))
@@ -151,18 +154,72 @@ export default function ProfileScreen() {
 
   useEffect(() => { load(); }, [load]);
 
+  // ── Avatar change flow ──────────────────────────────────────────────
+  // Shows an action sheet, picks a photo, uploads to Supabase Storage,
+  // updates profiles.avatar_url, and optimistically updates local state.
+  async function runAvatarUpload(source) {
+    if (uploadingAvatar || !user) return;
+    setUploadingAvatar(true);
+    const { url, error } = await pickAndUploadAvatar({ userId: user.id, source });
+    setUploadingAvatar(false);
+    if (error) {
+      Alert.alert('Could not update photo', error.message || 'Try again.');
+      return;
+    }
+    if (!url) return; // user cancelled — no-op
+    // Optimistic local update (avoids a full reload roundtrip)
+    setProfile((prev) => (prev ? { ...prev, avatar_url: url } : prev));
+  }
+
+  function handleChangeAvatar() {
+    // On web: skip the action sheet (Alert.alert buttons don't fire on web
+    // anyway) and go straight to the library — the browser file picker is
+    // the same experience either way.
+    if (Platform.OS === 'web') {
+      runAvatarUpload('library');
+      return;
+    }
+    Alert.alert(
+      'Update profile photo',
+      undefined,
+      [
+        { text: 'Take photo',          onPress: () => runAvatarUpload('camera')  },
+        { text: 'Choose from library', onPress: () => runAvatarUpload('library') },
+        { text: 'Cancel', style: 'cancel' },
+      ],
+    );
+  }
+
+  // Placeholder for the "Edit" button next to the user's name. Full profile
+  // editing (name, bio, location, interests) is post-MVP — for now we tell the
+  // user where to go. Using window.alert on web because Alert.alert callbacks
+  // don't fire there.
+  function handleEditProfile() {
+    const msg = 'Full profile editing is coming soon. For now, you can update your photo by tapping your avatar.';
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined') window.alert(msg);
+      return;
+    }
+    Alert.alert('Coming soon', msg);
+  }
+
   async function handleSignOut() {
+    const doSignOut = async () => {
+      try { await signOut(); } catch (e) {
+        Alert.alert('Sign out failed', e?.message ?? 'Try again.');
+      }
+    };
+    // React Native Web ignores Alert.alert button callbacks — fall back to
+    // window.confirm so the sign-out actually fires on the Vercel web build.
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.confirm('Sign out?\n\nYou can sign back in anytime.')) {
+        doSignOut();
+      }
+      return;
+    }
     Alert.alert('Sign out?', 'You can sign back in anytime.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Sign out',
-        style: 'destructive',
-        onPress: async () => {
-          try { await signOut(); } catch (e) {
-            Alert.alert('Sign out failed', e?.message ?? 'Try again.');
-          }
-        },
-      },
+      { text: 'Cancel',   style: 'cancel' },
+      { text: 'Sign out', style: 'destructive', onPress: doSignOut },
     ]);
   }
 
@@ -206,7 +263,27 @@ export default function ProfileScreen() {
 
         {/* Hero card */}
         <View style={styles.heroCard}>
-          <Avatar initials={initials} size={68} gradientColors={grad} />
+          <TouchableOpacity
+            onPress={handleChangeAvatar}
+            activeOpacity={0.85}
+            disabled={uploadingAvatar}
+            style={styles.avatarWrap}
+          >
+            <Avatar
+              initials={initials}
+              size={68}
+              gradientColors={grad}
+              uri={profile.avatar_url || undefined}
+            />
+            {/* Camera badge overlay — signals avatar is tappable */}
+            <View style={styles.avatarBadge}>
+              {uploadingAvatar ? (
+                <ActivityIndicator size="small" color={COLORS.white} />
+              ) : (
+                <Ionicons name="camera" size={12} color={COLORS.white} />
+              )}
+            </View>
+          </TouchableOpacity>
           <View style={styles.heroInfo}>
             <Text style={styles.heroName}>{name}</Text>
             <View style={styles.locationRow}>
@@ -214,7 +291,7 @@ export default function ProfileScreen() {
               <Text style={styles.heroLocation}>{locationStr}</Text>
             </View>
           </View>
-          <TouchableOpacity style={styles.editBtn}>
+          <TouchableOpacity style={styles.editBtn} onPress={handleEditProfile}>
             <Text style={styles.editBtnText}>Edit</Text>
           </TouchableOpacity>
         </View>
@@ -256,7 +333,7 @@ export default function ProfileScreen() {
           {/* Interests */}
           {interests.length > 0 ? (
             <View style={styles.section}>
-              <SectionHeader label="Interests" action="Edit" />
+              <SectionHeader label="Interests" action="Edit" onAction={handleEditProfile} />
               <View style={styles.pillsWrap}>
                 {interests.map((i) => (
                   <Pill key={i.id} label={i.label} variant="neutral" />
@@ -285,7 +362,7 @@ export default function ProfileScreen() {
 
           {/* Highlight Reel — UI shell only; photos wiring is next pass */}
           <View style={styles.section}>
-            <SectionHeader label="Your Highlight Reel" action="Edit" />
+            <SectionHeader label="Your Highlight Reel" action="Edit" onAction={handleEditProfile} />
             <HighlightReel photos={[]} />
           </View>
 
@@ -344,6 +421,20 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
     ...SHADOW.sm,
+  },
+  avatarWrap: { position: 'relative' },
+  avatarBadge: {
+    position: 'absolute',
+    right: -2,
+    bottom: -2,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: COLORS.text,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: COLORS.surface,
   },
   heroInfo: { flex: 1, gap: 3 },
   heroName: { fontFamily: FONT.serifItalic, fontSize: 20, color: COLORS.text },

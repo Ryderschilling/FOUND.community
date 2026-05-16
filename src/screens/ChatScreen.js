@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,51 +10,179 @@ import {
   Platform,
   StatusBar,
   SafeAreaView,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
 import { Avatar } from '../components/Atoms';
+import { supabase } from '../lib/supabase';
+import { useAuth } from '../auth/AuthContext';
 
-const SEED_MESSAGES = [
-  { id: '1', text: 'Hey! Great to connect 👋', sender: 'them', time: '10:22 AM' },
-  { id: '2', text: 'You too! I noticed you go to Seaside — I\'ve been there a couple times.', sender: 'me', time: '10:23 AM' },
-  { id: '3', text: 'Oh awesome! We have a young adults group on Thursdays if you\'re ever interested.', sender: 'them', time: '10:24 AM' },
-  { id: '4', text: 'That sounds great, I\'ve been looking for something like that.', sender: 'me', time: '10:25 AM' },
+// ─── Helpers ──────────────────────────────────────────────────────────────
+const AVATAR_GRADIENTS = [
+  ['#4A6FA5', '#2D4E8A'],
+  ['#5A8A6A', '#3D6B55'],
+  ['#C0795A', '#A0593A'],
+  ['#7A5AA8', '#5A3A88'],
+  ['#A8793A', '#886020'],
+  ['#5A7A4A', '#3D6B3E'],
+  ['#4A8A6A', '#2D6B55'],
+  ['#7A846A', '#5A6450'],
 ];
 
-function Bubble({ message }) {
-  const isMe = message.sender === 'me';
+function gradientFor(id) {
+  if (!id) return AVATAR_GRADIENTS[0];
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
+  return AVATAR_GRADIENTS[Math.abs(h) % AVATAR_GRADIENTS.length];
+}
+
+function initialsFor(name) {
+  if (!name) return '··';
+  const parts = name.trim().split(/\s+/);
+  const a = parts[0]?.[0] ?? '';
+  const b = parts.length > 1 ? parts[parts.length - 1][0] : '';
+  return (a + b).toUpperCase() || '··';
+}
+
+function formatTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function Bubble({ message, mine }) {
   return (
-    <View style={[styles.bubbleWrap, isMe ? styles.bubbleWrapMe : styles.bubbleWrapThem]}>
-      <View style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleThem]}>
-        <Text style={[styles.bubbleText, isMe ? styles.bubbleTextMe : styles.bubbleTextThem]}>
-          {message.text}
+    <View style={[styles.bubbleWrap, mine ? styles.bubbleWrapMe : styles.bubbleWrapThem]}>
+      <View style={[styles.bubble, mine ? styles.bubbleMe : styles.bubbleThem]}>
+        <Text style={[styles.bubbleText, mine ? styles.bubbleTextMe : styles.bubbleTextThem]}>
+          {message.body}
         </Text>
       </View>
-      <Text style={styles.bubbleTime}>{message.time}</Text>
+      <Text style={styles.bubbleTime}>{formatTime(message.created_at)}</Text>
     </View>
   );
 }
 
+// ─── Screen ───────────────────────────────────────────────────────────────
 export default function ChatScreen({ route, navigation }) {
-  const thread = route?.params?.thread ?? { name: 'Sarah M.', initials: 'SM', avatarColor: ['#7B9E6B', '#B87155'] };
-  const [messages, setMessages] = useState(SEED_MESSAGES);
-  const [input, setInput] = useState('');
+  const { user } = useAuth();
+  const params = route?.params ?? {};
+
+  // Accept either { thread_id, other: {id, name, ...} } or the older { thread: {...} }
+  const threadId = params.thread_id ?? params.threadId ?? null;
+  const other = params.other ?? params.thread ?? null;
+
+  const otherName     = other?.name || other?.full_name || 'Friend';
+  const otherInitials = other?.initials || initialsFor(otherName);
+  const otherGradient = other?.avatarColor || gradientFor(other?.id || other?.profile_id || otherName);
+
+  const [messages, setMessages] = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [input, setInput]       = useState('');
+  const [sending, setSending]   = useState(false);
   const listRef = useRef(null);
 
-  const handleSend = () => {
-    const text = input.trim();
-    if (!text) return;
-    const newMsg = {
-      id: Date.now().toString(),
-      text,
-      sender: 'me',
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+  // Mark current thread as read for me
+  const markRead = useCallback(async () => {
+    if (!user || !threadId) return;
+    await supabase
+      .from('thread_participants')
+      .update({ last_read_at: new Date().toISOString() })
+      .eq('thread_id', threadId)
+      .eq('profile_id', user.id);
+  }, [user, threadId]);
+
+  // Initial fetch
+  useEffect(() => {
+    if (!threadId) {
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('id, thread_id, sender_id, body, created_at')
+        .eq('thread_id', threadId)
+        .order('created_at', { ascending: true })
+        .limit(200);
+      if (cancelled) return;
+      if (error) {
+        console.warn('[chat] fetch failed', error.message);
+      } else {
+        setMessages(data ?? []);
+      }
+      setLoading(false);
+      markRead();
+    })();
+    return () => { cancelled = true; };
+  }, [threadId, markRead]);
+
+  // Realtime subscription — append new messages as they arrive
+  useEffect(() => {
+    if (!threadId) return;
+    const channel = supabase
+      .channel(`thread:${threadId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `thread_id=eq.${threadId}`,
+        },
+        (payload) => {
+          const m = payload.new;
+          setMessages((prev) => {
+            // Replace optimistic temp message if it's our own send echoing back
+            const withoutOptimistic = prev.filter(
+              (x) => !(x._optimistic && x.body === m.body && x.sender_id === m.sender_id)
+            );
+            // De-dupe if already present
+            if (withoutOptimistic.some((x) => x.id === m.id)) return withoutOptimistic;
+            return [...withoutOptimistic, m];
+          });
+          // If incoming was from the other person, mark read
+          if (user && m.sender_id !== user.id) markRead();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
     };
-    setMessages((prev) => [...prev, newMsg]);
+  }, [threadId, user, markRead]);
+
+  async function handleSend() {
+    const body = input.trim();
+    if (!body || !threadId || !user || sending) return;
+    setSending(true);
+    // Optimistic insert
+    const tempId = `tmp-${Date.now()}`;
+    const optimistic = {
+      id: tempId,
+      thread_id: threadId,
+      sender_id: user.id,
+      body,
+      created_at: new Date().toISOString(),
+      _optimistic: true,
+    };
+    setMessages((prev) => [...prev, optimistic]);
     setInput('');
-    setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
-  };
+
+    const { error } = await supabase
+      .from('messages')
+      .insert({ thread_id: threadId, sender_id: user.id, body });
+    if (error) {
+      // Roll back optimistic + warn
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      setInput(body);
+      Alert.alert('Could not send', error.message);
+    }
+    setSending(false);
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -68,12 +196,12 @@ export default function ChatScreen({ route, navigation }) {
 
         <View style={styles.navCenter}>
           <Avatar
-            initials={thread.initials}
+            initials={otherInitials}
             size={34}
-            gradientColors={thread.avatarColor ?? [COLORS.sage, COLORS.clay]}
+            gradientColors={otherGradient}
           />
           <View>
-            <Text style={styles.navName}>{thread.name}</Text>
+            <Text style={styles.navName}>{otherName}</Text>
             <Text style={styles.navStatus}>Connected via FOUND</Text>
           </View>
         </View>
@@ -83,19 +211,34 @@ export default function ChatScreen({ route, navigation }) {
         </TouchableOpacity>
       </View>
 
-      {/* Rule */}
       <View style={styles.navRule} />
 
       {/* Message list */}
-      <FlatList
-        ref={listRef}
-        data={messages}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => <Bubble message={item} />}
-        contentContainerStyle={styles.messageList}
-        showsVerticalScrollIndicator={false}
-        onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
-      />
+      {loading ? (
+        <View style={styles.centered}>
+          <ActivityIndicator color={COLORS.textTertiary} />
+        </View>
+      ) : messages.length === 0 ? (
+        <View style={styles.emptyWrap}>
+          <Ionicons name="chatbubble-outline" size={28} color={COLORS.textTertiary} />
+          <Text style={styles.emptyTitle}>Say hi.</Text>
+          <Text style={styles.emptyBody}>
+            Open with what you have in common — life stage, an interest, your church.
+          </Text>
+        </View>
+      ) : (
+        <FlatList
+          ref={listRef}
+          data={messages}
+          keyExtractor={(item) => String(item.id)}
+          renderItem={({ item }) => (
+            <Bubble message={item} mine={user && item.sender_id === user.id} />
+          )}
+          contentContainerStyle={styles.messageList}
+          showsVerticalScrollIndicator={false}
+          onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
+        />
+      )}
 
       {/* Composer */}
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -108,14 +251,19 @@ export default function ChatScreen({ route, navigation }) {
             placeholderTextColor={COLORS.textTertiary}
             multiline
             returnKeyType="default"
+            editable={!!threadId && !sending}
           />
           <TouchableOpacity
-            style={[styles.sendBtn, !input.trim() && styles.sendBtnDisabled]}
+            style={[styles.sendBtn, (!input.trim() || !threadId || sending) && styles.sendBtnDisabled]}
             onPress={handleSend}
-            disabled={!input.trim()}
+            disabled={!input.trim() || !threadId || sending}
             activeOpacity={0.8}
           >
-            <Ionicons name="arrow-up" size={18} color={input.trim() ? COLORS.white : COLORS.textTertiary} />
+            <Ionicons
+              name="arrow-up"
+              size={18}
+              color={input.trim() && threadId && !sending ? COLORS.white : COLORS.textTertiary}
+            />
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -125,6 +273,7 @@ export default function ChatScreen({ route, navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
   nav: {
     flexDirection: 'row',
@@ -159,6 +308,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   navRule: { height: 1, backgroundColor: COLORS.borderLight, marginHorizontal: SPACING.lg },
+
+  emptyWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: SPACING.xl },
+  emptyTitle: { fontFamily: FONT.serifItalic, fontSize: 22, color: COLORS.text, marginTop: 4 },
+  emptyBody: { fontFamily: FONT.regular, fontSize: 14, color: COLORS.textSecondary, textAlign: 'center', lineHeight: 20 },
 
   messageList: {
     paddingHorizontal: SPACING.lg,

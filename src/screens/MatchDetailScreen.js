@@ -8,16 +8,57 @@ import {
   StatusBar,
   SafeAreaView,
   Image,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
 import { Avatar, Pill, SectionHeader, RuleLabel } from '../components/Atoms';
 import ScoreRing from '../components/ScoreRing';
+import { supabase } from '../lib/supabase';
+import { useAuth } from '../auth/AuthContext';
 
 export default function MatchDetailScreen({ route, navigation }) {
+  const { user } = useAuth();
   const match = route?.params?.match ?? FALLBACK_MATCH;
   const [connected, setConnected] = useState(match.connected ?? false);
   const [waved, setWaved] = useState(false);
+  const [openingChat, setOpeningChat] = useState(false);
+
+  async function handleConnect() {
+    if (connected || !user || !match.id) return;
+    setConnected(true); // optimistic
+    const { error } = await supabase
+      .from('connections')
+      .upsert(
+        { from_profile: user.id, to_profile: match.id, kind: 'like' },
+        { onConflict: 'from_profile,to_profile,kind', ignoreDuplicates: true }
+      );
+    if (error) console.warn('[match] connect failed', error.message);
+  }
+
+  async function handleOpenChat() {
+    if (openingChat || !user || !match.id) return;
+    setOpeningChat(true);
+    try {
+      const { data: threadId, error } = await supabase
+        .rpc('start_direct_thread', { p_other: match.id });
+      if (error) throw error;
+      navigation.navigate('Chat', {
+        thread_id: threadId,
+        other: {
+          id:          match.id,
+          name:        match.name,
+          initials:    match.initials,
+          avatarColor: match.avatarColor,
+        },
+      });
+    } catch (e) {
+      Alert.alert('Could not open chat', e?.message ?? 'Try again.');
+    } finally {
+      setOpeningChat(false);
+    }
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -38,6 +79,7 @@ export default function MatchDetailScreen({ route, navigation }) {
             initials={match.initials}
             size={96}
             gradientColors={match.avatarColor ?? [COLORS.sage, COLORS.clay]}
+            uri={match.avatarUrl || undefined}
             style={styles.avatar}
           />
 
@@ -123,7 +165,7 @@ export default function MatchDetailScreen({ route, navigation }) {
         {/* Connect */}
         <TouchableOpacity
           style={[styles.btnConnect, connected && styles.btnConnectDone]}
-          onPress={() => setConnected(true)}
+          onPress={handleConnect}
           disabled={connected}
           activeOpacity={0.85}
         >
@@ -135,10 +177,15 @@ export default function MatchDetailScreen({ route, navigation }) {
         {/* Message */}
         <TouchableOpacity
           style={styles.btnMessage}
-          onPress={() => navigation.navigate('Chat', { thread: { name: match.name, initials: match.initials, avatarColor: match.avatarColor } })}
+          onPress={handleOpenChat}
+          disabled={openingChat}
           activeOpacity={0.8}
         >
-          <Ionicons name="chatbubble-outline" size={20} color={COLORS.text} />
+          {openingChat ? (
+            <ActivityIndicator color={COLORS.text} size="small" />
+          ) : (
+            <Ionicons name="chatbubble-outline" size={20} color={COLORS.text} />
+          )}
         </TouchableOpacity>
       </View>
     </SafeAreaView>

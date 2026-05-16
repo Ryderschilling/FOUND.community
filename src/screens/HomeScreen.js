@@ -72,6 +72,7 @@ function rowToMatch(row) {
     id:          row.profile_id,
     name:        row.full_name || row.handle || 'Someone',
     initials:    initialsFor(row.full_name || row.handle),
+    avatarUrl:   row.avatar_url || null,
     avatarColor: gradientFor(row.profile_id),
     matchScore:  row.score ?? 0,
     lifeStage:   row.life_stage_label || '',

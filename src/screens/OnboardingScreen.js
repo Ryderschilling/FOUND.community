@@ -11,6 +11,7 @@ import {
   Pressable,
   Alert,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
@@ -315,7 +316,38 @@ function StepMatchReveal({ onFinish, busy }) {
 
 // ─── Main screen ─────────────────────────────────────────────────────────────
 export default function OnboardingScreen({ navigation }) {
-  const { refreshProfile } = useAuth();
+  const { refreshProfile, signOut } = useAuth();
+
+  // Cross-platform confirm:
+  // - Web: Alert.alert renders as window.alert() and ignores the buttons array,
+  //   so the user can never confirm. Use window.confirm() instead.
+  // - Native: keep the native Alert.alert UX.
+  function confirmThen(title, message, onConfirm) {
+    if (Platform.OS === 'web') {
+      // eslint-disable-next-line no-alert
+      if (typeof window !== 'undefined' && window.confirm(`${title}\n\n${message ?? ''}`.trim())) {
+        onConfirm();
+      }
+      return;
+    }
+    Alert.alert(title, message, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Sign out', style: 'destructive', onPress: onConfirm },
+    ]);
+  }
+
+  async function doSignOut() {
+    try { await signOut(); } catch (e) {
+      Alert.alert('Sign out failed', e?.message ?? 'Try again.');
+    }
+  }
+
+  // Lets the user bail out of onboarding back to the auth screens.
+  // Persisted Supabase session means re-opening the app drops you straight into
+  // onboarding (because onboarding_complete is still false). This is the escape hatch.
+  function handleSignOut() {
+    confirmThen('Sign out?', 'You can finish your profile later.', doSignOut);
+  }
 
   const [step, setStep]                     = useState(1);
   const [lifeStage, setLifeStage]           = useState(null);
@@ -386,8 +418,16 @@ export default function OnboardingScreen({ navigation }) {
   };
 
   const handleBack = () => {
-    if (step > 1) setStep((s) => s - 1);
-    else navigation.goBack();
+    // Steps 2+: previous step.
+    // Step 1: "back" means out of onboarding — but since Onboarding is the only
+    // screen mounted in AppStack (we conditionally render it based on
+    // needsOnboarding), there's nothing to go back to. So treat back-from-step-1
+    // as a sign-out — drops user back to AuthStack (Splash → SignIn).
+    if (step > 1) {
+      setStep((s) => s - 1);
+    } else {
+      handleSignOut();
+    }
   };
 
   // Submit: write profile to Supabase via the complete_onboarding RPC.
@@ -413,7 +453,10 @@ export default function OnboardingScreen({ navigation }) {
       });
       if (error) throw error;
       await refreshProfile();
-      // No navigation.replace needed — AppNavigator swaps stacks on onboarding_complete.
+      // AppNavigator swaps from Onboarding → Main when onboarding_complete flips.
+      // Reset busy defensively so the button isn't stuck if the swap is delayed
+      // (e.g. slow network, double-tap, profile cache).
+      setBusy(false);
     } catch (e) {
       Alert.alert('Could not save your profile', e?.message ?? 'Unknown error. Try again.');
       setBusy(false);
@@ -430,7 +473,9 @@ export default function OnboardingScreen({ navigation }) {
           <Text style={styles.backArrow}>←</Text>
         </TouchableOpacity>
         <Text style={styles.stepCounter}>{step} / {totalSteps}</Text>
-        <View style={{ width: 40 }} />
+        <TouchableOpacity onPress={handleSignOut} style={styles.signOutBtn} hitSlop={8}>
+          <Text style={styles.signOutText}>Sign out</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Progress bar */}
@@ -525,6 +570,18 @@ const styles = StyleSheet.create({
     fontSize: 11,
     letterSpacing: 1,
     color: COLORS.textTertiary,
+  },
+  signOutBtn: {
+    height: 40,
+    paddingHorizontal: 4,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    minWidth: 40,
+  },
+  signOutText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 13,
+    color: COLORS.textSecondary,
   },
 
   progressTrack: {

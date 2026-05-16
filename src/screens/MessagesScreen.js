@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,48 +7,133 @@ import {
   TouchableOpacity,
   StatusBar,
   SafeAreaView,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS } from '../theme';
 import { Avatar, IconButton } from '../components/Atoms';
-import { MESSAGES } from '../data/mock';
+import { supabase } from '../lib/supabase';
+import { useAuth } from '../auth/AuthContext';
 
+// ─── Helpers ──────────────────────────────────────────────────────────────
+const AVATAR_GRADIENTS = [
+  ['#4A6FA5', '#2D4E8A'],
+  ['#5A8A6A', '#3D6B55'],
+  ['#C0795A', '#A0593A'],
+  ['#7A5AA8', '#5A3A88'],
+  ['#A8793A', '#886020'],
+  ['#5A7A4A', '#3D6B3E'],
+  ['#4A8A6A', '#2D6B55'],
+  ['#7A846A', '#5A6450'],
+];
+
+function gradientFor(id) {
+  if (!id) return AVATAR_GRADIENTS[0];
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
+  return AVATAR_GRADIENTS[Math.abs(h) % AVATAR_GRADIENTS.length];
+}
+
+function initialsFor(name) {
+  if (!name) return '··';
+  const parts = name.trim().split(/\s+/);
+  const a = parts[0]?.[0] ?? '';
+  const b = parts.length > 1 ? parts[parts.length - 1][0] : '';
+  return (a + b).toUpperCase() || '··';
+}
+
+function relativeTime(iso) {
+  if (!iso) return '';
+  const now = Date.now();
+  const t   = new Date(iso).getTime();
+  const s   = Math.max(0, Math.floor((now - t) / 1000));
+  if (s < 60)        return `${s}s`;
+  if (s < 3600)      return `${Math.floor(s / 60)}m`;
+  if (s < 86400)     return `${Math.floor(s / 3600)}h`;
+  if (s < 7 * 86400) return `${Math.floor(s / 86400)}d`;
+  return new Date(iso).toLocaleDateString();
+}
+
+// ─── Row component ────────────────────────────────────────────────────────
 function MessageRow({ item, onPress }) {
+  const isGroup = item.kind === 'group';
+  const name    = item.other_full_name || item.other_handle || 'Conversation';
+  const preview = item.last_message_body || (item.kind === 'group' ? 'Group thread' : 'Say hi to start the conversation');
   return (
     <TouchableOpacity style={styles.row} onPress={onPress} activeOpacity={0.7}>
       <View style={styles.avatarWrap}>
-        {item.isGroup ? (
+        {isGroup ? (
           <View style={styles.groupAvatar}>
-            <Ionicons name={item.groupIcon ?? 'people-outline'} size={22} color={COLORS.textSecondary} />
+            <Ionicons name="people-outline" size={22} color={COLORS.textSecondary} />
           </View>
         ) : (
           <Avatar
-            initials={item.initials}
+            initials={initialsFor(name)}
             size={50}
-            gradientColors={item.avatarColor ?? [COLORS.sage, COLORS.clay]}
+            gradientColors={gradientFor(item.other_profile_id || name)}
           />
         )}
-        {item.online && <View style={styles.onlineDot} />}
       </View>
 
       <View style={styles.info}>
-        <Text style={styles.name}>{item.name}</Text>
-        <Text style={styles.preview} numberOfLines={1}>{item.preview}</Text>
+        <Text style={styles.name}>{name}</Text>
+        <Text style={styles.preview} numberOfLines={1}>{preview}</Text>
       </View>
 
       <View style={styles.right}>
-        <Text style={styles.time}>{item.time}</Text>
-        {item.unread > 0 && (
+        <Text style={styles.time}>{relativeTime(item.last_message_at)}</Text>
+        {item.unread_count > 0 ? (
           <View style={styles.badge}>
-            <Text style={styles.badgeText}>{item.unread}</Text>
+            <Text style={styles.badgeText}>{item.unread_count}</Text>
           </View>
-        )}
+        ) : null}
       </View>
     </TouchableOpacity>
   );
 }
 
+// ─── Screen ───────────────────────────────────────────────────────────────
 export default function MessagesScreen({ navigation }) {
+  const { user } = useAuth();
+  const [threads, setThreads]       = useState([]);
+  const [loading, setLoading]       = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const load = useCallback(async ({ isRefresh } = {}) => {
+    if (isRefresh) setRefreshing(true); else setLoading(true);
+    try {
+      const { data, error } = await supabase.rpc('my_threads_detailed');
+      if (error) throw error;
+      setThreads(data ?? []);
+    } catch (e) {
+      console.warn('[messages] load failed', e?.message);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  // Refresh whenever the screen is focused (e.g. after coming back from Chat)
+  useEffect(() => {
+    const unsub = navigation?.addListener?.('focus', () => load({ isRefresh: true }));
+    return unsub;
+  }, [navigation, load]);
+
+  function openThread(item) {
+    navigation?.navigate('Chat', {
+      thread_id: item.thread_id,
+      other: {
+        id:        item.other_profile_id,
+        name:      item.other_full_name,
+        initials:  initialsFor(item.other_full_name || item.other_handle),
+        avatarColor: gradientFor(item.other_profile_id || item.other_full_name),
+      },
+    });
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
@@ -63,37 +148,43 @@ export default function MessagesScreen({ navigation }) {
         </IconButton>
       </View>
 
-      {/* Search bar */}
-      <View style={styles.searchBar}>
-        <Ionicons name="search-outline" size={15} color={COLORS.textTertiary} />
-        <Text style={styles.searchPlaceholder}>Search conversations...</Text>
-      </View>
-
-      {/* Connection request banner */}
-      <View style={styles.requestBanner}>
-        <Text style={styles.requestText}>✦  2 new connection requests</Text>
-        <TouchableOpacity><Text style={styles.requestCta}>View →</Text></TouchableOpacity>
-      </View>
-
-      <FlatList
-        data={MESSAGES}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <MessageRow
-            item={item}
-            onPress={() => navigation?.navigate('Chat', { thread: item })}
-          />
-        )}
-        ItemSeparatorComponent={() => <View style={styles.separator} />}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 110 }}
-      />
+      {loading ? (
+        <View style={styles.centered}>
+          <ActivityIndicator color={COLORS.textTertiary} />
+        </View>
+      ) : (
+        <FlatList
+          data={threads}
+          keyExtractor={(item) => item.thread_id}
+          renderItem={({ item }) => <MessageRow item={item} onPress={() => openThread(item)} />}
+          ItemSeparatorComponent={() => <View style={styles.separator} />}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: 110 }}
+          ListEmptyComponent={
+            <View style={styles.emptyWrap}>
+              <Ionicons name="chatbubbles-outline" size={28} color={COLORS.textTertiary} />
+              <Text style={styles.emptyTitle}>No conversations yet</Text>
+              <Text style={styles.emptyBody}>
+                Tap a match in Discover, then "Send Message" to start one.
+              </Text>
+            </View>
+          }
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => load({ isRefresh: true })}
+              tintColor={COLORS.textTertiary}
+            />
+          }
+        />
+      )}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
   header: {
     flexDirection: 'row',
@@ -118,41 +209,6 @@ const styles = StyleSheet.create({
     letterSpacing: -0.3,
   },
 
-  searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.sm,
-    marginHorizontal: SPACING.lg,
-    marginBottom: SPACING.sm,
-    backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.lg,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: 11,
-  },
-  searchPlaceholder: {
-    fontFamily: FONT.regular,
-    fontSize: 15,
-    color: COLORS.textTertiary,
-  },
-
-  requestBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginHorizontal: SPACING.lg,
-    marginBottom: SPACING.md,
-    backgroundColor: COLORS.sageBg,
-    borderRadius: RADIUS.lg,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: 11,
-    borderWidth: 1,
-    borderColor: COLORS.sageLight,
-  },
-  requestText: { fontFamily: FONT.semiBold, fontSize: 13, color: COLORS.sage },
-  requestCta:  { fontFamily: FONT.bold,     fontSize: 13, color: COLORS.sage },
-
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -171,17 +227,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  onlineDot: {
-    position: 'absolute',
-    bottom: 1,
-    right: 1,
-    width: 12,
-    height: 12,
-    borderRadius: RADIUS.full,
-    backgroundColor: '#4CAF50',
-    borderWidth: 2,
-    borderColor: COLORS.bg,
-  },
   info: { flex: 1, gap: 3, minWidth: 0 },
   name:    { fontFamily: FONT.semiBold, fontSize: 15, color: COLORS.text },
   preview: { fontFamily: FONT.regular,  fontSize: 13, color: COLORS.textSecondary },
@@ -190,11 +235,21 @@ const styles = StyleSheet.create({
   badge: {
     backgroundColor: COLORS.accent,
     borderRadius: RADIUS.full,
-    width: 20,
+    minWidth: 20,
     height: 20,
+    paddingHorizontal: 6,
     alignItems: 'center',
     justifyContent: 'center',
   },
   badgeText: { color: COLORS.white, fontSize: 11, fontFamily: FONT.bold },
   separator: { height: 1, backgroundColor: COLORS.borderLight, marginLeft: 78 },
+
+  emptyWrap: {
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: SPACING.xl,
+    paddingVertical: SPACING['2xl'] ?? 48,
+  },
+  emptyTitle: { fontFamily: FONT.serifItalic, fontSize: 22, color: COLORS.text, marginTop: 4 },
+  emptyBody: { fontFamily: FONT.regular, fontSize: 14, color: COLORS.textSecondary, textAlign: 'center', lineHeight: 20 },
 });

@@ -104,16 +104,27 @@ function AuthStack() {
 }
 
 // ── App stack (signed-in users) ────────────────────────────────────
+// Uses React Navigation's conditional-screens pattern: when needsOnboarding
+// flips from true → false (after complete_onboarding RPC), the Onboarding
+// screen unmounts and the Main stack mounts. This forces a clean swap
+// instead of relying on initialRouteName (which is only read once at mount,
+// and was the cause of the post-onboarding freeze).
 function AppStack({ needsOnboarding }) {
   return (
-    <Stack.Navigator
-      initialRouteName={needsOnboarding ? 'Onboarding' : 'Main'}
-      screenOptions={{ headerShown: false, animation: 'fade' }}
-    >
-      <Stack.Screen name="Onboarding"   component={OnboardingScreen}  options={{ animation: 'slide_from_right' }} />
-      <Stack.Screen name="Main"         component={MainTabNavigator}  options={{ animation: 'fade' }} />
-      <Stack.Screen name="MatchDetail"  component={MatchDetailScreen} options={{ animation: 'slide_from_right' }} />
-      <Stack.Screen name="Chat"         component={ChatScreen}        options={{ animation: 'slide_from_right' }} />
+    <Stack.Navigator screenOptions={{ headerShown: false, animation: 'fade' }}>
+      {needsOnboarding ? (
+        <Stack.Screen
+          name="Onboarding"
+          component={OnboardingScreen}
+          options={{ animation: 'slide_from_right' }}
+        />
+      ) : (
+        <>
+          <Stack.Screen name="Main"        component={MainTabNavigator}  options={{ animation: 'fade' }} />
+          <Stack.Screen name="MatchDetail" component={MatchDetailScreen} options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="Chat"        component={ChatScreen}        options={{ animation: 'slide_from_right' }} />
+        </>
+      )}
     </Stack.Navigator>
   );
 }
