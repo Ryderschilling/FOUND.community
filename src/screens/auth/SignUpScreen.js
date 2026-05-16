@@ -137,7 +137,7 @@ export default function SignUpScreen({ navigation }) {
 
           <View style={s.footer}>
             <Text style={s.footerText}>Already have an account?</Text>
-            <TouchableOpacity onPress={() => navigation.goBack()}>
+            <TouchableOpacity onPress={() => navigation.replace('SignIn')}>
               <Text style={s.link}>Sign in</Text>
             </TouchableOpacity>
           </View>

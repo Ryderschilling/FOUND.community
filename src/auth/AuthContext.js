@@ -22,6 +22,10 @@ export function AuthProvider({ children }) {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  // profileLoading is true while we're fetching the user's profile after a
+  // session change. The navigator uses it to avoid flashing the Onboarding
+  // screen for returning users between sign-in and profile fetch.
+  const [profileLoading, setProfileLoading] = useState(false);
 
   // Bootstrap: read any existing session from AsyncStorage
   useEffect(() => {
@@ -41,14 +45,18 @@ export function AuthProvider({ children }) {
     };
   }, []);
 
-  // Whenever user changes, hydrate their profile row
+  // Whenever user changes, hydrate their profile row.
+  // Set profileLoading=true at the start so the navigator can show a spinner
+  // instead of guessing about onboarding state while the fetch is in flight.
   useEffect(() => {
     let cancelled = false;
     async function load() {
       if (!session?.user) {
         setProfile(null);
+        setProfileLoading(false);
         return;
       }
+      setProfileLoading(true);
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
@@ -57,6 +65,7 @@ export function AuthProvider({ children }) {
       if (!cancelled) {
         if (error) console.warn('[auth] profile fetch failed', error.message);
         setProfile(data ?? null);
+        setProfileLoading(false);
       }
     }
     load();
@@ -71,6 +80,7 @@ export function AuthProvider({ children }) {
       user: session?.user ?? null,
       profile,
       loading,
+      profileLoading,
       async signInWithPassword({ email, password }) {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
@@ -94,11 +104,13 @@ export function AuthProvider({ children }) {
       },
       async refreshProfile() {
         if (!session?.user) return;
+        setProfileLoading(true);
         const { data } = await supabase.from('profiles').select('*').eq('id', session.user.id).maybeSingle();
         setProfile(data ?? null);
+        setProfileLoading(false);
       },
     }),
-    [session, profile, loading]
+    [session, profile, loading, profileLoading]
   );
 
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;

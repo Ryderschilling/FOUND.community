@@ -131,9 +131,15 @@ function AppStack({ needsOnboarding }) {
 
 // ── Root: gate on auth ─────────────────────────────────────────────
 export default function AppNavigator() {
-  const { session, profile, loading } = useAuth();
+  const { session, profile, loading, profileLoading } = useAuth();
 
-  if (loading) {
+  // Two wait states:
+  //   loading       — bootstrapping session from AsyncStorage
+  //   profileLoading — we know who the user is, but haven't read their profile
+  //                    row yet (so we don't know if they need onboarding).
+  // Showing a spinner during profileLoading prevents the brief flash of the
+  // Onboarding screen for returning users between sign-in and profile fetch.
+  if (loading || (session && profileLoading)) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.bg }}>
         <ActivityIndicator color={COLORS.text} />
