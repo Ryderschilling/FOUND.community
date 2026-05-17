@@ -9,9 +9,11 @@ import {
   SafeAreaView,
   ActivityIndicator,
   RefreshControl,
+  Modal,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, FONT, SPACING, RADIUS } from '../theme';
+import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
 import { Avatar, IconButton } from '../components/Atoms';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../auth/AuthContext';
@@ -99,6 +101,8 @@ export default function MessagesScreen({ navigation }) {
   const [threads, setThreads]       = useState([]);
   const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [opening, setOpening]       = useState(false);
 
   const load = useCallback(async ({ isRefresh } = {}) => {
     if (isRefresh) setRefreshing(true); else setLoading(true);
@@ -134,6 +138,31 @@ export default function MessagesScreen({ navigation }) {
     });
   }
 
+  // Start a new thread with the contact picked from the compose modal.
+  // start_direct_thread is find-or-create, so re-tapping the same person
+  // just opens the existing thread.
+  async function startThreadWith(contact) {
+    if (opening) return;
+    setOpening(true);
+    const { data: threadId, error } = await supabase
+      .rpc('start_direct_thread', { p_other: contact.profile_id });
+    setOpening(false);
+    if (error) {
+      Alert.alert('Could not open chat', error.message);
+      return;
+    }
+    setComposeOpen(false);
+    navigation?.navigate('Chat', {
+      thread_id: threadId,
+      other: {
+        id:          contact.profile_id,
+        name:        contact.full_name || contact.handle || 'Friend',
+        initials:    initialsFor(contact.full_name || contact.handle),
+        avatarColor: gradientFor(contact.profile_id),
+      },
+    });
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
@@ -143,10 +172,17 @@ export default function MessagesScreen({ navigation }) {
           <Text style={styles.headerMeta}>Inbox</Text>
           <Text style={styles.title}>Messages</Text>
         </View>
-        <IconButton onPress={() => {}}>
+        <IconButton onPress={() => setComposeOpen(true)}>
           <Ionicons name="create-outline" size={18} color={COLORS.text} />
         </IconButton>
       </View>
+
+      <ComposeModal
+        visible={composeOpen}
+        onClose={() => setComposeOpen(false)}
+        onPick={startThreadWith}
+        busy={opening}
+      />
 
       {loading ? (
         <View style={styles.centered}>
@@ -181,6 +217,149 @@ export default function MessagesScreen({ navigation }) {
     </SafeAreaView>
   );
 }
+
+// ─── Compose modal ────────────────────────────────────────────────────────
+// Bottom-sheet listing everyone I can message (people I've connected/waved
+// with, either direction). Tap → start_direct_thread → Chat.
+function ComposeModal({ visible, onClose, onPick, busy }) {
+  const [contacts, setContacts] = useState([]);
+  const [loading, setLoading]   = useState(true);
+
+  useEffect(() => {
+    if (!visible) return;
+    setLoading(true);
+    (async () => {
+      const { data, error } = await supabase.rpc('messageable_contacts');
+      if (error) console.warn('[compose] contacts failed', error.message);
+      setContacts(data ?? []);
+      setLoading(false);
+    })();
+  }, [visible]);
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={modalStyles.backdrop}>
+        <View style={modalStyles.sheet}>
+          <View style={modalStyles.handle} />
+          <View style={modalStyles.headerRow}>
+            <Text style={modalStyles.title}>New Message</Text>
+            <TouchableOpacity onPress={onClose} hitSlop={10}>
+              <Ionicons name="close" size={22} color={COLORS.textSecondary} />
+            </TouchableOpacity>
+          </View>
+
+          {loading ? (
+            <View style={modalStyles.centerPad}>
+              <ActivityIndicator color={COLORS.textTertiary} />
+            </View>
+          ) : contacts.length === 0 ? (
+            <View style={modalStyles.centerPad}>
+              <Ionicons name="people-outline" size={28} color={COLORS.textTertiary} />
+              <Text style={modalStyles.emptyTitle}>No contacts yet</Text>
+              <Text style={modalStyles.emptyBody}>
+                Connect or wave at someone in Discover, then come back here to start a chat.
+              </Text>
+            </View>
+          ) : (
+            <FlatList
+              data={contacts}
+              keyExtractor={(c) => c.profile_id}
+              renderItem={({ item }) => {
+                const name = item.full_name || item.handle || 'Someone';
+                return (
+                  <TouchableOpacity
+                    style={modalStyles.row}
+                    onPress={() => onPick(item)}
+                    disabled={busy}
+                    activeOpacity={0.7}
+                  >
+                    <Avatar
+                      initials={initialsFor(name)}
+                      size={46}
+                      gradientColors={gradientFor(item.profile_id)}
+                      uri={item.avatar_url || undefined}
+                    />
+                    <View style={modalStyles.rowInfo}>
+                      <Text style={modalStyles.rowName}>{name}</Text>
+                      <Text style={modalStyles.rowMeta}>
+                        {[item.life_stage_label, [item.city, item.state].filter(Boolean).join(', ')]
+                          .filter(Boolean).join(' · ')}
+                      </Text>
+                    </View>
+                    {item.is_match ? (
+                      <View style={modalStyles.matchPill}>
+                        <Ionicons name="sparkles" size={10} color={COLORS.sage} />
+                        <Text style={modalStyles.matchText}>Match</Text>
+                      </View>
+                    ) : null}
+                  </TouchableOpacity>
+                );
+              }}
+              ItemSeparatorComponent={() => <View style={modalStyles.sep} />}
+              contentContainerStyle={{ paddingBottom: 24 }}
+            />
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const modalStyles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-end',
+  },
+  sheet: {
+    backgroundColor: COLORS.bg,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingHorizontal: SPACING.lg,
+    paddingTop: SPACING.sm,
+    paddingBottom: SPACING.lg,
+    maxHeight: '85%',
+  },
+  handle: {
+    alignSelf: 'center',
+    width: 40, height: 4,
+    borderRadius: 2,
+    backgroundColor: COLORS.border,
+    marginBottom: SPACING.sm,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: SPACING.sm,
+  },
+  title: { fontFamily: FONT.serifItalic, fontSize: 24, color: COLORS.text },
+
+  centerPad: { alignItems: 'center', padding: SPACING.xl, gap: 8 },
+  emptyTitle: { fontFamily: FONT.serifItalic, fontSize: 18, color: COLORS.text, marginTop: 6 },
+  emptyBody:  { fontFamily: FONT.regular, fontSize: 13, color: COLORS.textSecondary, textAlign: 'center', lineHeight: 18 },
+
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 10,
+  },
+  rowInfo: { flex: 1, gap: 2 },
+  rowName: { fontFamily: FONT.semiBold, fontSize: 15, color: COLORS.text },
+  rowMeta: { fontFamily: FONT.regular, fontSize: 12, color: COLORS.textSecondary },
+  matchPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: COLORS.sageBg,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: RADIUS.full,
+  },
+  matchText: { fontFamily: FONT.semiBold, fontSize: 10, color: COLORS.sage },
+  sep: { height: 1, backgroundColor: COLORS.borderLight, marginLeft: 58 },
+});
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },

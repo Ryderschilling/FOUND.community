@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -17,13 +17,28 @@ import { Avatar, Pill, SectionHeader, RuleLabel } from '../components/Atoms';
 import ScoreRing from '../components/ScoreRing';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../auth/AuthContext';
+import { fetchProfilePhotos } from '../lib/profilePhotos';
 
 export default function MatchDetailScreen({ route, navigation }) {
   const { user } = useAuth();
   const match = route?.params?.match ?? FALLBACK_MATCH;
   const [connected, setConnected] = useState(match.connected ?? false);
-  const [waved, setWaved] = useState(false);
+  const [waved, setWaved] = useState(match.waved ?? false);
   const [openingChat, setOpeningChat] = useState(false);
+  const [photos, setPhotos] = useState([]);
+
+  // Fetch this match's highlight reel
+  useEffect(() => {
+    if (!match?.id) return;
+    let cancelled = false;
+    (async () => {
+      const { photos: rows, error } = await fetchProfilePhotos(match.id);
+      if (cancelled) return;
+      if (error) console.warn('[match] photos fetch failed', error.message);
+      else setPhotos(rows);
+    })();
+    return () => { cancelled = true; };
+  }, [match?.id]);
 
   async function handleConnect() {
     if (connected || !user || !match.id) return;
@@ -35,6 +50,18 @@ export default function MatchDetailScreen({ route, navigation }) {
         { onConflict: 'from_profile,to_profile,kind', ignoreDuplicates: true }
       );
     if (error) console.warn('[match] connect failed', error.message);
+  }
+
+  async function handleWave() {
+    if (waved || !user || !match.id) return;
+    setWaved(true); // optimistic
+    const { error } = await supabase
+      .from('connections')
+      .upsert(
+        { from_profile: user.id, to_profile: match.id, kind: 'wave' },
+        { onConflict: 'from_profile,to_profile,kind', ignoreDuplicates: true }
+      );
+    if (error) console.warn('[match] wave failed', error.message);
   }
 
   async function handleOpenChat() {
@@ -102,12 +129,12 @@ export default function MatchDetailScreen({ route, navigation }) {
         <View style={styles.content}>
 
           {/* Highlight Reel */}
-          {match.photos?.length > 0 && (
+          {photos.length > 0 && (
             <View style={styles.section}>
               <SectionHeader label="Highlight Reel" />
               <View style={styles.reelGrid}>
-                {match.photos.map((uri, i) => (
-                  <Image key={i} source={{ uri }} style={styles.reelImage} />
+                {photos.map((p) => (
+                  <Image key={p.id} source={{ uri: p.url }} style={styles.reelImage} />
                 ))}
               </View>
             </View>
@@ -156,7 +183,8 @@ export default function MatchDetailScreen({ route, navigation }) {
         {/* Wave */}
         <TouchableOpacity
           style={[styles.btnWave, waved && styles.btnWaveDone]}
-          onPress={() => setWaved(true)}
+          onPress={handleWave}
+          disabled={waved}
           activeOpacity={0.8}
         >
           <Ionicons name={waved ? 'checkmark' : 'hand-left-outline'} size={20} color={waved ? COLORS.sage : COLORS.textSecondary} />

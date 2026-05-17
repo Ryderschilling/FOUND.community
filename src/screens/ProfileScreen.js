@@ -19,6 +19,12 @@ import { Avatar, Pill, SectionHeader } from '../components/Atoms';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../auth/AuthContext';
 import { pickAndUploadAvatar } from '../lib/uploadAvatar';
+import {
+  pickAndUploadProfilePhoto,
+  fetchProfilePhotos,
+  deleteProfilePhoto,
+  MAX_PHOTOS,
+} from '../lib/profilePhotos';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 const AVATAR_GRADIENTS = [
@@ -57,23 +63,48 @@ function StatCard({ value, label }) {
   );
 }
 
-const MAX_PHOTOS = 9;
-
-function HighlightReel({ photos = [] }) {
+// HighlightReel — 3x3 grid of profile photos.
+// Empty slots: tap to add a photo (camera / library).
+// Filled slots: tap to delete (with confirm). Long-press not used to keep web parity.
+function HighlightReel({ photos = [], onAdd, onDelete, busyIndex = -1 }) {
   const slots = Array.from({ length: MAX_PHOTOS }, (_, i) => photos[i] ?? null);
   return (
     <View style={styles.reelGrid}>
-      {slots.map((uri, i) => (
-        <TouchableOpacity key={i} style={styles.reelSlot} activeOpacity={0.8}>
-          {uri ? (
-            <Image source={{ uri }} style={styles.reelImage} />
-          ) : (
-            <View style={styles.reelEmpty}>
-              <Ionicons name="add" size={22} color={COLORS.textTertiary} />
+      {slots.map((photo, i) => {
+        const isBusy = busyIndex === i;
+        if (!photo) {
+          return (
+            <TouchableOpacity
+              key={`empty-${i}`}
+              style={styles.reelSlot}
+              activeOpacity={0.8}
+              onPress={onAdd}
+              disabled={isBusy}
+            >
+              <View style={styles.reelEmpty}>
+                {isBusy ? (
+                  <ActivityIndicator size="small" color={COLORS.textSecondary} />
+                ) : (
+                  <Ionicons name="add" size={22} color={COLORS.textTertiary} />
+                )}
+              </View>
+            </TouchableOpacity>
+          );
+        }
+        return (
+          <TouchableOpacity
+            key={photo.id}
+            style={styles.reelSlot}
+            activeOpacity={0.85}
+            onPress={() => onDelete?.(photo, i)}
+          >
+            <Image source={{ uri: photo.url }} style={styles.reelImage} />
+            <View style={styles.reelDeleteBadge}>
+              <Ionicons name="close" size={12} color={COLORS.white} />
             </View>
-          )}
-        </TouchableOpacity>
-      ))}
+          </TouchableOpacity>
+        );
+      })}
     </View>
   );
 }
@@ -91,7 +122,7 @@ function SettingsItem({ iconName, label, onPress, danger }) {
 }
 
 // ─── Main screen ──────────────────────────────────────────────────────────
-export default function ProfileScreen() {
+export default function ProfileScreen({ navigation }) {
   const { user, signOut } = useAuth();
 
   const [profile, setProfile]     = useState(null);
@@ -99,6 +130,8 @@ export default function ProfileScreen() {
   const [loading, setLoading]     = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [photos, setPhotos]       = useState([]);
+  const [photoBusyIdx, setPhotoBusyIdx] = useState(-1);
 
   const load = useCallback(async ({ isRefresh } = {}) => {
     if (!user) return;
@@ -130,11 +163,15 @@ export default function ProfileScreen() {
 
       const matchesQ = supabase.rpc('top_matches_detailed', { p_limit: 99 });
 
-      const [pRes, cRes, gRes, mRes] = await Promise.all([
+      // Highlight reel photos (own profile)
+      const photosQ = fetchProfilePhotos(user.id);
+
+      const [pRes, cRes, gRes, mRes, phRes] = await Promise.all([
         profileQ,
         connectionsQ,
         groupsQ,
         matchesQ,
+        photosQ,
       ]);
 
       if (pRes.error) throw pRes.error;
@@ -144,6 +181,7 @@ export default function ProfileScreen() {
         connections: cRes.error ? null : (cRes.count ?? 0),
         groups:      gRes.error ? null : (gRes.count ?? 0),
       });
+      if (!phRes.error) setPhotos(phRes.photos);
     } catch (e) {
       console.warn('[profile] load failed', e?.message);
     } finally {
@@ -153,6 +191,12 @@ export default function ProfileScreen() {
   }, [user]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Refresh whenever returning to the screen (e.g. after EditProfile save)
+  useEffect(() => {
+    const unsub = navigation?.addListener?.('focus', () => load({ isRefresh: true }));
+    return unsub;
+  }, [navigation, load]);
 
   // ── Avatar change flow ──────────────────────────────────────────────
   // Shows an action sheet, picks a photo, uploads to Supabase Storage,
@@ -190,17 +234,67 @@ export default function ProfileScreen() {
     );
   }
 
-  // Placeholder for the "Edit" button next to the user's name. Full profile
-  // editing (name, bio, location, interests) is post-MVP — for now we tell the
-  // user where to go. Using window.alert on web because Alert.alert callbacks
-  // don't fire there.
-  function handleEditProfile() {
-    const msg = 'Full profile editing is coming soon. For now, you can update your photo by tapping your avatar.';
-    if (Platform.OS === 'web') {
-      if (typeof window !== 'undefined') window.alert(msg);
+  // ── Highlight reel: add ─────────────────────────────────────────────
+  async function runPhotoUpload(source) {
+    if (!user) return;
+    if (photos.length >= MAX_PHOTOS) {
+      Alert.alert('Reel is full', `You can add up to ${MAX_PHOTOS} photos. Delete one to add another.`);
       return;
     }
-    Alert.alert('Coming soon', msg);
+    const slotIdx = photos.length;     // first empty slot
+    setPhotoBusyIdx(slotIdx);
+    const { photo, error } = await pickAndUploadProfilePhoto({ userId: user.id, source });
+    setPhotoBusyIdx(-1);
+    if (error) {
+      Alert.alert('Could not add photo', error.message || 'Try again.');
+      return;
+    }
+    if (!photo) return; // cancelled
+    setPhotos((prev) => [...prev, photo]);
+  }
+
+  function handleAddPhoto() {
+    if (Platform.OS === 'web') {
+      runPhotoUpload('library');
+      return;
+    }
+    Alert.alert(
+      'Add a photo',
+      'Show off something real — a hobby, your people, where you spend time.',
+      [
+        { text: 'Take photo',          onPress: () => runPhotoUpload('camera')  },
+        { text: 'Choose from library', onPress: () => runPhotoUpload('library') },
+        { text: 'Cancel', style: 'cancel' },
+      ],
+    );
+  }
+
+  // ── Highlight reel: delete ──────────────────────────────────────────
+  async function doDelete(photo) {
+    const prev = photos;
+    setPhotos((p) => p.filter((x) => x.id !== photo.id));
+    const { error } = await deleteProfilePhoto(photo.id, photo.storage_path);
+    if (error) {
+      setPhotos(prev); // revert
+      Alert.alert('Could not delete', error.message);
+    }
+  }
+
+  function handleDeletePhoto(photo) {
+    const msg = 'Remove this photo from your highlight reel?';
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.confirm(msg)) doDelete(photo);
+      return;
+    }
+    Alert.alert('Remove photo?', msg, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Remove', style: 'destructive', onPress: () => doDelete(photo) },
+    ]);
+  }
+
+  // Open the dedicated Edit Profile screen.
+  function handleEditProfile() {
+    navigation?.navigate('EditProfile');
   }
 
   async function handleSignOut() {
@@ -360,10 +454,19 @@ export default function ProfileScreen() {
             </View>
           ) : null}
 
-          {/* Highlight Reel — UI shell only; photos wiring is next pass */}
+          {/* Highlight Reel — tap empty to add, tap filled to remove */}
           <View style={styles.section}>
-            <SectionHeader label="Your Highlight Reel" action="Edit" onAction={handleEditProfile} />
-            <HighlightReel photos={[]} />
+            <SectionHeader
+              label={`Your Highlight Reel  ·  ${photos.length}/${MAX_PHOTOS}`}
+              action={photos.length < MAX_PHOTOS ? 'Add' : undefined}
+              onAction={photos.length < MAX_PHOTOS ? handleAddPhoto : undefined}
+            />
+            <HighlightReel
+              photos={photos}
+              onAdd={handleAddPhoto}
+              onDelete={handleDeletePhoto}
+              busyIndex={photoBusyIdx}
+            />
           </View>
 
           {/* Settings */}
@@ -555,6 +658,17 @@ const styles = StyleSheet.create({
   reelImage: {
     width: '100%',
     height: '100%',
+  },
+  reelDeleteBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   reelEmpty: {
     width: '100%',

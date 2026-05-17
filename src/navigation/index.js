@@ -19,6 +19,7 @@ import MatchDetailScreen  from '../screens/MatchDetailScreen';
 import ChatScreen         from '../screens/ChatScreen';
 import SignInScreen       from '../screens/auth/SignInScreen';
 import SignUpScreen       from '../screens/auth/SignUpScreen';
+import EditProfileScreen  from '../screens/EditProfileScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab   = createBottomTabNavigator();
@@ -123,6 +124,7 @@ function AppStack({ needsOnboarding }) {
           <Stack.Screen name="Main"        component={MainTabNavigator}  options={{ animation: 'fade' }} />
           <Stack.Screen name="MatchDetail" component={MatchDetailScreen} options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="Chat"        component={ChatScreen}        options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="EditProfile" component={EditProfileScreen} options={{ animation: 'slide_from_right' }} />
         </>
       )}
     </Stack.Navigator>
@@ -137,9 +139,12 @@ export default function AppNavigator() {
   //   loading       — bootstrapping session from AsyncStorage
   //   profileLoading — we know who the user is, but haven't read their profile
   //                    row yet (so we don't know if they need onboarding).
-  // Showing a spinner during profileLoading prevents the brief flash of the
-  // Onboarding screen for returning users between sign-in and profile fetch.
-  if (loading || (session && profileLoading)) {
+  // CRITICAL: only show the spinner when we have NO profile yet. If we already
+  // have a profile and are just refetching (e.g. after EditProfile save),
+  // returning a different element here unmounts the entire NavigationContainer
+  // and resets the user back to the first tab. The first-load gate is the
+  // `!profile` guard.
+  if (loading || (session && profileLoading && !profile)) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.bg }}>
         <ActivityIndicator color={COLORS.text} />

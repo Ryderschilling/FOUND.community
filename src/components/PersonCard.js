@@ -14,26 +14,46 @@ import ScoreRing from './ScoreRing';
 /**
  * PersonCard — match card in the Discover feed
  * Props:
- *   match        { id, name, initials, avatarColor, matchScore, lifeStage, distance, church, interests }
- *   onConnect    () => void
- *   onWave       () => void
- *   onPress      () => void
+ *   match {
+ *     id, name, initials, avatarColor, matchScore, lifeStage, distance, church, interests,
+ *     connected,        // my_kind === 'like'
+ *     waved,            // my_kind === 'wave'
+ *     theirKind,        // 'like' | 'wave' | null  — what they did toward me
+ *     isMatch,          // both 'like' → true
+ *   }
+ *   onConnect / onWave / onPress  — handlers
  */
 export default function PersonCard({ match, onConnect, onWave, onPress }) {
+  // Local optimistic mirrors so the button reflects the tap before the network round trip.
   const [connected, setConnected] = useState(match.connected ?? false);
-  const [waved, setWaved] = useState(false);
+  const [waved, setWaved]         = useState(match.waved ?? false);
 
-  // If the parent re-fetches and the match is now connected upstream
-  // (e.g. another device, or a successful insert), reflect that here.
-  useEffect(() => {
-    if (match.connected) setConnected(true);
-  }, [match.connected]);
+  // Re-sync if parent refetches.
+  useEffect(() => { if (match.connected) setConnected(true); }, [match.connected]);
+  useEffect(() => { if (match.waved)     setWaved(true);     }, [match.waved]);
+
+  const inboundBadge = (() => {
+    if (match.isMatch)              return { label: "It's a match",      icon: 'sparkles',         color: COLORS.sage };
+    if (match.theirKind === 'like') return { label: 'Wants to connect',  icon: 'heart',            color: COLORS.clay };
+    if (match.theirKind === 'wave') return { label: 'Waved at you',      icon: 'hand-left',        color: COLORS.gold };
+    return null;
+  })();
 
   return (
     <Pressable
       style={({ pressed }) => [styles.card, pressed && { opacity: 0.97, transform: [{ scale: 0.99 }] }]}
       onPress={onPress}
     >
+      {/* Inbound signal badge (only shown if the other person has acted) */}
+      {inboundBadge ? (
+        <View style={[styles.inboundBadge, { backgroundColor: COLORS.sageBg }]}>
+          <Ionicons name={inboundBadge.icon} size={11} color={inboundBadge.color} />
+          <Text style={[styles.inboundText, { color: inboundBadge.color }]}>
+            {inboundBadge.label}
+          </Text>
+        </View>
+      ) : null}
+
       {/* Top row: avatar + name/meta + score ring */}
       <View style={styles.header}>
         <Avatar
@@ -54,7 +74,6 @@ export default function PersonCard({ match, onConnect, onWave, onPress }) {
           ) : null}
         </View>
 
-        {/* ScoreRing replaces the old flat badge */}
         <ScoreRing score={match.matchScore} size={52} stroke={4} />
       </View>
 
@@ -82,7 +101,7 @@ export default function PersonCard({ match, onConnect, onWave, onPress }) {
           <View style={styles.btnConnectInner}>
             {connected && <Ionicons name="checkmark" size={14} color={COLORS.sage} />}
             <Text style={[styles.btnConnectText, connected && styles.btnConnectTextDone]}>
-              {connected ? 'Connected' : 'Connect'}
+              {connected ? (match.isMatch ? "It's a match" : 'Connected') : 'Connect'}
             </Text>
           </View>
         </TouchableOpacity>
@@ -112,6 +131,23 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
     ...SHADOW.md,
+  },
+
+  // Inbound signal (sits above the header row)
+  inboundBadge: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: RADIUS.full,
+    marginBottom: SPACING.sm,
+  },
+  inboundText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 11,
+    letterSpacing: 0.2,
   },
 
   header: {

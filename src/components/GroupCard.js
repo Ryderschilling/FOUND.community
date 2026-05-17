@@ -13,17 +13,22 @@ import { Pill } from './Atoms';
 /**
  * GroupCard — used in GroupsScreen for joined + suggested groups
  * Props:
- *   group    { id, name, description, icon, iconColor, memberCount, meetingDay, category, joined }
+ *   group    { id, name, description, icon, iconColor, iconBg, memberCount, meetingDay, category, joined }
  *   onJoin   () => void
+ *   onLeave  () => void
  *   onPress  () => void
+ *   busy     boolean — disables the join/leave button
  */
-export default function GroupCard({ group, onJoin, onPress }) {
-  const [joined, setJoined] = useState(group.joined ?? false);
+export default function GroupCard({ group, onJoin, onLeave, onPress, busy }) {
+  const joined = !!group.joined;
 
   const handleJoin = (e) => {
     e.stopPropagation?.();
-    setJoined(true);
     onJoin?.();
+  };
+  const handleLeave = (e) => {
+    e.stopPropagation?.();
+    onLeave?.();
   };
 
   return (
@@ -61,15 +66,25 @@ export default function GroupCard({ group, onJoin, onPress }) {
         <Text style={styles.description} numberOfLines={2}>{group.description}</Text>
       ) : null}
 
-      {/* Footer: join state */}
+      {/* Footer: join state — tap "Joined" to leave */}
       <View style={styles.footer}>
         {joined ? (
-          <View style={styles.joinedRow}>
+          <TouchableOpacity
+            style={styles.joinedBtn}
+            onPress={handleLeave}
+            disabled={busy}
+            activeOpacity={0.8}
+          >
             <Ionicons name="checkmark-circle" size={15} color={COLORS.sage} />
             <Text style={styles.joinedText}>Joined</Text>
-          </View>
+          </TouchableOpacity>
         ) : (
-          <TouchableOpacity style={styles.joinBtn} onPress={handleJoin} activeOpacity={0.8}>
+          <TouchableOpacity
+            style={styles.joinBtn}
+            onPress={handleJoin}
+            disabled={busy}
+            activeOpacity={0.8}
+          >
             <Text style={styles.joinBtnText}>Join Group</Text>
           </TouchableOpacity>
         )}
@@ -120,10 +135,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 2,
   },
-  joinedRow: {
+  joinedBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
+    backgroundColor: COLORS.sageBg,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    borderColor: COLORS.sageLight,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
   },
   joinedText: { fontFamily: FONT.semiBold, fontSize: 13, color: COLORS.sage },
   joinBtn: {

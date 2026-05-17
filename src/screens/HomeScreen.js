@@ -13,6 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING } from '../theme';
 import PersonCard from '../components/PersonCard';
+import InboundStrip from '../components/InboundStrip';
 import { Wordmark, Chip, Pill, IconButton } from '../components/Atoms';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../auth/AuthContext';
@@ -84,7 +85,10 @@ function rowToMatch(row) {
       icon:      a.icon,
       iconColor: a.icon_color,
     })),
-    connected:   false,
+    connected:   row.my_kind    === 'like',
+    waved:       row.my_kind    === 'wave',
+    theirKind:   row.their_kind || null,
+    isMatch:     !!row.is_match,
   };
 }
 
@@ -93,6 +97,7 @@ export default function HomeScreen({ navigation }) {
 
   const [activeFilter, setActiveFilter] = useState('all');
   const [matches, setMatches]           = useState([]);
+  const [inbound, setInbound]           = useState([]);
   const [loading, setLoading]           = useState(true);
   const [refreshing, setRefreshing]     = useState(false);
   const [error, setError]               = useState(null);
@@ -105,25 +110,18 @@ export default function HomeScreen({ navigation }) {
     if (isRefresh) setRefreshing(true); else setLoading(true);
     setError(null);
     try {
-      // Fetch matches + my existing 'like' connections in parallel so cards
-      // show the right Connect/Connected state on first paint.
-      const [matchesRes, connectionsRes] = await Promise.all([
-        supabase.rpc('top_matches_detailed', { p_limit: 25 }),
-        user
-          ? supabase.from('connections')
-              .select('to_profile')
-              .eq('from_profile', user.id)
-              .eq('kind', 'like')
-          : Promise.resolve({ data: [], error: null }),
+      // Matches feed + inbound (people who connected/waved at me) in parallel.
+      // p_limit bumped to 100 — at MVP scale we want to surface every
+      // onboarded profile even if scores are low. Filtering/sort comes later.
+      const [matchesRes, inboundRes] = await Promise.all([
+        supabase.rpc('top_matches_detailed', { p_limit: 100 }),
+        supabase.rpc('inbound_connections'),
       ]);
       if (matchesRes.error) throw matchesRes.error;
+      if (inboundRes.error) console.warn('[discover] inbound failed', inboundRes.error.message);
 
-      const connectedSet = new Set((connectionsRes.data ?? []).map((r) => r.to_profile));
-      const rows = (matchesRes.data ?? []).map((row) => ({
-        ...rowToMatch(row),
-        connected: connectedSet.has(row.profile_id),
-      }));
-      setMatches(rows);
+      setMatches((matchesRes.data ?? []).map(rowToMatch));
+      setInbound(inboundRes.data ?? []);
     } catch (e) {
       console.warn('[discover] load failed', e?.message);
       setError(e?.message ?? 'Could not load matches.');
@@ -149,10 +147,19 @@ export default function HomeScreen({ navigation }) {
         { from_profile: user.id, to_profile: toProfileId, kind: 'like' },
         { onConflict: 'from_profile,to_profile,kind', ignoreDuplicates: true }
       );
-    if (insErr) {
-      console.warn('[discover] connect failed', insErr.message);
-      // Don't revert the UI; user can retry on next session.
-    }
+    if (insErr) console.warn('[discover] connect failed', insErr.message);
+  }, [user]);
+
+  // Wave = softer "hi" signal. Same upsert pattern with kind='wave'.
+  const handleWave = useCallback(async (toProfileId) => {
+    if (!user || !toProfileId) return;
+    const { error: insErr } = await supabase
+      .from('connections')
+      .upsert(
+        { from_profile: user.id, to_profile: toProfileId, kind: 'wave' },
+        { onConflict: 'from_profile,to_profile,kind', ignoreDuplicates: true }
+      );
+    if (insErr) console.warn('[discover] wave failed', insErr.message);
   }, [user]);
 
   const handleScroll = ({ nativeEvent }) => {
@@ -178,7 +185,27 @@ export default function HomeScreen({ navigation }) {
     lastScrollY.current = y;
   };
 
-  // Title row + filter chips rendered as the FlatList's list header
+  // Convert an inbound row → match shape so MatchDetail renders correctly.
+  function inboundToMatch(row) {
+    return {
+      id:          row.profile_id,
+      name:        row.full_name || row.handle || 'Someone',
+      initials:    initialsFor(row.full_name || row.handle),
+      avatarUrl:   row.avatar_url || null,
+      avatarColor: gradientFor(row.profile_id),
+      matchScore:  null,
+      lifeStage:   row.life_stage_label || '',
+      distance:    [row.city, row.state].filter(Boolean).join(', ') || '',
+      church:      null,
+      interests:   [],
+      connected:   row.my_kind   === 'like',
+      waved:       row.my_kind   === 'wave',
+      theirKind:   row.their_kind || null,
+      isMatch:     !!row.is_match,
+    };
+  }
+
+  // Title row + inbound strip + filter chips
   const ListHeader = () => (
     <View style={styles.listHeader}>
       <View style={styles.titleRow}>
@@ -189,6 +216,11 @@ export default function HomeScreen({ navigation }) {
           style={{ alignSelf: 'flex-end', marginBottom: 4 }}
         />
       </View>
+
+      <InboundStrip
+        rows={inbound}
+        onTap={(row) => navigation?.navigate('MatchDetail', { match: inboundToMatch(row) })}
+      />
 
       <View style={styles.filterRow}>
         {FILTERS.map((f) => (
@@ -258,7 +290,7 @@ export default function HomeScreen({ navigation }) {
           <PersonCard
             match={item}
             onConnect={() => handleConnect(item.id)}
-            onWave={() => {}}
+            onWave={() => handleWave(item.id)}
             onPress={() => navigation?.navigate('MatchDetail', { match: item })}
           />
         )}
