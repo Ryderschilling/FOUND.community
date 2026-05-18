@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform, ActivityIndicator } from 'react-native';
+import React, { useEffect, useState, useRef } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Platform, ActivityIndicator, AppState } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { COLORS, FONT, SHADOW } from '../theme';
 import { useAuth } from '../auth/AuthContext';
+import { supabase } from '../lib/supabase';
 
 import SplashScreen       from '../screens/SplashScreen';
 import OnboardingScreen   from '../screens/OnboardingScreen';
@@ -15,6 +16,7 @@ import HomeScreen         from '../screens/HomeScreen';
 import GroupsScreen       from '../screens/GroupsScreen';
 import MessagesScreen     from '../screens/MessagesScreen';
 import ProfileScreen      from '../screens/ProfileScreen';
+import ActivityScreen     from '../screens/ActivityScreen';
 import MatchDetailScreen  from '../screens/MatchDetailScreen';
 import ChatScreen         from '../screens/ChatScreen';
 import SignInScreen       from '../screens/auth/SignInScreen';
@@ -26,16 +28,45 @@ const Tab   = createBottomTabNavigator();
 
 // ── Tab config ────────────────────────────────────────────────────
 const TABS = [
-  { name: 'Discover', icon: 'compass',    iconActive: 'compass',     label: 'Discover' },
-  { name: 'Groups',   icon: 'people',     iconActive: 'people',      label: 'Groups'   },
-  { name: 'Messages', icon: 'chatbubble', iconActive: 'chatbubble',  label: 'Messages' },
-  { name: 'Profile',  icon: 'person',     iconActive: 'person',      label: 'Profile'  },
+  { name: 'Discover', icon: 'compass',       iconActive: 'compass',       label: 'Discover' },
+  { name: 'Groups',   icon: 'people',        iconActive: 'people',        label: 'Groups'   },
+  { name: 'Activity', icon: 'notifications', iconActive: 'notifications', label: 'Activity' },
+  { name: 'Messages', icon: 'chatbubble',    iconActive: 'chatbubble',    label: 'Messages' },
+  { name: 'Profile',  icon: 'person',        iconActive: 'person',        label: 'Profile'  },
 ];
+
+// ── Unread inbound count hook ─────────────────────────────────────
+// Polls every 45s + refetches on app foreground. Cheap RPC; fine for MVP.
+// Swap to Supabase realtime subscription on `connections` insert when scale
+// warrants (or push notifications land).
+function useUnreadInboundCount() {
+  const { user } = useAuth();
+  const [count, setCount] = useState(0);
+
+  const fetchCount = React.useCallback(async () => {
+    if (!user) { setCount(0); return; }
+    const { data, error } = await supabase.rpc('unread_inbound_count');
+    if (error) return; // silent — badge just won't update
+    setCount(typeof data === 'number' ? data : (data ?? 0));
+  }, [user]);
+
+  useEffect(() => {
+    fetchCount();
+    const id = setInterval(fetchCount, 45_000);
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s === 'active') fetchCount();
+    });
+    return () => { clearInterval(id); sub.remove(); };
+  }, [fetchCount]);
+
+  return { count, refresh: fetchCount };
+}
 
 // ── Custom floating tab bar ────────────────────────────────────────
 function FloatingTabBar({ state, descriptors, navigation }) {
   const insets = useSafeAreaInsets();
   const bottom = Math.max(insets.bottom, 8);
+  const { count: unreadCount, refresh: refreshUnread } = useUnreadInboundCount();
 
   return (
     <View style={[styles.tabBarOuter, { paddingBottom: bottom }]}>
@@ -49,7 +80,15 @@ function FloatingTabBar({ state, descriptors, navigation }) {
             if (!focused && !event.defaultPrevented) {
               navigation.navigate(route.name);
             }
+            // When user navigates to Activity, the screen marks-all-seen on
+            // focus; refresh badge shortly after so the dot clears.
+            if (route.name === 'Activity') {
+              setTimeout(refreshUnread, 800);
+            }
           };
+
+          // Badge only on Activity tab, only if there's something unseen.
+          const showBadge = route.name === 'Activity' && unreadCount > 0;
 
           return (
             <TouchableOpacity
@@ -59,11 +98,20 @@ function FloatingTabBar({ state, descriptors, navigation }) {
               style={styles.tabItem}
             >
               {focused && <View style={styles.tabPill} />}
-              <Ionicons
-                name={focused ? tab.iconActive : `${tab.icon}-outline`}
-                size={21}
-                color={focused ? COLORS.tabActive : COLORS.tabInactive}
-              />
+              <View>
+                <Ionicons
+                  name={focused ? tab.iconActive : `${tab.icon}-outline`}
+                  size={21}
+                  color={focused ? COLORS.tabActive : COLORS.tabInactive}
+                />
+                {showBadge ? (
+                  <View style={styles.tabBadge}>
+                    <Text style={styles.tabBadgeText}>
+                      {unreadCount > 9 ? '9+' : String(unreadCount)}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
               <Text style={[styles.tabLabel, focused ? styles.tabLabelActive : styles.tabLabelInactive]}>
                 {tab.label}
               </Text>
@@ -84,6 +132,7 @@ function MainTabNavigator() {
     >
       <Tab.Screen name="Discover" component={HomeScreen}     />
       <Tab.Screen name="Groups"   component={GroupsScreen}   />
+      <Tab.Screen name="Activity" component={ActivityScreen} />
       <Tab.Screen name="Messages" component={MessagesScreen} />
       <Tab.Screen name="Profile"  component={ProfileScreen}  />
     </Tab.Navigator>
@@ -209,5 +258,26 @@ const styles = StyleSheet.create({
   },
   tabLabelInactive: {
     color: COLORS.tabInactive,
+  },
+  // Red dot + count badge on the Activity tab icon
+  tabBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -8,
+    minWidth: 16,
+    height: 16,
+    paddingHorizontal: 4,
+    borderRadius: 8,
+    backgroundColor: '#D24A4A',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: COLORS.white,
+  },
+  tabBadgeText: {
+    fontFamily: FONT.bold,
+    fontSize: 9,
+    color: COLORS.white,
+    letterSpacing: 0,
   },
 });

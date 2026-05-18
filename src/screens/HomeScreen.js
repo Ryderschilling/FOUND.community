@@ -275,7 +275,7 @@ export default function HomeScreen({ navigation }) {
           <Text style={styles.headerMeta}>30A Area · Friday</Text>
           <Wordmark size="md" />
         </View>
-        <IconButton onPress={() => {}}>
+        <IconButton onPress={() => navigation?.navigate('Activity')}>
           <Ionicons name="notifications-outline" size={18} color={COLORS.text} />
         </IconButton>
       </Animated.View>

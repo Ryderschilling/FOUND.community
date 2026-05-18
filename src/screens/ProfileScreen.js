@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -12,8 +12,12 @@ import {
   Alert,
   RefreshControl,
   Platform,
+  Modal,
+  Dimensions,
+  useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
 import { Avatar, Pill, SectionHeader } from '../components/Atoms';
 import { supabase } from '../lib/supabase';
@@ -54,58 +58,260 @@ function initialsFor(name) {
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────
-function StatCard({ value, label }) {
-  return (
-    <View style={styles.statCard}>
+function StatCard({ value, label, onPress }) {
+  const Inner = (
+    <>
       <Text style={styles.statValue}>{value ?? '—'}</Text>
       <Text style={styles.statLabel}>{label}</Text>
+    </>
+  );
+  if (onPress) {
+    return (
+      <TouchableOpacity style={styles.statCard} onPress={onPress} activeOpacity={0.8}>
+        {Inner}
+      </TouchableOpacity>
+    );
+  }
+  return <View style={styles.statCard}>{Inner}</View>;
+}
+
+// ConnectionsModal — list of mutual connections (LinkedIn-style "Connected").
+// Tap a row → opens MatchDetail. Dismiss = backdrop tap or X button.
+function ConnectionsModal({ visible, rows = [], loading, onClose, onOpen }) {
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.connModalRoot}>
+        <TouchableOpacity
+          style={StyleSheet.absoluteFill}
+          activeOpacity={1}
+          onPress={onClose}
+        />
+        <View style={styles.connModalSheet}>
+          <View style={styles.connModalHeader}>
+            <View>
+              <Text style={styles.headerMeta}>Your Network</Text>
+              <Text style={styles.connModalTitle}>Connected · {rows.length}</Text>
+            </View>
+            <TouchableOpacity onPress={onClose} style={styles.connModalClose}>
+              <Ionicons name="close" size={20} color={COLORS.text} />
+            </TouchableOpacity>
+          </View>
+
+          {loading ? (
+            <View style={styles.connEmpty}>
+              <ActivityIndicator color={COLORS.textTertiary} />
+            </View>
+          ) : rows.length === 0 ? (
+            <View style={styles.connEmpty}>
+              <Ionicons name="people-outline" size={28} color={COLORS.textTertiary} />
+              <Text style={styles.connEmptyTitle}>No connections yet</Text>
+              <Text style={styles.connEmptyBody}>
+                When someone accepts your request, they'll show up here.
+              </Text>
+            </View>
+          ) : (
+            <ScrollView
+              style={{ flexGrow: 0 }}
+              contentContainerStyle={{ paddingHorizontal: SPACING.lg, paddingBottom: SPACING.lg }}
+              showsVerticalScrollIndicator={false}
+            >
+              {rows.map((row) => {
+                const name     = row.full_name || row.handle || 'Someone';
+                const initials = initialsFor(name);
+                const grad     = gradientFor(row.profile_id);
+                const loc      = [row.city, row.state].filter(Boolean).join(', ');
+                return (
+                  <TouchableOpacity
+                    key={row.profile_id}
+                    style={styles.connRow}
+                    activeOpacity={0.85}
+                    onPress={() => onOpen?.(row)}
+                  >
+                    <Avatar
+                      initials={initials}
+                      size={44}
+                      gradientColors={grad}
+                      uri={row.avatar_url || undefined}
+                    />
+                    <View style={{ flex: 1, gap: 2 }}>
+                      <Text style={styles.connRowName}>{name}</Text>
+                      <Text style={styles.connRowMeta} numberOfLines={1}>
+                        {[row.life_stage_label, loc].filter(Boolean).join(' · ') || '—'}
+                      </Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={16} color={COLORS.textTertiary} />
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// HighlightReel — single horizontal row of profile photo thumbnails.
+// Renders one empty "add" tile at the end (up to MAX_PHOTOS total).
+// Empty slot: tap to add a photo. Filled slot: tap to view (lightbox).
+// X badge on a filled slot: tap to delete (with confirm).
+//
+// Row extends flush to both screen edges (negative margin bleed past the
+// parent's padding). A LinearGradient masks the right edge so the rightmost
+// visible tile fades into the page background — visually cues "scroll to
+// reveal more" even when content technically fits.
+//
+// Tile size is computed from window width so the row always shows ~5 tiles
+// across on desktop, no matter the viewport. On narrow (mobile) screens it
+// falls back to a fixed size that fits the phone width comfortably.
+const REEL_GAP        = 12;
+const REEL_FADE       = 100; // width of the right-edge fade overlay
+const REEL_TARGET     = 5;   // desktop target: 5 tiles visible across
+const REEL_TILE_MIN   = 140; // mobile fallback (~2 tiles visible on phone)
+
+function computeTileSize(winWidth) {
+  if (winWidth < 800) return REEL_TILE_MIN;
+  // Reserve fade width on the right so the 5th tile sits inside the fade zone
+  const usable = winWidth - REEL_FADE;
+  return Math.floor(usable / REEL_TARGET) - REEL_GAP;
+}
+
+function HighlightReel({ photos = [], onAdd, onView, onDelete, busyIndex = -1 }) {
+  const showAddTile = photos.length < MAX_PHOTOS;
+  const scrollRef = useRef(null);
+  const offsetRef = useRef(0);
+
+  // Recompute tile size whenever the window resizes (web users dragging the
+  // browser; orientation changes on tablets). Mobile screens hit the floor.
+  const { width: winW } = useWindowDimensions();
+  const tileSize = computeTileSize(winW);
+  const tileStyle = { width: tileSize, height: tileSize };
+  const scrollStep = (tileSize + REEL_GAP) * 2; // arrow nudge: 2 tiles per click
+
+  const scrollBy = (dx) => {
+    const next = Math.max(0, offsetRef.current + dx);
+    scrollRef.current?.scrollTo?.({ x: next, animated: true });
+  };
+
+  return (
+    <View style={styles.reelWrap}>
+      <ScrollView
+        ref={scrollRef}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        scrollEventThrottle={16}
+        onScroll={(e) => { offsetRef.current = e.nativeEvent.contentOffset.x; }}
+        style={styles.reelScroll}
+        contentContainerStyle={styles.reelScrollContent}
+      >
+        {photos.map((photo, i) => (
+          <TouchableOpacity
+            key={photo.id}
+            style={[styles.reelSlot, tileStyle]}
+            activeOpacity={0.85}
+            onPress={() => onView?.(photo, i)}
+          >
+            <Image source={{ uri: photo.url }} style={styles.reelImage} />
+            {/* Delete badge is its own touchable — nested press wins over the
+                tile press, so tapping the X only fires onDelete, not onView. */}
+            <TouchableOpacity
+              style={styles.reelDeleteBadge}
+              activeOpacity={0.7}
+              hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+              onPress={() => onDelete?.(photo, i)}
+            >
+              <Ionicons name="close" size={13} color={COLORS.white} />
+            </TouchableOpacity>
+          </TouchableOpacity>
+        ))}
+
+        {showAddTile ? (
+          <TouchableOpacity
+            style={[styles.reelSlot, tileStyle]}
+            activeOpacity={0.8}
+            onPress={onAdd}
+            disabled={busyIndex === photos.length}
+          >
+            <View style={styles.reelEmpty}>
+              {busyIndex === photos.length ? (
+                <ActivityIndicator size="small" color={COLORS.textSecondary} />
+              ) : (
+                <Ionicons name="add" size={20} color={COLORS.textTertiary} />
+              )}
+            </View>
+          </TouchableOpacity>
+        ) : null}
+      </ScrollView>
+
+      {/* Right-edge fade — visually dissolves the rightmost tile into the
+          page bg, suggesting "more beyond." pointerEvents none so it doesn't
+          intercept taps on whatever sits underneath it. */}
+      <LinearGradient
+        pointerEvents="none"
+        colors={['rgba(247,244,239,0)', COLORS.bg]}
+        start={{ x: 0, y: 0.5 }}
+        end={{ x: 1, y: 0.5 }}
+        style={styles.reelFade}
+      />
+
+      {/* Arrow controls — web only; native users swipe. */}
+      {Platform.OS === 'web' ? (
+        <>
+          <TouchableOpacity
+            style={[styles.reelArrow, styles.reelArrowLeft]}
+            activeOpacity={0.8}
+            onPress={() => scrollBy(-scrollStep)}
+          >
+            <Ionicons name="chevron-back" size={16} color={COLORS.text} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.reelArrow, styles.reelArrowRight]}
+            activeOpacity={0.8}
+            onPress={() => scrollBy(scrollStep)}
+          >
+            <Ionicons name="chevron-forward" size={16} color={COLORS.text} />
+          </TouchableOpacity>
+        </>
+      ) : null}
     </View>
   );
 }
 
-// HighlightReel — 3x3 grid of profile photos.
-// Empty slots: tap to add a photo (camera / library).
-// Filled slots: tap to delete (with confirm). Long-press not used to keep web parity.
-function HighlightReel({ photos = [], onAdd, onDelete, busyIndex = -1 }) {
-  const slots = Array.from({ length: MAX_PHOTOS }, (_, i) => photos[i] ?? null);
+// PhotoLightbox — full-screen image viewer.
+// Tap the backdrop or the close button to dismiss.
+// Image is letterboxed (resizeMode contain) so portrait + landscape both fit.
+function PhotoLightbox({ photo, onClose }) {
+  const { width, height } = Dimensions.get('window');
   return (
-    <View style={styles.reelGrid}>
-      {slots.map((photo, i) => {
-        const isBusy = busyIndex === i;
-        if (!photo) {
-          return (
-            <TouchableOpacity
-              key={`empty-${i}`}
-              style={styles.reelSlot}
-              activeOpacity={0.8}
-              onPress={onAdd}
-              disabled={isBusy}
-            >
-              <View style={styles.reelEmpty}>
-                {isBusy ? (
-                  <ActivityIndicator size="small" color={COLORS.textSecondary} />
-                ) : (
-                  <Ionicons name="add" size={22} color={COLORS.textTertiary} />
-                )}
-              </View>
-            </TouchableOpacity>
-          );
-        }
-        return (
-          <TouchableOpacity
-            key={photo.id}
-            style={styles.reelSlot}
-            activeOpacity={0.85}
-            onPress={() => onDelete?.(photo, i)}
-          >
-            <Image source={{ uri: photo.url }} style={styles.reelImage} />
-            <View style={styles.reelDeleteBadge}>
-              <Ionicons name="close" size={12} color={COLORS.white} />
-            </View>
-          </TouchableOpacity>
-        );
-      })}
-    </View>
+    <Modal
+      visible={!!photo}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <View style={styles.lightboxRoot}>
+        {/* Backdrop — tap to close */}
+        <TouchableOpacity
+          activeOpacity={1}
+          style={StyleSheet.absoluteFill}
+          onPress={onClose}
+        />
+        {photo ? (
+          <Image
+            source={{ uri: photo.url }}
+            style={{ width: width * 0.95, height: height * 0.85 }}
+            resizeMode="contain"
+          />
+        ) : null}
+        <TouchableOpacity
+          style={styles.lightboxClose}
+          activeOpacity={0.8}
+          onPress={onClose}
+        >
+          <Ionicons name="close" size={22} color="#fff" />
+        </TouchableOpacity>
+      </View>
+    </Modal>
   );
 }
 
@@ -132,6 +338,9 @@ export default function ProfileScreen({ navigation }) {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [photos, setPhotos]       = useState([]);
   const [photoBusyIdx, setPhotoBusyIdx] = useState(-1);
+  const [viewerPhoto, setViewerPhoto]   = useState(null);
+  const [connections, setConnections]   = useState([]);
+  const [connectionsOpen, setConnectionsOpen] = useState(false);
 
   const load = useCallback(async ({ isRefresh } = {}) => {
     if (!user) return;
@@ -149,12 +358,10 @@ export default function ProfileScreen({ navigation }) {
         .eq('id', user.id)
         .maybeSingle();
 
-      // Stats — three small head-only counts in parallel
-      const connectionsQ = supabase
-        .from('connections')
-        .select('*', { count: 'exact', head: true })
-        .eq('from_profile', user.id)
-        .eq('kind', 'like');
+      // Stats — three small queries in parallel.
+      // "Connected" now uses my_connections() RPC which returns MUTUAL likes
+      // (LinkedIn-style accepted connections), not raw outbound requests.
+      const connectionsQ = supabase.rpc('my_connections');
 
       const groupsQ = supabase
         .from('group_members')
@@ -176,9 +383,11 @@ export default function ProfileScreen({ navigation }) {
 
       if (pRes.error) throw pRes.error;
       setProfile(pRes.data);
+      const connList = cRes.error ? [] : (cRes.data ?? []);
+      setConnections(connList);
       setStats({
         matches:     mRes.error ? null : (mRes.data?.length ?? 0),
-        connections: cRes.error ? null : (cRes.count ?? 0),
+        connections: cRes.error ? null : connList.length,
         groups:      gRes.error ? null : (gRes.count ?? 0),
       });
       if (!phRes.error) setPhotos(phRes.photos);
@@ -392,10 +601,14 @@ export default function ProfileScreen({ navigation }) {
 
         <View style={styles.content}>
 
-          {/* Stats */}
+          {/* Stats — Connected is tappable; opens the network list. */}
           <View style={styles.statsRow}>
             <StatCard value={stats.matches}     label="Matches"   />
-            <StatCard value={stats.connections} label="Connected" />
+            <StatCard
+              value={stats.connections}
+              label="Connected"
+              onPress={() => setConnectionsOpen(true)}
+            />
             <StatCard value={stats.groups}      label="Groups"    />
           </View>
 
@@ -464,6 +677,7 @@ export default function ProfileScreen({ navigation }) {
             <HighlightReel
               photos={photos}
               onAdd={handleAddPhoto}
+              onView={(p) => setViewerPhoto(p)}
               onDelete={handleDeletePhoto}
               busyIndex={photoBusyIdx}
             />
@@ -484,6 +698,38 @@ export default function ProfileScreen({ navigation }) {
 
         </View>
       </ScrollView>
+
+      {/* Full-screen photo viewer for highlight reel */}
+      <PhotoLightbox photo={viewerPhoto} onClose={() => setViewerPhoto(null)} />
+
+      {/* Network list popup (tapping the "Connected" stat) */}
+      <ConnectionsModal
+        visible={connectionsOpen}
+        rows={connections}
+        loading={loading}
+        onClose={() => setConnectionsOpen(false)}
+        onOpen={(row) => {
+          setConnectionsOpen(false);
+          navigation?.navigate('MatchDetail', {
+            match: {
+              id:          row.profile_id,
+              name:        row.full_name || row.handle || 'Someone',
+              initials:    initialsFor(row.full_name || row.handle),
+              avatarUrl:   row.avatar_url || null,
+              avatarColor: gradientFor(row.profile_id),
+              matchScore:  null,
+              lifeStage:   row.life_stage_label || '',
+              distance:    [row.city, row.state].filter(Boolean).join(', ') || '',
+              church:      null,
+              interests:   [],
+              connected:   true,
+              waved:       false,
+              theirKind:   'like',
+              isMatch:     true,
+            },
+          });
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -643,15 +889,50 @@ const styles = StyleSheet.create({
   settingsLabel: { fontFamily: FONT.regular, fontSize: 15, color: COLORS.text, flex: 1 },
   settingsDanger: { color: '#C0392B' },
 
-  // Highlight Reel
-  reelGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
+  // Highlight Reel — single horizontal scroll row
+  // - Negative horizontal margin bleeds the row past the parent's SPACING.lg
+  //   padding so it stretches edge-to-edge across the page.
+  // - overflow:hidden contains the row visually; ScrollView inside still scrolls.
+  reelWrap: {
+    position: 'relative',
+    marginHorizontal: -SPACING.lg,
+    overflow: 'hidden',
   },
+  reelScroll: {},
+  reelScrollContent: {
+    paddingLeft: SPACING.lg,
+    // Extra right padding gives the fade gradient room to dissolve the last
+    // tile gracefully — without it, the gradient would overlap the add tile.
+    paddingRight: REEL_FADE,
+    gap: REEL_GAP,
+  },
+  // Right-edge fade overlay — sits on top of the ScrollView at the right edge
+  reelFade: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    right: 0,
+    width: REEL_FADE,
+  },
+  // Web-only arrow controls
+  reelArrow: {
+    position: 'absolute',
+    top: '50%',
+    marginTop: -16, // half of the 32x32 button
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...SHADOW.sm,
+  },
+  reelArrowLeft:  { left:  8 },
+  reelArrowRight: { right: 24 }, // pulled in so it sits on top of the fade, not at the bg edge
   reelSlot: {
-    width: '31.5%',
-    aspectRatio: 1,
+    // width / height are applied inline (responsive via useWindowDimensions)
     borderRadius: RADIUS.md,
     overflow: 'hidden',
   },
@@ -661,12 +942,12 @@ const styles = StyleSheet.create({
   },
   reelDeleteBadge: {
     position: 'absolute',
-    top: 4,
-    right: 4,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    top: 6,
+    right: 6,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(0,0,0,0.65)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -678,6 +959,100 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     borderStyle: 'dashed',
     borderRadius: RADIUS.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  // Connections popup (bottom sheet style)
+  connModalRoot: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
+  },
+  connModalSheet: {
+    backgroundColor: COLORS.bg,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '75%',
+    paddingTop: SPACING.md,
+  },
+  connModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: SPACING.lg,
+    paddingBottom: SPACING.md,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.borderLight,
+  },
+  connModalTitle: {
+    fontFamily: FONT.serifItalic,
+    fontSize: 22,
+    color: COLORS.text,
+    letterSpacing: -0.2,
+  },
+  connModalClose: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  connRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+    paddingVertical: SPACING.sm + 2,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.borderLight,
+  },
+  connRowName: {
+    fontFamily: FONT.semiBold,
+    fontSize: 15,
+    color: COLORS.text,
+  },
+  connRowMeta: {
+    fontFamily: FONT.regular,
+    fontSize: 12,
+    color: COLORS.textSecondary,
+  },
+  connEmpty: {
+    alignItems: 'center',
+    paddingVertical: SPACING.xl,
+    paddingHorizontal: SPACING.lg,
+    gap: SPACING.sm,
+  },
+  connEmptyTitle: {
+    fontFamily: FONT.serifItalic,
+    fontSize: 17,
+    color: COLORS.text,
+  },
+  connEmptyBody: {
+    fontFamily: FONT.regular,
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+
+  // Photo lightbox (full-screen viewer)
+  lightboxRoot: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.92)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lightboxClose: {
+    position: 'absolute',
+    top: 40,
+    right: 20,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.15)',
     alignItems: 'center',
     justifyContent: 'center',
   },
