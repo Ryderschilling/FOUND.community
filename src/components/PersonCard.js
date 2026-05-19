@@ -1,50 +1,138 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   Pressable,
+  Alert,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
 import { Avatar } from './Atoms';
 import ScoreRing from './ScoreRing';
 
+// ─── State derivation ───────────────────────────────────────────────────────
+// Visual state is a pure function of the match props. We don't keep local
+// optimistic state here anymore — the parent (HomeScreen) owns truth so that
+// "pending" can flip to "connected" the instant a reciprocal is detected.
+//
+//   match.isMatch === true             → CONNECTED (sage/green)
+//   match.connected (my_kind === like) → PENDING   (gold/yellow)
+//   otherwise                          → IDLE      (Connect button)
+//
+//   match.waved (my_kind === wave)     → WAVED     (the small wave button)
+function connectState(match) {
+  if (match.isMatch)  return 'connected';
+  if (match.connected) return 'pending';
+  return 'idle';
+}
+
+// Cross-platform confirm. Alert.alert callbacks don't fire on web.
+function confirmThen(title, message, onConfirm, destructiveLabel = 'Remove') {
+  if (Platform.OS === 'web') {
+    if (typeof window !== 'undefined' && window.confirm(`${title}\n\n${message ?? ''}`.trim())) {
+      onConfirm();
+    }
+    return;
+  }
+  Alert.alert(title, message, [
+    { text: 'Cancel', style: 'cancel' },
+    { text: destructiveLabel, style: 'destructive', onPress: onConfirm },
+  ]);
+}
+
 /**
  * PersonCard — match card in the Discover feed
  * Props:
- *   match {
- *     id, name, initials, avatarColor, matchScore, lifeStage, distance, church, interests,
- *     connected,        // my_kind === 'like'
- *     waved,            // my_kind === 'wave'
- *     theirKind,        // 'like' | 'wave' | null  — what they did toward me
- *     isMatch,          // both 'like' → true
- *   }
- *   onConnect / onWave / onPress  — handlers
+ *   match { id, name, ..., connected, waved, theirKind, isMatch }
+ *   onConnect()       — fires "like" insert
+ *   onWave()          — fires "wave" insert
+ *   onCancel(kind?)   — fires remove_connection(kind). kind=null = all kinds.
+ *   onPress()         — opens MatchDetail
  */
-export default function PersonCard({ match, onConnect, onWave, onPress }) {
-  // Local optimistic mirrors so the button reflects the tap before the network round trip.
-  const [connected, setConnected] = useState(match.connected ?? false);
-  const [waved, setWaved]         = useState(match.waved ?? false);
-
-  // Re-sync if parent refetches.
-  useEffect(() => { if (match.connected) setConnected(true); }, [match.connected]);
-  useEffect(() => { if (match.waved)     setWaved(true);     }, [match.waved]);
+export default function PersonCard({ match, onConnect, onWave, onCancel, onPress }) {
+  const state = connectState(match);
 
   const inboundBadge = (() => {
-    if (match.isMatch)              return { label: "It's a match",      icon: 'sparkles',         color: COLORS.sage };
-    if (match.theirKind === 'like') return { label: 'Wants to connect',  icon: 'heart',            color: COLORS.clay };
-    if (match.theirKind === 'wave') return { label: 'Waved at you',      icon: 'hand-left',        color: COLORS.gold };
+    if (match.isMatch)              return { label: "It's a match",      icon: 'sparkles',  color: COLORS.sage };
+    if (match.theirKind === 'like') return { label: 'Wants to connect',  icon: 'heart',     color: COLORS.clay };
+    if (match.theirKind === 'wave') return { label: 'Waved at you',      icon: 'hand-left', color: COLORS.gold };
     return null;
   })();
+
+  // ── Connect button: tap behavior depends on state ──────────────────────
+  function handleConnectTap() {
+    if (state === 'idle') {
+      onConnect?.();
+      return;
+    }
+    if (state === 'pending') {
+      confirmThen(
+        'Cancel request?',
+        `${match.name} won't see your connection request anymore.`,
+        () => onCancel?.('like'),
+        'Cancel request',
+      );
+      return;
+    }
+    if (state === 'connected') {
+      confirmThen(
+        'Disconnect?',
+        `You and ${match.name} will no longer be connected.`,
+        () => onCancel?.('like'),
+        'Disconnect',
+      );
+    }
+  }
+
+  // ── Wave button: tap behavior depends on state ─────────────────────────
+  function handleWaveTap() {
+    if (match.waved) {
+      confirmThen(
+        'Cancel wave?',
+        `Your wave to ${match.name} will be undone.`,
+        () => onCancel?.('wave'),
+        'Cancel wave',
+      );
+    } else {
+      onWave?.();
+    }
+  }
+
+  // Style + label for the connect button
+  const connectStyle =
+    state === 'connected' ? styles.btnConnectDone
+  : state === 'pending'   ? styles.btnConnectPending
+  : styles.btnConnect;
+
+  const connectTextStyle =
+    state === 'connected' ? styles.btnConnectTextDone
+  : state === 'pending'   ? styles.btnConnectTextPending
+  : styles.btnConnectText;
+
+  const connectLabel =
+    state === 'connected' ? 'Connected'
+  : state === 'pending'   ? 'Pending'
+  : 'Connect';
+
+  const connectIcon =
+    state === 'connected' ? 'checkmark'
+  : state === 'pending'   ? 'time-outline'
+  : null;
+
+  const connectIconColor =
+    state === 'connected' ? COLORS.sage
+  : state === 'pending'   ? COLORS.gold
+  : COLORS.white;
 
   return (
     <Pressable
       style={({ pressed }) => [styles.card, pressed && { opacity: 0.97, transform: [{ scale: 0.99 }] }]}
       onPress={onPress}
     >
-      {/* Inbound signal badge (only shown if the other person has acted) */}
+      {/* Inbound signal badge */}
       {inboundBadge ? (
         <View style={[styles.inboundBadge, { backgroundColor: COLORS.sageBg }]}>
           <Ionicons name={inboundBadge.icon} size={11} color={inboundBadge.color} />
@@ -54,7 +142,7 @@ export default function PersonCard({ match, onConnect, onWave, onPress }) {
         </View>
       ) : null}
 
-      {/* Top row: avatar + name/meta + score ring */}
+      {/* Top row */}
       <View style={styles.header}>
         <Avatar
           initials={match.initials}
@@ -62,7 +150,6 @@ export default function PersonCard({ match, onConnect, onWave, onPress }) {
           gradientColors={match.avatarColor ?? [COLORS.sage, COLORS.clay]}
           uri={match.avatarUrl || undefined}
         />
-
         <View style={styles.headerInfo}>
           <Text style={styles.name}>{match.name}</Text>
           <Text style={styles.meta}>{match.lifeStage} · {match.distance}</Text>
@@ -73,11 +160,9 @@ export default function PersonCard({ match, onConnect, onWave, onPress }) {
             </View>
           ) : null}
         </View>
-
         <ScoreRing score={match.matchScore} size={52} stroke={4} />
       </View>
 
-      {/* Horizontal rule */}
       <View style={styles.divider} />
 
       {/* Interest tags */}
@@ -93,29 +178,25 @@ export default function PersonCard({ match, onConnect, onWave, onPress }) {
       {/* Action row */}
       <View style={styles.actions}>
         <TouchableOpacity
-          style={[styles.btnConnect, connected && styles.btnConnectDone]}
-          onPress={() => { setConnected(true); onConnect?.(); }}
-          disabled={connected}
+          style={connectStyle}
+          onPress={handleConnectTap}
           activeOpacity={0.8}
         >
           <View style={styles.btnConnectInner}>
-            {connected && <Ionicons name="checkmark" size={14} color={COLORS.sage} />}
-            <Text style={[styles.btnConnectText, connected && styles.btnConnectTextDone]}>
-              {connected ? (match.isMatch ? "It's a match" : 'Connected') : 'Connect'}
-            </Text>
+            {connectIcon ? <Ionicons name={connectIcon} size={14} color={connectIconColor} /> : null}
+            <Text style={connectTextStyle}>{connectLabel}</Text>
           </View>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.btnWave, waved && styles.btnWaveDone]}
-          onPress={() => { setWaved(true); onWave?.(); }}
-          disabled={waved}
+          style={[styles.btnWave, match.waved && styles.btnWaveDone]}
+          onPress={handleWaveTap}
           activeOpacity={0.8}
         >
           <Ionicons
-            name={waved ? 'checkmark' : 'hand-left-outline'}
+            name={match.waved ? 'checkmark' : 'hand-left-outline'}
             size={18}
-            color={waved ? COLORS.sage : COLORS.textSecondary}
+            color={match.waved ? COLORS.sage : COLORS.textSecondary}
           />
         </TouchableOpacity>
       </View>
@@ -133,7 +214,6 @@ const styles = StyleSheet.create({
     ...SHADOW.md,
   },
 
-  // Inbound signal (sits above the header row)
   inboundBadge: {
     alignSelf: 'flex-start',
     flexDirection: 'row',
@@ -179,6 +259,8 @@ const styles = StyleSheet.create({
   tagText: { fontFamily: FONT.semiBold, fontSize: 12, color: COLORS.textSecondary },
 
   actions: { flexDirection: 'row', gap: 8 },
+
+  // Idle (default dark CTA)
   btnConnect: {
     flex: 1,
     backgroundColor: COLORS.accent,
@@ -187,10 +269,36 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  btnConnectDone: { backgroundColor: COLORS.sageBg },
-  btnConnectInner: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   btnConnectText: { fontFamily: FONT.bold, fontSize: 14, color: COLORS.white, letterSpacing: 0.2 },
-  btnConnectTextDone: { color: COLORS.sage },
+
+  // Pending — gold/yellow, tappable
+  btnConnectPending: {
+    flex: 1,
+    backgroundColor: COLORS.goldBg,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: COLORS.gold,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  btnConnectTextPending: { fontFamily: FONT.bold, fontSize: 14, color: COLORS.gold, letterSpacing: 0.2 },
+
+  // Connected — sage/green, tappable (to disconnect)
+  btnConnectDone: {
+    flex: 1,
+    backgroundColor: COLORS.sageBg,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: COLORS.sageMid,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  btnConnectTextDone: { fontFamily: FONT.bold, fontSize: 14, color: COLORS.sage, letterSpacing: 0.2 },
+
+  btnConnectInner: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+
   btnWave: {
     backgroundColor: COLORS.bg,
     borderRadius: RADIUS.lg,

@@ -78,7 +78,7 @@ function summaryFor(row) {
 }
 
 // ─── Row ──────────────────────────────────────────────────────────────────
-function ActivityRow({ row, onAccept, onDismiss, onOpen, busy }) {
+function ActivityRow({ row, onAccept, onDismiss, onOpen, onMessage, busy }) {
   const name    = row.full_name || row.handle || 'Someone';
   const initials = initialsFor(name);
   const grad    = gradientFor(row.profile_id);
@@ -122,7 +122,7 @@ function ActivityRow({ row, onAccept, onDismiss, onOpen, busy }) {
         <View style={styles.actionRow}>
           {isMatch ? (
             <>
-              <TouchableOpacity style={styles.btnPrimary} onPress={() => onOpen?.(row)}>
+              <TouchableOpacity style={styles.btnPrimary} onPress={() => onMessage?.(row)}>
                 <Ionicons name="chatbubble-outline" size={14} color={COLORS.white} />
                 <Text style={styles.btnPrimaryText}>Message</Text>
               </TouchableOpacity>
@@ -199,7 +199,9 @@ export default function ActivityScreen({ navigation }) {
     return unsub;
   }, [navigation, load]);
 
-  // Accept = reciprocal like. Updates the row optimistically to "match" state.
+  // Accept = reciprocal like. Updates the row optimistically to "match" state
+  // and offers to jump straight into a chat — biggest "what now?" moment
+  // in the app, so make the next step obvious.
   async function handleAccept(row) {
     if (!user || !row?.profile_id) return;
     setBusyProfileId(row.profile_id);
@@ -214,13 +216,55 @@ export default function ActivityScreen({ navigation }) {
       Alert.alert('Could not accept', insErr.message);
       return;
     }
+
+    // Determine whether this acceptance produced a match (their kind was already 'like').
+    const becameMatch = row.their_kind === 'like';
+
+    // Optimistic row update — flips the action buttons from Accept/Dismiss → Message/Clear
     setRows((prev) =>
       prev.map((r) =>
         r.profile_id === row.profile_id
-          ? { ...r, my_kind: 'like', is_match: r.their_kind === 'like' }
+          ? { ...r, my_kind: 'like', is_match: becameMatch }
           : r
       )
     );
+
+    // Confirmation + jump-into-chat shortcut
+    const name = row.full_name || row.handle || 'them';
+    if (becameMatch) {
+      const title = "It's a match!";
+      const msg   = `You and ${name} are now connected. Say hi?`;
+      if (Platform.OS === 'web') {
+        if (typeof window !== 'undefined' && window.confirm(`${title}\n\n${msg}`)) {
+          openChatWith(row);
+        }
+      } else {
+        Alert.alert(title, msg, [
+          { text: 'Later',     style: 'cancel' },
+          { text: 'Send a message', onPress: () => openChatWith(row) },
+        ]);
+      }
+    }
+  }
+
+  // Open a thread with the given activity row's profile.
+  async function openChatWith(row) {
+    if (!user || !row?.profile_id) return;
+    const { data: threadId, error } = await supabase
+      .rpc('start_direct_thread', { p_other: row.profile_id });
+    if (error) {
+      Alert.alert('Could not open chat', error.message);
+      return;
+    }
+    navigation?.navigate('Chat', {
+      thread_id: threadId,
+      other: {
+        id:          row.profile_id,
+        name:        row.full_name || row.handle || 'Friend',
+        initials:    initialsFor(row.full_name || row.handle),
+        avatarColor: gradientFor(row.profile_id),
+      },
+    });
   }
 
   // Dismiss = soft hide; row leaves the list. Confirm first to avoid mis-taps.
@@ -320,6 +364,7 @@ export default function ActivityScreen({ navigation }) {
             onAccept={handleAccept}
             onDismiss={handleDismiss}
             onOpen={handleOpen}
+            onMessage={openChatWith}
             busy={busyProfileId === item.profile_id}
           />
         )}

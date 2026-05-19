@@ -35,38 +35,43 @@ const TABS = [
   { name: 'Profile',  icon: 'person',        iconActive: 'person',        label: 'Profile'  },
 ];
 
-// ── Unread inbound count hook ─────────────────────────────────────
-// Polls every 45s + refetches on app foreground. Cheap RPC; fine for MVP.
-// Swap to Supabase realtime subscription on `connections` insert when scale
-// warrants (or push notifications land).
-function useUnreadInboundCount() {
+// ── Unread counts hook (Activity + Messages) ─────────────────────
+// Single hook fires both RPCs in parallel every 45s + on app foreground.
+// Both badges use the same poll cycle so we only spend one round-trip pair.
+// Swap to Supabase realtime subscriptions when scale warrants.
+function useUnreadCounts() {
   const { user } = useAuth();
-  const [count, setCount] = useState(0);
+  const [counts, setCounts] = useState({ activity: 0, messages: 0 });
 
-  const fetchCount = React.useCallback(async () => {
-    if (!user) { setCount(0); return; }
-    const { data, error } = await supabase.rpc('unread_inbound_count');
-    if (error) return; // silent — badge just won't update
-    setCount(typeof data === 'number' ? data : (data ?? 0));
+  const fetchCounts = React.useCallback(async () => {
+    if (!user) { setCounts({ activity: 0, messages: 0 }); return; }
+    const [actRes, msgRes] = await Promise.all([
+      supabase.rpc('unread_inbound_count'),
+      supabase.rpc('unread_messages_count'),
+    ]);
+    setCounts({
+      activity: actRes.error ? 0 : (typeof actRes.data === 'number' ? actRes.data : (actRes.data ?? 0)),
+      messages: msgRes.error ? 0 : (typeof msgRes.data === 'number' ? msgRes.data : (msgRes.data ?? 0)),
+    });
   }, [user]);
 
   useEffect(() => {
-    fetchCount();
-    const id = setInterval(fetchCount, 45_000);
+    fetchCounts();
+    const id = setInterval(fetchCounts, 45_000);
     const sub = AppState.addEventListener('change', (s) => {
-      if (s === 'active') fetchCount();
+      if (s === 'active') fetchCounts();
     });
     return () => { clearInterval(id); sub.remove(); };
-  }, [fetchCount]);
+  }, [fetchCounts]);
 
-  return { count, refresh: fetchCount };
+  return { counts, refresh: fetchCounts };
 }
 
 // ── Custom floating tab bar ────────────────────────────────────────
 function FloatingTabBar({ state, descriptors, navigation }) {
   const insets = useSafeAreaInsets();
   const bottom = Math.max(insets.bottom, 8);
-  const { count: unreadCount, refresh: refreshUnread } = useUnreadInboundCount();
+  const { counts, refresh: refreshCounts } = useUnreadCounts();
 
   return (
     <View style={[styles.tabBarOuter, { paddingBottom: bottom }]}>
@@ -80,15 +85,20 @@ function FloatingTabBar({ state, descriptors, navigation }) {
             if (!focused && !event.defaultPrevented) {
               navigation.navigate(route.name);
             }
-            // When user navigates to Activity, the screen marks-all-seen on
-            // focus; refresh badge shortly after so the dot clears.
-            if (route.name === 'Activity') {
-              setTimeout(refreshUnread, 800);
+            // Activity screen marks-all-seen on focus; Messages screen marks
+            // each thread read when opened. Refresh shortly after navigating
+            // so the badges drop.
+            if (route.name === 'Activity' || route.name === 'Messages') {
+              setTimeout(refreshCounts, 800);
             }
           };
 
-          // Badge only on Activity tab, only if there's something unseen.
-          const showBadge = route.name === 'Activity' && unreadCount > 0;
+          // Pick badge value per tab
+          const badgeCount =
+            route.name === 'Activity' ? counts.activity
+          : route.name === 'Messages' ? counts.messages
+          : 0;
+          const showBadge = badgeCount > 0;
 
           return (
             <TouchableOpacity
@@ -107,7 +117,7 @@ function FloatingTabBar({ state, descriptors, navigation }) {
                 {showBadge ? (
                   <View style={styles.tabBadge}>
                     <Text style={styles.tabBadgeText}>
-                      {unreadCount > 9 ? '9+' : String(unreadCount)}
+                      {badgeCount > 9 ? '9+' : String(badgeCount)}
                     </Text>
                   </View>
                 ) : null}

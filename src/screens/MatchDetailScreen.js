@@ -7,9 +7,9 @@ import {
   TouchableOpacity,
   StatusBar,
   SafeAreaView,
-  Image,
   ActivityIndicator,
   Alert,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
@@ -18,14 +18,33 @@ import ScoreRing from '../components/ScoreRing';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../auth/AuthContext';
 import { fetchProfilePhotos } from '../lib/profilePhotos';
+import HighlightReelView from '../components/HighlightReelView';
 
 export default function MatchDetailScreen({ route, navigation }) {
   const { user } = useAuth();
   const match = route?.params?.match ?? FALLBACK_MATCH;
   const [connected, setConnected] = useState(match.connected ?? false);
-  const [waved, setWaved] = useState(match.waved ?? false);
+  const [waved, setWaved]         = useState(match.waved ?? false);
+  const [isMatch, setIsMatch]     = useState(match.isMatch ?? false);
   const [openingChat, setOpeningChat] = useState(false);
   const [photos, setPhotos] = useState([]);
+
+  // 3-state derivation, mirrors PersonCard
+  const ctaState = isMatch ? 'connected' : (connected ? 'pending' : 'idle');
+
+  // Cross-platform confirm
+  function confirmThen(title, message, onConfirm, destructiveLabel = 'Remove') {
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.confirm(`${title}\n\n${message ?? ''}`.trim())) {
+        onConfirm();
+      }
+      return;
+    }
+    Alert.alert(title, message, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: destructiveLabel, style: 'destructive', onPress: onConfirm },
+    ]);
+  }
 
   // Fetch this match's highlight reel
   useEffect(() => {
@@ -49,7 +68,10 @@ export default function MatchDetailScreen({ route, navigation }) {
         { from_profile: user.id, to_profile: match.id, kind: 'like' },
         { onConflict: 'from_profile,to_profile,kind', ignoreDuplicates: true }
       );
-    if (error) console.warn('[match] connect failed', error.message);
+    if (error) {
+      setConnected(false);
+      console.warn('[match] connect failed', error.message);
+    }
   }
 
   async function handleWave() {
@@ -61,7 +83,53 @@ export default function MatchDetailScreen({ route, navigation }) {
         { from_profile: user.id, to_profile: match.id, kind: 'wave' },
         { onConflict: 'from_profile,to_profile,kind', ignoreDuplicates: true }
       );
-    if (error) console.warn('[match] wave failed', error.message);
+    if (error) {
+      setWaved(false);
+      console.warn('[match] wave failed', error.message);
+    }
+  }
+
+  // Undo a connect (pending or mutual) or a wave.
+  async function doCancel(kind) {
+    if (!user || !match.id) return;
+    // Optimistic
+    if (kind === 'like') { setConnected(false); setIsMatch(false); }
+    else                  { setWaved(false); }
+    const { error } = await supabase.rpc('remove_connection', {
+      p_other: match.id,
+      p_kind:  kind,
+    });
+    if (error) {
+      // Revert
+      if (kind === 'like') setConnected(true);
+      else                 setWaved(true);
+      Alert.alert('Could not undo', error.message);
+    }
+  }
+
+  function handleConnectTap() {
+    if (ctaState === 'idle')      return handleConnect();
+    if (ctaState === 'pending')   {
+      confirmThen('Cancel request?',
+        `${match.name} won't see your connection request anymore.`,
+        () => doCancel('like'),
+        'Cancel request');
+      return;
+    }
+    if (ctaState === 'connected') {
+      confirmThen('Disconnect?',
+        `You and ${match.name} will no longer be connected.`,
+        () => doCancel('like'),
+        'Disconnect');
+    }
+  }
+
+  function handleWaveTap() {
+    if (!waved) return handleWave();
+    confirmThen('Cancel wave?',
+      `Your wave to ${match.name} will be undone.`,
+      () => doCancel('wave'),
+      'Cancel wave');
   }
 
   async function handleOpenChat() {
@@ -128,15 +196,13 @@ export default function MatchDetailScreen({ route, navigation }) {
 
         <View style={styles.content}>
 
-          {/* Highlight Reel */}
+          {/* Highlight Reel — horizontal strip, matches own-profile layout.
+              HighlightReelView applies its own negative side margin so the
+              tiles bleed past the parent's SPACING.lg padding to both edges. */}
           {photos.length > 0 && (
             <View style={styles.section}>
               <SectionHeader label="Highlight Reel" />
-              <View style={styles.reelGrid}>
-                {photos.map((p) => (
-                  <Image key={p.id} source={{ uri: p.url }} style={styles.reelImage} />
-                ))}
-              </View>
+              <HighlightReelView photos={photos} sideInset={SPACING.lg} />
             </View>
           )}
 
@@ -180,25 +246,33 @@ export default function MatchDetailScreen({ route, navigation }) {
 
       {/* Sticky CTA bar */}
       <View style={styles.ctaBar}>
-        {/* Wave */}
+        {/* Wave — tap empty to wave, tap filled to undo */}
         <TouchableOpacity
           style={[styles.btnWave, waved && styles.btnWaveDone]}
-          onPress={handleWave}
-          disabled={waved}
+          onPress={handleWaveTap}
           activeOpacity={0.8}
         >
           <Ionicons name={waved ? 'checkmark' : 'hand-left-outline'} size={20} color={waved ? COLORS.sage : COLORS.textSecondary} />
         </TouchableOpacity>
 
-        {/* Connect */}
+        {/* Connect — 3-state, tap-to-undo */}
         <TouchableOpacity
-          style={[styles.btnConnect, connected && styles.btnConnectDone]}
-          onPress={handleConnect}
-          disabled={connected}
+          style={[
+            styles.btnConnect,
+            ctaState === 'pending'   && styles.btnConnectPending,
+            ctaState === 'connected' && styles.btnConnectDone,
+          ]}
+          onPress={handleConnectTap}
           activeOpacity={0.85}
         >
-          <Text style={[styles.btnConnectText, connected && styles.btnConnectTextDone]}>
-            {connected ? '✓  Connected' : 'Connect'}
+          <Text style={[
+            styles.btnConnectText,
+            ctaState === 'pending'   && styles.btnConnectTextPending,
+            ctaState === 'connected' && styles.btnConnectTextDone,
+          ]}>
+            {ctaState === 'connected' ? '✓  Connected'
+             : ctaState === 'pending'   ? '⏱  Pending'
+             : 'Connect'}
           </Text>
         </TouchableOpacity>
 
@@ -307,19 +381,6 @@ const styles = StyleSheet.create({
 
   rule: { marginVertical: SPACING.md },
 
-  // Highlight Reel (read-only)
-  reelGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  reelImage: {
-    width: '31.5%',
-    aspectRatio: 1,
-    borderRadius: RADIUS.md,
-    backgroundColor: COLORS.border,
-  },
-
   // Sticky CTA
   ctaBar: {
     position: 'absolute',
@@ -354,9 +415,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     height: 50,
   },
-  btnConnectDone: { backgroundColor: COLORS.sageBg },
-  btnConnectText: { fontFamily: FONT.bold, fontSize: 15, color: COLORS.white },
-  btnConnectTextDone: { color: COLORS.sage },
+  btnConnectDone: {
+    backgroundColor: COLORS.sageBg,
+    borderWidth: 1,
+    borderColor: COLORS.sageMid,
+  },
+  btnConnectPending: {
+    backgroundColor: COLORS.goldBg,
+    borderWidth: 1,
+    borderColor: COLORS.gold,
+  },
+  btnConnectText:        { fontFamily: FONT.bold, fontSize: 15, color: COLORS.white },
+  btnConnectTextDone:    { color: COLORS.sage },
+  btnConnectTextPending: { color: COLORS.gold },
   btnMessage: {
     width: 50,
     height: 50,
