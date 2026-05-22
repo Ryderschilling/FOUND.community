@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   View,
   Text,
+  Image,
   StyleSheet,
   TouchableOpacity,
   Pressable,
@@ -13,7 +14,8 @@ import { Pill } from './Atoms';
 /**
  * GroupCard — used in GroupsScreen for joined + suggested groups
  * Props:
- *   group    { id, name, description, icon, iconColor, iconBg, memberCount, meetingDay, category, joined }
+ *   group    { id, name, description, icon, iconColor, iconBg, memberCount,
+ *              meetingDay, category, coverUrl, joined }
  *   onJoin   () => void
  *   onLeave  () => void
  *   onPress  () => void
@@ -36,6 +38,11 @@ export default function GroupCard({ group, onJoin, onLeave, onPress, busy }) {
       style={({ pressed }) => [styles.card, pressed && { opacity: 0.97 }]}
       onPress={onPress}
     >
+      {/* Cover photo — full-bleed banner when the group has one */}
+      {group.coverUrl ? (
+        <Image source={{ uri: group.coverUrl }} style={styles.cover} resizeMode="cover" />
+      ) : null}
+
       {/* Icon + name row */}
       <View style={styles.header}>
         <View style={[styles.iconWrap, { backgroundColor: group.iconBg ?? COLORS.sageBg }]}>
@@ -45,7 +52,9 @@ export default function GroupCard({ group, onJoin, onLeave, onPress, busy }) {
           <Text style={styles.name}>{group.name}</Text>
           <View style={styles.metaRow}>
             <Ionicons name="people-outline" size={11} color={COLORS.textTertiary} />
-            <Text style={styles.meta}>{group.memberCount} members</Text>
+            <Text style={styles.meta}>
+              {group.memberCount} {group.memberCount === 1 ? 'member' : 'members'}
+            </Text>
             {group.meetingDay ? (
               <>
                 <Text style={styles.metaDot}>·</Text>
@@ -102,6 +111,16 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     ...SHADOW.sm,
     gap: SPACING.sm,
+  },
+
+  cover: {
+    height: 124,
+    marginTop: -SPACING.md,
+    marginHorizontal: -SPACING.md,
+    marginBottom: SPACING.xs,
+    borderTopLeftRadius: RADIUS.xl,
+    borderTopRightRadius: RADIUS.xl,
+    backgroundColor: COLORS.surfaceAlt,
   },
 
   header: {

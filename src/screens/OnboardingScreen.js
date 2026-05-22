@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,13 +11,14 @@ import {
   Pressable,
   Alert,
   ActivityIndicator,
-  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
 import { PrimaryButton } from '../components/Atoms';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../auth/AuthContext';
+import { useConfirm } from '../components/ConfirmProvider';
+import { geocode } from '../lib/geocode';
 import {
   LIFE_STAGES,
   HAS_KIDS_STAGES,
@@ -304,7 +305,7 @@ function StepMatchReveal({ onFinish, busy }) {
         We found people near you who share your interests and life stage. Go find your community.
       </Text>
       <PrimaryButton
-        label={busy ? 'Saving…' : 'See My Matches'}
+        label={busy ? 'Saving…' : 'See My People'}
         onPress={onFinish}
         loading={busy}
         disabled={busy}
@@ -316,25 +317,8 @@ function StepMatchReveal({ onFinish, busy }) {
 
 // ─── Main screen ─────────────────────────────────────────────────────────────
 export default function OnboardingScreen({ navigation }) {
-  const { refreshProfile, signOut } = useAuth();
-
-  // Cross-platform confirm:
-  // - Web: Alert.alert renders as window.alert() and ignores the buttons array,
-  //   so the user can never confirm. Use window.confirm() instead.
-  // - Native: keep the native Alert.alert UX.
-  function confirmThen(title, message, onConfirm) {
-    if (Platform.OS === 'web') {
-      // eslint-disable-next-line no-alert
-      if (typeof window !== 'undefined' && window.confirm(`${title}\n\n${message ?? ''}`.trim())) {
-        onConfirm();
-      }
-      return;
-    }
-    Alert.alert(title, message, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign out', style: 'destructive', onPress: onConfirm },
-    ]);
-  }
+  const { refreshProfile, signOut, profile } = useAuth();
+  const confirm = useConfirm();
 
   async function doSignOut() {
     try { await signOut(); } catch (e) {
@@ -345,14 +329,33 @@ export default function OnboardingScreen({ navigation }) {
   // Lets the user bail out of onboarding back to the auth screens.
   // Persisted Supabase session means re-opening the app drops you straight into
   // onboarding (because onboarding_complete is still false). This is the escape hatch.
-  function handleSignOut() {
-    confirmThen('Sign out?', 'You can finish your profile later.', doSignOut);
+  async function handleSignOut() {
+    const ok = await confirm({
+      title: 'Sign out?',
+      message: 'You can finish your profile later.',
+      confirmLabel: 'Sign out',
+      destructive: true,
+    });
+    if (ok) doSignOut();
   }
 
   const [step, setStep]                     = useState(1);
   const [lifeStage, setLifeStage]           = useState(null);
   const [activities, setActivities]         = useState([]);
   const [location, setLocation]             = useState('');
+
+  // Pre-fill the location step with the city/state captured at signup.
+  // Runs once when the profile row arrives; never clobbers a value the user
+  // has already typed during this onboarding session.
+  const locationPrefilled = useRef(false);
+  useEffect(() => {
+    if (locationPrefilled.current || !profile) return;
+    const c  = (profile.city  || '').trim();
+    const st = (profile.state || '').trim();
+    if (c || st) setLocation([c, st].filter(Boolean).join(', '));
+    locationPrefilled.current = true;
+  }, [profile]);
+
   const [familyValues, setFamilyValues]     = useState([]);
   const [schoolType, setSchoolType]         = useState(null);
   const [loveLanguage, setLoveLanguage]     = useState(null);
@@ -452,6 +455,28 @@ export default function OnboardingScreen({ navigation }) {
         p_values:        familyValues,
       });
       if (error) throw error;
+
+      // Geocode City, State → lat/lng → PostGIS point so the new user shows up
+      // in location-filtered Discover ("Near Me" / city-radius) immediately.
+      // Non-fatal: onboarding is already saved — if geocoding fails we just log
+      // and move on. Worst case = no proximity score until they Edit Profile.
+      if (location.trim()) {
+        try {
+          const { lat, lng, error: geoErr } = await geocode(location);
+          if (geoErr) {
+            console.warn('[onboarding] geocode failed', geoErr.message);
+          } else if (lat != null && lng != null) {
+            const { error: locErr } = await supabase.rpc('set_profile_location', {
+              p_lat: lat,
+              p_lng: lng,
+            });
+            if (locErr) console.warn('[onboarding] set location failed', locErr.message);
+          }
+        } catch (geoEx) {
+          console.warn('[onboarding] geocode threw', geoEx?.message ?? geoEx);
+        }
+      }
+
       await refreshProfile();
       // AppNavigator swaps from Onboarding → Main when onboarding_complete flips.
       // Reset busy defensively so the button isn't stuck if the swap is delayed
@@ -759,10 +784,14 @@ const styles = StyleSheet.create({
   revealStat: { alignItems: 'center', marginBottom: SPACING.sm },
   revealNumber: {
     fontFamily: FONT.serifItalic,
-    fontSize: 80,
+    fontSize: 76,
     color: COLORS.text,
-    lineHeight: 88,
+    // lineHeight kept tight to the glyph; the unit caption sits below with a
+    // positive margin so the two never collide (the old -8 margin overlapped
+    // the number on web, where line-box metrics differ from native).
+    lineHeight: 80,
     letterSpacing: -2,
+    textAlign: 'center',
   },
   revealUnit: {
     fontFamily: FONT.mono,
@@ -770,7 +799,7 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
     textTransform: 'uppercase',
     color: COLORS.textTertiary,
-    marginTop: -8,
+    marginTop: 6,
   },
   revealTitle: {
     fontFamily: FONT.serifItalic,

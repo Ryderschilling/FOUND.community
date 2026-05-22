@@ -26,13 +26,13 @@ import {
   ActivityIndicator,
   RefreshControl,
   Alert,
-  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
 import { Avatar } from '../components/Atoms';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../auth/AuthContext';
+import { useConfirm } from '../components/ConfirmProvider';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 const AVATAR_GRADIENTS = [
@@ -66,7 +66,7 @@ function timeAgo(ts) {
 // Pick the headline + accent based on row state.
 function summaryFor(row) {
   if (row.is_match) {
-    return { tag: 'MATCH',   verb: "It's a match!",  icon: 'sparkles',   color: COLORS.sage  };
+    return { tag: 'FOUND',   verb: 'FOUND!',          icon: 'sparkles',   color: COLORS.text  };
   }
   if (row.their_kind === 'like') {
     return { tag: 'REQUEST', verb: 'wants to connect', icon: 'heart',    color: COLORS.clay  };
@@ -164,6 +164,7 @@ function ActivityRow({ row, onAccept, onDismiss, onOpen, onMessage, busy }) {
 // ─── Screen ───────────────────────────────────────────────────────────────
 export default function ActivityScreen({ navigation }) {
   const { user } = useAuth();
+  const confirm = useConfirm();
   const [rows, setRows]               = useState([]);
   const [loading, setLoading]         = useState(true);
   const [refreshing, setRefreshing]   = useState(false);
@@ -194,7 +195,9 @@ export default function ActivityScreen({ navigation }) {
     const unsub = navigation?.addListener?.('focus', async () => {
       load({ isRefresh: true });
       // Fire-and-forget; tab badge updates on next poll.
-      supabase.rpc('mark_inbound_seen', { p_from: null }).catch(() => {});
+      // The Postgrest builder is thenable but not a real Promise — it has no
+      // `.catch()`. Wrap in Promise.resolve() so a rejection can't crash focus.
+      Promise.resolve(supabase.rpc('mark_inbound_seen', { p_from: null })).catch(() => {});
     });
     return unsub;
   }, [navigation, load]);
@@ -232,18 +235,13 @@ export default function ActivityScreen({ navigation }) {
     // Confirmation + jump-into-chat shortcut
     const name = row.full_name || row.handle || 'them';
     if (becameMatch) {
-      const title = "It's a match!";
-      const msg   = `You and ${name} are now connected. Say hi?`;
-      if (Platform.OS === 'web') {
-        if (typeof window !== 'undefined' && window.confirm(`${title}\n\n${msg}`)) {
-          openChatWith(row);
-        }
-      } else {
-        Alert.alert(title, msg, [
-          { text: 'Later',     style: 'cancel' },
-          { text: 'Send a message', onPress: () => openChatWith(row) },
-        ]);
-      }
+      const ok = await confirm({
+        title: 'FOUND!',
+        message: `You and ${name} are now connected. Say hi?`,
+        confirmLabel: 'Send a message',
+        cancelLabel: 'Later',
+      });
+      if (ok) openChatWith(row);
     }
   }
 
@@ -270,26 +268,21 @@ export default function ActivityScreen({ navigation }) {
   // Dismiss = soft hide; row leaves the list. Confirm first to avoid mis-taps.
   async function handleDismiss(row) {
     if (!user || !row?.profile_id) return;
-    const doIt = async () => {
-      setBusyProfileId(row.profile_id);
-      const { error: rpcErr } = await supabase.rpc('dismiss_inbound', { p_from: row.profile_id });
-      setBusyProfileId(null);
-      if (rpcErr) {
-        Alert.alert('Could not dismiss', rpcErr.message);
-        return;
-      }
-      setRows((prev) => prev.filter((r) => r.profile_id !== row.profile_id));
-    };
-
-    const msg = 'Dismiss this from your activity?';
-    if (Platform.OS === 'web') {
-      if (typeof window !== 'undefined' && window.confirm(msg)) doIt();
+    const ok = await confirm({
+      title: 'Dismiss?',
+      message: 'Dismiss this from your activity?',
+      confirmLabel: 'Dismiss',
+      destructive: true,
+    });
+    if (!ok) return;
+    setBusyProfileId(row.profile_id);
+    const { error: rpcErr } = await supabase.rpc('dismiss_inbound', { p_from: row.profile_id });
+    setBusyProfileId(null);
+    if (rpcErr) {
+      Alert.alert('Could not dismiss', rpcErr.message);
       return;
     }
-    Alert.alert('Dismiss?', msg, [
-      { text: 'Cancel',  style: 'cancel' },
-      { text: 'Dismiss', style: 'destructive', onPress: doIt },
-    ]);
+    setRows((prev) => prev.filter((r) => r.profile_id !== row.profile_id));
   }
 
   function handleOpen(row) {
@@ -298,6 +291,8 @@ export default function ActivityScreen({ navigation }) {
       match: {
         id:          row.profile_id,
         name:        row.full_name || row.handle || 'Someone',
+        handle:      row.handle || null,
+        bio:         row.bio || null,
         initials:    initialsFor(row.full_name || row.handle),
         avatarUrl:   row.avatar_url || null,
         avatarColor: gradientFor(row.profile_id),
@@ -307,7 +302,6 @@ export default function ActivityScreen({ navigation }) {
         church:      null,
         interests:   [],
         connected:   row.my_kind   === 'like',
-        waved:       row.my_kind   === 'wave',
         theirKind:   row.their_kind || null,
         isMatch:     !!row.is_match,
       },
@@ -344,7 +338,7 @@ export default function ActivityScreen({ navigation }) {
         <Ionicons name="notifications-outline" size={32} color={COLORS.textTertiary} />
         <Text style={styles.stateTitle}>You're all caught up</Text>
         <Text style={styles.stateBody}>
-          When someone connects or waves, you'll see them here.
+          When someone wants to connect, you'll see them here.
         </Text>
       </View>
     );

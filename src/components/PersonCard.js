@@ -5,13 +5,12 @@ import {
   StyleSheet,
   TouchableOpacity,
   Pressable,
-  Alert,
-  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
 import { Avatar } from './Atoms';
 import ScoreRing from './ScoreRing';
+import { useConfirm } from './ConfirmProvider';
 
 // ─── State derivation ───────────────────────────────────────────────────────
 // Visual state is a pure function of the match props. We don't keep local
@@ -22,82 +21,56 @@ import ScoreRing from './ScoreRing';
 //   match.connected (my_kind === like) → PENDING   (gold/yellow)
 //   otherwise                          → IDLE      (Connect button)
 //
-//   match.waved (my_kind === wave)     → WAVED     (the small wave button)
+//   match.saved (in your private Connect Later list) → SAVED (bookmark button)
 function connectState(match) {
   if (match.isMatch)  return 'connected';
   if (match.connected) return 'pending';
   return 'idle';
 }
 
-// Cross-platform confirm. Alert.alert callbacks don't fire on web.
-function confirmThen(title, message, onConfirm, destructiveLabel = 'Remove') {
-  if (Platform.OS === 'web') {
-    if (typeof window !== 'undefined' && window.confirm(`${title}\n\n${message ?? ''}`.trim())) {
-      onConfirm();
-    }
-    return;
-  }
-  Alert.alert(title, message, [
-    { text: 'Cancel', style: 'cancel' },
-    { text: destructiveLabel, style: 'destructive', onPress: onConfirm },
-  ]);
-}
-
 /**
  * PersonCard — match card in the Discover feed
  * Props:
- *   match { id, name, ..., connected, waved, theirKind, isMatch }
+ *   match { id, name, ..., connected, saved, theirKind, isMatch }
  *   onConnect()       — fires "like" insert
- *   onWave()          — fires "wave" insert
+ *   onSave()          — toggles this person in your private Connect Later list
  *   onCancel(kind?)   — fires remove_connection(kind). kind=null = all kinds.
  *   onPress()         — opens MatchDetail
  */
-export default function PersonCard({ match, onConnect, onWave, onCancel, onPress }) {
+export default function PersonCard({ match, onConnect, onSave, onCancel, onPress }) {
   const state = connectState(match);
+  const confirm = useConfirm();
 
   const inboundBadge = (() => {
-    if (match.isMatch)              return { label: "It's a match",      icon: 'sparkles',  color: COLORS.sage };
-    if (match.theirKind === 'like') return { label: 'Wants to connect',  icon: 'heart',     color: COLORS.clay };
-    if (match.theirKind === 'wave') return { label: 'Waved at you',      icon: 'hand-left', color: COLORS.gold };
+    if (match.isMatch)              return { label: 'FOUND!',            icon: 'sparkles',  color: COLORS.text,  bg: COLORS.surface };
+    if (match.theirKind === 'like') return { label: 'Wants to connect',  icon: 'heart',     color: COLORS.clay,  bg: COLORS.clayBg };
     return null;
   })();
 
   // ── Connect button: tap behavior depends on state ──────────────────────
-  function handleConnectTap() {
+  async function handleConnectTap() {
     if (state === 'idle') {
       onConnect?.();
       return;
     }
     if (state === 'pending') {
-      confirmThen(
-        'Cancel request?',
-        `${match.name} won't see your connection request anymore.`,
-        () => onCancel?.('like'),
-        'Cancel request',
-      );
+      const ok = await confirm({
+        title: 'Cancel request?',
+        message: `${match.name} won't see your connection request anymore.`,
+        confirmLabel: 'Cancel request',
+        destructive: true,
+      });
+      if (ok) onCancel?.('like');
       return;
     }
     if (state === 'connected') {
-      confirmThen(
-        'Disconnect?',
-        `You and ${match.name} will no longer be connected.`,
-        () => onCancel?.('like'),
-        'Disconnect',
-      );
-    }
-  }
-
-  // ── Wave button: tap behavior depends on state ─────────────────────────
-  function handleWaveTap() {
-    if (match.waved) {
-      confirmThen(
-        'Cancel wave?',
-        `Your wave to ${match.name} will be undone.`,
-        () => onCancel?.('wave'),
-        'Cancel wave',
-      );
-    } else {
-      onWave?.();
+      const ok = await confirm({
+        title: 'Disconnect?',
+        message: `You and ${match.name} will no longer be connected.`,
+        confirmLabel: 'Disconnect',
+        destructive: true,
+      });
+      if (ok) onCancel?.('like');
     }
   }
 
@@ -134,7 +107,7 @@ export default function PersonCard({ match, onConnect, onWave, onCancel, onPress
     >
       {/* Inbound signal badge */}
       {inboundBadge ? (
-        <View style={[styles.inboundBadge, { backgroundColor: COLORS.sageBg }]}>
+        <View style={[styles.inboundBadge, { backgroundColor: inboundBadge.bg, borderWidth: 1, borderColor: COLORS.border }]}>
           <Ionicons name={inboundBadge.icon} size={11} color={inboundBadge.color} />
           <Text style={[styles.inboundText, { color: inboundBadge.color }]}>
             {inboundBadge.label}
@@ -188,15 +161,17 @@ export default function PersonCard({ match, onConnect, onWave, onCancel, onPress
           </View>
         </TouchableOpacity>
 
+        {/* Connect Later — private bookmark. Tap to toggle. */}
         <TouchableOpacity
-          style={[styles.btnWave, match.waved && styles.btnWaveDone]}
-          onPress={handleWaveTap}
+          style={[styles.btnSave, match.saved && styles.btnSaveDone]}
+          onPress={() => onSave?.()}
           activeOpacity={0.8}
+          accessibilityLabel={match.saved ? 'Remove from Connect Later' : 'Save to Connect Later'}
         >
           <Ionicons
-            name={match.waved ? 'checkmark' : 'hand-left-outline'}
+            name={match.saved ? 'bookmark' : 'bookmark-outline'}
             size={18}
-            color={match.waved ? COLORS.sage : COLORS.textSecondary}
+            color={match.saved ? COLORS.sage : COLORS.textSecondary}
           />
         </TouchableOpacity>
       </View>
@@ -299,7 +274,7 @@ const styles = StyleSheet.create({
 
   btnConnectInner: { flexDirection: 'row', alignItems: 'center', gap: 5 },
 
-  btnWave: {
+  btnSave: {
     backgroundColor: COLORS.bg,
     borderRadius: RADIUS.lg,
     paddingVertical: 13,
@@ -309,5 +284,5 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
   },
-  btnWaveDone: { backgroundColor: COLORS.sageBg, borderColor: COLORS.sageMid },
+  btnSaveDone: { backgroundColor: COLORS.sageBg, borderColor: COLORS.sageMid },
 });

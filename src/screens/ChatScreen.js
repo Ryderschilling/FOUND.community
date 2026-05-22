@@ -52,7 +52,37 @@ function formatTime(iso) {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-function Bubble({ message, mine }) {
+function Bubble({ message, mine, isGroup, sender, showSender }) {
+  // Group threads: other people's messages get a sender avatar + name.
+  // showSender is false for consecutive messages from the same person, so a
+  // run of messages reads as one block instead of repeating the name.
+  if (isGroup && !mine) {
+    return (
+      <View style={[styles.bubbleWrap, styles.bubbleWrapThem]}>
+        <View style={styles.bubbleRow}>
+          {showSender ? (
+            <Avatar
+              initials={sender?.initials || '··'}
+              size={26}
+              gradientColors={sender?.gradient}
+            />
+          ) : (
+            <View style={styles.avatarSpacer} />
+          )}
+          <View style={styles.bubbleCol}>
+            {showSender ? (
+              <Text style={styles.senderName}>{sender?.name || 'Member'}</Text>
+            ) : null}
+            <View style={[styles.bubble, styles.bubbleThem]}>
+              <Text style={[styles.bubbleText, styles.bubbleTextThem]}>{message.body}</Text>
+            </View>
+            <Text style={styles.bubbleTime}>{formatTime(message.created_at)}</Text>
+          </View>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.bubbleWrap, mine ? styles.bubbleWrapMe : styles.bubbleWrapThem]}>
       <View style={[styles.bubble, mine ? styles.bubbleMe : styles.bubbleThem]}>
@@ -74,15 +104,43 @@ export default function ChatScreen({ route, navigation }) {
   const threadId = params.thread_id ?? params.threadId ?? null;
   const other = params.other ?? params.thread ?? null;
 
+  // Group mode — set by GroupDetailScreen ("Open Group Chat")
+  const isGroup   = !!params.isGroup;
+  const group     = params.group ?? null;
+  const groupId   = group?.id ?? params.group_id ?? null;
+  const groupName = group?.name || 'Group';
+
   const otherName     = other?.name || other?.full_name || 'Friend';
   const otherInitials = other?.initials || initialsFor(otherName);
   const otherGradient = other?.avatarColor || gradientFor(other?.id || other?.profile_id || otherName);
 
-  const [messages, setMessages] = useState([]);
-  const [loading, setLoading]   = useState(true);
-  const [input, setInput]       = useState('');
-  const [sending, setSending]   = useState(false);
+  const [messages, setMessages]   = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [input, setInput]         = useState('');
+  const [sending, setSending]     = useState(false);
+  const [senderMap, setSenderMap] = useState({});
   const listRef = useRef(null);
+
+  // Group mode: load the roster once so each message can show a name + avatar.
+  useEffect(() => {
+    if (!isGroup || !groupId) return;
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase.rpc('group_members_list', { p_group: groupId });
+      if (cancelled || error || !data) return;
+      const map = {};
+      for (const m of data) {
+        const name = m.full_name || m.handle || 'Member';
+        map[m.profile_id] = {
+          name,
+          initials: initialsFor(name),
+          gradient: gradientFor(m.profile_id),
+        };
+      }
+      setSenderMap(map);
+    })();
+    return () => { cancelled = true; };
+  }, [isGroup, groupId]);
 
   // Mark current thread as read for me
   const markRead = useCallback(async () => {
@@ -194,19 +252,39 @@ export default function ChatScreen({ route, navigation }) {
           <Text style={styles.backArrow}>←</Text>
         </TouchableOpacity>
 
-        <View style={styles.navCenter}>
-          <Avatar
-            initials={otherInitials}
-            size={34}
-            gradientColors={otherGradient}
-          />
-          <View>
-            <Text style={styles.navName}>{otherName}</Text>
-            <Text style={styles.navStatus}>Connected via FOUND</Text>
+        {isGroup ? (
+          <TouchableOpacity
+            style={styles.navCenter}
+            activeOpacity={0.7}
+            onPress={() => { if (groupId) navigation.navigate('GroupDetail', { groupId }); }}
+          >
+            <View style={[styles.groupIconWrap, { backgroundColor: group?.iconBg ?? COLORS.sageBg }]}>
+              <Ionicons name={group?.icon ?? 'people'} size={18} color={group?.iconColor ?? COLORS.sage} />
+            </View>
+            <View>
+              <Text style={styles.navName} numberOfLines={1}>{groupName}</Text>
+              <Text style={styles.navStatus}>Group chat</Text>
+            </View>
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.navCenter}>
+            <Avatar
+              initials={otherInitials}
+              size={34}
+              gradientColors={otherGradient}
+            />
+            <View>
+              <Text style={styles.navName}>{otherName}</Text>
+              <Text style={styles.navStatus}>Connected via FOUND</Text>
+            </View>
           </View>
-        </View>
+        )}
 
-        <TouchableOpacity style={styles.moreBtn} activeOpacity={0.7}>
+        <TouchableOpacity
+          style={styles.moreBtn}
+          activeOpacity={0.7}
+          onPress={() => { if (isGroup && groupId) navigation.navigate('GroupDetail', { groupId }); }}
+        >
           <Ionicons name="ellipsis-horizontal" size={18} color={COLORS.text} />
         </TouchableOpacity>
       </View>
@@ -223,7 +301,9 @@ export default function ChatScreen({ route, navigation }) {
           <Ionicons name="chatbubble-outline" size={28} color={COLORS.textTertiary} />
           <Text style={styles.emptyTitle}>Say hi.</Text>
           <Text style={styles.emptyBody}>
-            Open with what you have in common — life stage, an interest, your church.
+            {isGroup
+              ? 'Be the first to post. Introduce yourself or share what\u2019s coming up.'
+              : 'Open with what you have in common — life stage, an interest, your church.'}
           </Text>
         </View>
       ) : (
@@ -231,9 +311,22 @@ export default function ChatScreen({ route, navigation }) {
           ref={listRef}
           data={messages}
           keyExtractor={(item) => String(item.id)}
-          renderItem={({ item }) => (
-            <Bubble message={item} mine={user && item.sender_id === user.id} />
-          )}
+          renderItem={({ item, index }) => {
+            const mine = !!user && item.sender_id === user.id;
+            const prev = messages[index - 1];
+            // First message of a sender-run shows the avatar + name.
+            const showSender =
+              isGroup && !mine && (!prev || prev.sender_id !== item.sender_id);
+            return (
+              <Bubble
+                message={item}
+                mine={mine}
+                isGroup={isGroup}
+                sender={senderMap[item.sender_id]}
+                showSender={showSender}
+              />
+            );
+          }}
           contentContainerStyle={styles.messageList}
           showsVerticalScrollIndicator={false}
           onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
@@ -295,6 +388,13 @@ const styles = StyleSheet.create({
   },
   backArrow: { fontSize: 18, color: COLORS.text },
   navCenter: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
+  groupIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: RADIUS.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   navName: { fontFamily: FONT.serifItalic, fontSize: 17, color: COLORS.text },
   navStatus: { fontFamily: FONT.mono, fontSize: 8, letterSpacing: 1.2, textTransform: 'uppercase', color: COLORS.textTertiary },
   moreBtn: {
@@ -322,6 +422,18 @@ const styles = StyleSheet.create({
   bubbleWrap: { marginVertical: 3 },
   bubbleWrapMe:   { alignItems: 'flex-end' },
   bubbleWrapThem: { alignItems: 'flex-start' },
+
+  // Group mode: avatar + sender name beside other people's bubbles
+  bubbleRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 6 },
+  avatarSpacer: { width: 26 },
+  bubbleCol: { alignItems: 'flex-start', flexShrink: 1 },
+  senderName: {
+    fontFamily: FONT.semiBold,
+    fontSize: 11,
+    color: COLORS.textSecondary,
+    marginBottom: 3,
+    marginLeft: 4,
+  },
 
   bubble: {
     maxWidth: '78%',

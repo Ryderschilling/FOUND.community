@@ -86,11 +86,22 @@ export function AuthProvider({ children }) {
         if (error) throw error;
         return data;
       },
-      async signUpWithPassword({ email, password, fullName }) {
+      async signUpWithPassword({ email, password, fullName, phone, zip, city, state }) {
+        // Metadata keys MUST match the found.community website signup
+        // (assets/auth.js) — the handle_new_user() trigger reads these keys to
+        // populate the profiles row, so app + web signups must be identical.
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
-          options: { data: { full_name: fullName ?? '' } },
+          options: {
+            data: {
+              full_name: fullName ?? '',
+              phone:     phone ?? '',
+              zip:       zip ?? '',
+              city:      city ?? '',
+              state:     (state ?? '').toUpperCase(),
+            },
+          },
         });
         if (error) throw error;
         return data;

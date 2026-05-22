@@ -1,6 +1,6 @@
 /**
- * ScoreRing — circular SVG match percentage indicator
- * Uses react-native-svg. Shows a sage-colored arc over a light track.
+ * ScoreRing — circular SVG connection score indicator
+ * Black progress arc on a light gray track. Matches website's black/white aesthetic.
  *
  * Props:
  *   score     number  0–100
@@ -28,21 +28,21 @@ export default function ScoreRing({
   return (
     <View style={[{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }, style]}>
       <Svg width={size} height={size} style={StyleSheet.absoluteFill}>
-        {/* Track */}
+        {/* Track — neutral light gray */}
         <Circle
           cx={center}
           cy={center}
           r={radius}
-          stroke={COLORS.sageLight}
+          stroke={COLORS.border}
           strokeWidth={stroke}
           fill="none"
         />
-        {/* Progress arc */}
+        {/* Progress arc — black */}
         <Circle
           cx={center}
           cy={center}
           r={radius}
-          stroke={COLORS.sage}
+          stroke={COLORS.text}
           strokeWidth={stroke}
           fill="none"
           strokeDasharray={circumference}
@@ -67,7 +67,7 @@ const styles = StyleSheet.create({
   },
   score: {
     fontFamily: FONT.bold,
-    color: COLORS.sage,
+    color: COLORS.text,
     lineHeight: undefined,
   },
 });

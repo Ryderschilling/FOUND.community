@@ -29,6 +29,7 @@ import {
   deleteProfilePhoto,
   MAX_PHOTOS,
 } from '../lib/profilePhotos';
+import { useConfirm } from '../components/ConfirmProvider';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 const AVATAR_GRADIENTS = [
@@ -330,6 +331,7 @@ function SettingsItem({ iconName, label, onPress, danger }) {
 // ─── Main screen ──────────────────────────────────────────────────────────
 export default function ProfileScreen({ navigation }) {
   const { user, signOut } = useAuth();
+  const confirm = useConfirm();
 
   const [profile, setProfile]     = useState(null);
   const [stats, setStats]         = useState({ matches: null, connections: null, groups: null });
@@ -489,16 +491,14 @@ export default function ProfileScreen({ navigation }) {
     }
   }
 
-  function handleDeletePhoto(photo) {
-    const msg = 'Remove this photo from your highlight reel?';
-    if (Platform.OS === 'web') {
-      if (typeof window !== 'undefined' && window.confirm(msg)) doDelete(photo);
-      return;
-    }
-    Alert.alert('Remove photo?', msg, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Remove', style: 'destructive', onPress: () => doDelete(photo) },
-    ]);
+  async function handleDeletePhoto(photo) {
+    const ok = await confirm({
+      title: 'Remove photo?',
+      message: 'Remove this photo from your highlight reel?',
+      confirmLabel: 'Remove',
+      destructive: true,
+    });
+    if (ok) doDelete(photo);
   }
 
   // Open the dedicated Edit Profile screen.
@@ -507,23 +507,16 @@ export default function ProfileScreen({ navigation }) {
   }
 
   async function handleSignOut() {
-    const doSignOut = async () => {
-      try { await signOut(); } catch (e) {
-        Alert.alert('Sign out failed', e?.message ?? 'Try again.');
-      }
-    };
-    // React Native Web ignores Alert.alert button callbacks — fall back to
-    // window.confirm so the sign-out actually fires on the Vercel web build.
-    if (Platform.OS === 'web') {
-      if (typeof window !== 'undefined' && window.confirm('Sign out?\n\nYou can sign back in anytime.')) {
-        doSignOut();
-      }
-      return;
+    const ok = await confirm({
+      title: 'Sign out?',
+      message: 'You can sign back in anytime.',
+      confirmLabel: 'Sign out',
+      destructive: true,
+    });
+    if (!ok) return;
+    try { await signOut(); } catch (e) {
+      Alert.alert('Sign out failed', e?.message ?? 'Try again.');
     }
-    Alert.alert('Sign out?', 'You can sign back in anytime.', [
-      { text: 'Cancel',   style: 'cancel' },
-      { text: 'Sign out', style: 'destructive', onPress: doSignOut },
-    ]);
   }
 
   if (loading || !profile) {
@@ -603,7 +596,7 @@ export default function ProfileScreen({ navigation }) {
 
           {/* Stats — Connected is tappable; opens the network list. */}
           <View style={styles.statsRow}>
-            <StatCard value={stats.matches}     label="Matches"   />
+            <StatCard value={stats.matches}     label="FOUND"     />
             <StatCard
               value={stats.connections}
               label="Connected"
@@ -714,6 +707,8 @@ export default function ProfileScreen({ navigation }) {
             match: {
               id:          row.profile_id,
               name:        row.full_name || row.handle || 'Someone',
+              handle:      row.handle || null,
+              bio:         row.bio || null,
               initials:    initialsFor(row.full_name || row.handle),
               avatarUrl:   row.avatar_url || null,
               avatarColor: gradientFor(row.profile_id),
@@ -723,7 +718,7 @@ export default function ProfileScreen({ navigation }) {
               church:      null,
               interests:   [],
               connected:   true,
-              waved:       false,
+              saved:       false,
               theirKind:   'like',
               isMatch:     true,
             },

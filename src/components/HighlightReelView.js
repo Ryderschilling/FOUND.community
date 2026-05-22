@@ -13,7 +13,7 @@
 // we intentionally don't share that one to keep edit logic out of read paths.
 // ─────────────────────────────────────────────────────────────────────────
 
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import {
   View,
   Image,
@@ -40,6 +40,20 @@ function computeTileSize(winWidth) {
   return Math.floor(usable / REEL_TARGET) - REEL_GAP;
 }
 
+// Walk up the DOM to find the nearest vertically-scrollable ancestor.
+// Web only — used to forward vertical wheel events past the horizontal reel.
+function findScrollableAncestor(node) {
+  let el = node?.parentElement;
+  while (el) {
+    const oy = window.getComputedStyle(el).overflowY;
+    if ((oy === 'auto' || oy === 'scroll') && el.scrollHeight > el.clientHeight) {
+      return el;
+    }
+    el = el.parentElement;
+  }
+  return null;
+}
+
 export default function HighlightReelView({ photos = [], sideInset = SPACING.lg }) {
   const scrollRef = useRef(null);
   const offsetRef = useRef(0);
@@ -49,6 +63,26 @@ export default function HighlightReelView({ photos = [], sideInset = SPACING.lg 
   const tileSize = computeTileSize(winW);
   const tileStyle = { width: tileSize, height: tileSize };
   const scrollStep = (tileSize + REEL_GAP) * 2;
+
+  // Web: a horizontal ScrollView captures the wheel and translates a vertical
+  // scroll into sideways reel movement — so the page won't scroll while the
+  // cursor is over the reel. Intercept predominantly-vertical wheels and
+  // forward them to the nearest scrollable ancestor instead.
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const node = scrollRef.current?.getScrollableNode?.();
+    if (!node) return;
+    const handleWheel = (e) => {
+      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return; // horizontal intent — keep
+      const target = findScrollableAncestor(node);
+      if (target) {
+        target.scrollTop += e.deltaY;
+        e.preventDefault();
+      }
+    };
+    node.addEventListener('wheel', handleWheel, { passive: false });
+    return () => node.removeEventListener('wheel', handleWheel);
+  }, [photos.length]);
 
   if (!photos?.length) return null;
 

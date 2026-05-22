@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Create your FOUND account</title>
+  <meta name="description" content="Create a FOUND account to find real Christian community nearby." />
+
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <meta name="theme-color" content="#000000">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <style>
+    body {
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f8f6f3;
+      color: #111111;
+    }
+    .serif { font-family: Georgia, "Times New Roman", serif; }
+    .grain {
+      background-image:
+        radial-gradient(circle at 20% 20%, rgba(0,0,0,0.035) 0, transparent 24%),
+        radial-gradient(circle at 80% 0%, rgba(122,132,106,0.18) 0, transparent 28%),
+        radial-gradient(circle at 50% 90%, rgba(217,204,189,0.35) 0, transparent 32%);
+    }
+    .input-field {
+      width: 100%;
+      padding: 14px 16px;
+      border: 1px solid rgba(0,0,0,0.12);
+      border-radius: 12px;
+      background: #ffffff;
+      font-size: 16px;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .input-field:focus {
+      outline: none;
+      border-color: #111111;
+      box-shadow: 0 0 0 3px rgba(17,17,17,0.06);
+    }
+  </style>
+</head>
+
+<body class="min-h-screen flex flex-col">
+
+<header class="bg-[#f8f6f3]/85 backdrop-blur border-b border-black/5">
+  <div class="max-w-7xl mx-auto px-5 md:px-8 h-20 flex items-center justify-between">
+    <a href="/" class="flex items-center gap-3">
+      <svg width="36" height="36" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="FOUND Logo">
+        <circle cx="20" cy="20" r="20" fill="#111111"/>
+        <circle cx="20" cy="20" r="17" fill="#ffffff"/>
+        <rect x="11" y="8" width="5" height="23" rx="2" fill="#111111"/>
+        <rect x="11" y="8" width="14" height="5" rx="2" fill="#111111"/>
+        <rect x="11" y="17.5" width="10.5" height="4.5" rx="2" fill="#111111"/>
+        <circle cx="27" cy="29.5" r="3" fill="#111111"/>
+      </svg>
+      <span class="text-2xl tracking-tight font-semibold">FOUND</span>
+    </a>
+    <a href="/login.html" class="text-sm text-neutral-600 hover:text-black">Already have an account? Sign in</a>
+  </div>
+</header>
+
+<main class="grain flex-1 flex items-center justify-center px-5 md:px-8 py-16">
+  <div class="w-full max-w-md">
+    <div class="bg-white border border-black/10 rounded-3xl shadow-sm p-8 md:p-10">
+      <div class="mb-7">
+        <h1 class="serif text-4xl tracking-tight mb-2">Find your people.</h1>
+        <p class="text-neutral-600">Create an account to get started.</p>
+      </div>
+
+      <form id="signupForm" class="space-y-4" novalidate>
+        <div>
+          <label class="block text-sm text-neutral-700 mb-1.5" for="fullName">Full name</label>
+          <input id="fullName" name="fullName" type="text" autocomplete="name" required
+                 class="input-field" placeholder="Your name" />
+        </div>
+
+        <div>
+          <label class="block text-sm text-neutral-700 mb-1.5" for="email">Email</label>
+          <input id="email" name="email" type="email" autocomplete="email" required
+                 class="input-field" placeholder="you@example.com" />
+        </div>
+
+        <div>
+          <label class="block text-sm text-neutral-700 mb-1.5" for="password">Password</label>
+          <input id="password" name="password" type="password" autocomplete="new-password" required minlength="8"
+                 class="input-field" placeholder="At least 8 characters" />
+        </div>
+
+        <div id="signupError" class="hidden text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-4 py-3"></div>
+
+        <div id="signupSuccess" class="hidden text-sm text-[#7a846a] bg-[#7a846a]/10 border border-[#7a846a]/20 rounded-lg px-4 py-3">
+          Account created. Check your email to confirm your address — then sign in.
+        </div>
+
+        <button id="signupBtn" type="submit"
+                class="w-full rounded-full bg-black text-white py-4 text-base font-medium hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed">
+          Create account
+        </button>
+      </form>
+
+      <p class="text-xs text-neutral-500 text-center mt-5 leading-relaxed">
+        By creating an account, you agree to FOUND's terms and acknowledge the privacy policy.
+      </p>
+
+      <p class="text-sm text-neutral-500 text-center mt-5">
+        Already have an account?
+        <a href="/login.html" class="text-black underline underline-offset-2">Sign in</a>
+      </p>
+    </div>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="/assets/auth.js"></script>
+<script>
+  (async () => {
+    const session = await foundAuth.getSession();
+    if (session) window.location.replace('/account.html');
+  })();
+
+  const form       = document.getElementById('signupForm');
+  const fullNameEl = document.getElementById('fullName');
+  const emailEl    = document.getElementById('email');
+  const passwordEl = document.getElementById('password');
+  const errorEl    = document.getElementById('signupError');
+  const successEl  = document.getElementById('signupSuccess');
+  const signupBtn  = document.getElementById('signupBtn');
+
+  function showError(msg) {
+    errorEl.textContent = msg;
+    errorEl.classList.remove('hidden');
+  }
+  function clearMsgs() {
+    errorEl.classList.add('hidden');
+    successEl.classList.add('hidden');
+  }
+
+  // Basic email format check — matches "anything@anything.anything" with no spaces.
+  // Catches typos like a bare domain ("found.com") before they hit Supabase,
+  // so the user gets an instant, friendly message instead of a raw API error.
+  function isValidEmail(value) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+  }
+
+  // Map Supabase auth errors to plain-English copy.
+  function friendlySignUpError(raw) {
+    const msg = (raw || '').toLowerCase();
+    if (msg.includes('already registered') || msg.includes('already exists') || msg.includes('user_already_exists')) {
+      return 'That email is already registered. Try signing in instead.';
+    }
+    if (msg.includes('invalid format') || msg.includes('validate email')) {
+      return "That doesn't look like a valid email. Double-check the @ and domain.";
+    }
+    if (msg.includes('password') && msg.includes('weak')) {
+      return 'That password is too weak — try a longer one.';
+    }
+    if (msg.includes('rate limit') || msg.includes('too many')) {
+      return 'Too many sign-up attempts. Wait a minute and try again.';
+    }
+    return raw || 'Could not create account. Try again.';
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    clearMsgs();
+
+    const email    = emailEl.value.trim();
+    const password = passwordEl.value;
+    const fullName = fullNameEl.value.trim();
+
+    // ── Client-side validation (instant feedback, no API roundtrip) ──
+    if (!fullName) {
+      showError('Please enter your name.');
+      fullNameEl.focus();
+      return;
+    }
+    if (!isValidEmail(email)) {
+      showError("That doesn't look like a valid email. Make sure it has an @ and a domain (e.g. you@example.com).");
+      emailEl.focus();
+      return;
+    }
+    if (password.length < 8) {
+      showError('Password must be at least 8 characters.');
+      passwordEl.focus();
+      return;
+    }
+
+    signupBtn.disabled = true;
+    signupBtn.textContent = 'Creating account…';
+    try {
+      const result = await foundAuth.signUp({ email, password, fullName });
+      // Supabase returns a session only if email confirmation is disabled.
+      // If confirmation is required (default), session is null and we show
+      // the "check your email" message.
+      if (result?.session) {
+        window.location.replace('/account.html');
+      } else {
+        successEl.classList.remove('hidden');
+        signupBtn.textContent = 'Account created';
+      }
+    } catch (err) {
+      showError(friendlySignUpError(err?.message));
+      signupBtn.disabled = false;
+      signupBtn.textContent = 'Create account';
+    }
+  });
+</script>
+
+</body>
+</html>

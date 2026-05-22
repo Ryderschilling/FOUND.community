@@ -1,27 +1,18 @@
 import React from 'react';
-import { View, Text, StyleSheet, StatusBar, SafeAreaView } from 'react-native';
-import Svg, { Circle, Rect } from 'react-native-svg';
-import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
+import { View, Text, StyleSheet, StatusBar, SafeAreaView, Image } from 'react-native';
+import { COLORS, FONT, SPACING, RADIUS } from '../theme';
 import { Wordmark, PrimaryButton, GhostButton } from '../components/Atoms';
 
-// FOUND mark — F + dot inside a black circle.
-// Same geometry as the website's header SVG (viewBox 0 0 40 40).
-function FoundLogo({ size = 64, color = COLORS.text, bg = COLORS.bg }) {
+// FOUND brand mark — the official circle logo PNG (assets/brand-mark.png).
+// Single source of truth: the same file is used for the app icon and favicon.
+function FoundLogo({ size = 64 }) {
   return (
-    <Svg width={size} height={size} viewBox="0 0 40 40">
-      {/* Outer ring */}
-      <Circle cx="20" cy="20" r="20" fill={color} />
-      {/* Inner field */}
-      <Circle cx="20" cy="20" r="17" fill={bg} />
-      {/* F vertical stem */}
-      <Rect x="11" y="8" width="5" height="23" rx="2" fill={color} />
-      {/* F top bar */}
-      <Rect x="11" y="8" width="14" height="5" rx="2" fill={color} />
-      {/* F middle bar */}
-      <Rect x="11" y="17.5" width="10.5" height="4.5" rx="2" fill={color} />
-      {/* Dot */}
-      <Circle cx="27" cy="29.5" r="3" fill={color} />
-    </Svg>
+    <Image
+      source={require('../../assets/brand-mark.png')}
+      style={{ width: size, height: size }}
+      resizeMode="contain"
+      accessibilityLabel="FOUND"
+    />
   );
 }
 
@@ -34,27 +25,30 @@ export default function SplashScreen({ navigation }) {
 
       {/* Brand */}
       <View style={styles.brand}>
-        <FoundLogo size={72} color={COLORS.text} bg={COLORS.bg} />
+        <FoundLogo size={84} />
         <Wordmark size="xl" />
-        <Text style={styles.tagline}>Find real Christian{'\n'}community near you.</Text>
+        <View style={styles.badge}>
+          <View style={styles.badgeDot} />
+          <Text style={styles.badgeText}>Real. Christian. Community.</Text>
+        </View>
+      </View>
+
+      {/* Hero copy — mirrors the found.community landing page */}
+      <View style={styles.hero}>
+        <Text style={styles.headline}>Find your people.</Text>
+        <Text style={styles.body}>
+          FOUND helps Christians discover like-minded people nearby who share
+          their faith, life stage, interests, and desire to go deeper.
+        </Text>
+        <Text style={styles.subtext}>Because we all need people to run with.</Text>
       </View>
 
       <View style={{ flex: 1 }} />
 
-      {/* Editorial quote card */}
-      <View style={styles.quoteCard}>
-        <Text style={styles.quoteRule}>— from someone who found it</Text>
-        <Text style={styles.quoteText}>
-          "It's possible to sit in church every week{'\n'}and still feel alone."
-        </Text>
-        <View style={styles.quoteDivider} />
-        <Text style={styles.quoteResolution}>FOUND fixes that.</Text>
-      </View>
-
       {/* CTAs */}
       <View style={styles.ctaWrap}>
         <PrimaryButton label="Get Started" onPress={() => navigation.navigate('SignUp')} />
-        <GhostButton label="I already have an account" onPress={() => navigation.navigate('SignIn')} />
+        <GhostButton label="Already have an account? Sign in" onPress={() => navigation.navigate('SignIn')} />
       </View>
 
       <View style={{ height: SPACING['2xl'] }} />
@@ -72,49 +66,65 @@ const styles = StyleSheet.create({
   },
   brand: {
     alignItems: 'center',
-    gap: SPACING.lg,
+    gap: SPACING.md,
     paddingHorizontal: H_PAD,
   },
-  tagline: {
-    fontFamily: FONT.regular,
-    fontSize: 16,
-    color: COLORS.textSecondary,
-    textAlign: 'center',
-    lineHeight: 26,
-  },
-  quoteCard: {
+  // "Real. Christian. Community." pill — matches the website badge
+  badge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
     backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.xl,
-    padding: SPACING.lg,
     borderWidth: 1,
     borderColor: COLORS.border,
-    gap: SPACING.sm,
-    marginHorizontal: H_PAD,        // explicit — no ambiguity
-    marginBottom: SPACING.lg,
-    ...SHADOW.sm,
+    borderRadius: RADIUS.full,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    marginTop: 2,
   },
-  quoteRule: {
-    fontFamily: FONT.mono,
-    fontSize: 9,
-    letterSpacing: 1.4,
-    textTransform: 'uppercase',
-    color: COLORS.textTertiary,
+  badgeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: COLORS.sage,
   },
-  quoteText: {
-    fontFamily: FONT.serifItalic,
-    fontSize: 18,
+  badgeText: {
+    fontFamily: FONT.regular,
+    fontSize: 12.5,
     color: COLORS.text,
-    lineHeight: 28,
+    letterSpacing: 0.2,
   },
-  quoteDivider: { height: 1, backgroundColor: COLORS.borderLight, marginVertical: 4 },
-  quoteResolution: {
-    fontFamily: FONT.bold,
-    fontSize: 13,
-    color: COLORS.sage,
-    letterSpacing: 0.3,
+  // Hero copy block — same words as found.community
+  hero: {
+    alignItems: 'center',
+    gap: SPACING.sm,
+    paddingHorizontal: H_PAD,
+    marginTop: SPACING.xl,
+  },
+  headline: {
+    fontFamily: FONT.serifItalic,
+    fontSize: 34,
+    color: COLORS.text,
+    textAlign: 'center',
+    letterSpacing: -0.5,
+    lineHeight: 40,
+  },
+  body: {
+    fontFamily: FONT.regular,
+    fontSize: 15.5,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    lineHeight: 24,
+  },
+  subtext: {
+    fontFamily: FONT.regular,
+    fontSize: 14,
+    color: COLORS.textTertiary,
+    textAlign: 'center',
+    marginTop: 2,
   },
   ctaWrap: {
     gap: SPACING.md,
-    marginHorizontal: H_PAD,        // explicit — matches quoteCard
+    marginHorizontal: H_PAD,
   },
 });

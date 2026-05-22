@@ -11,6 +11,7 @@ import {
   RefreshControl,
   Modal,
   Alert,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
@@ -127,6 +128,14 @@ export default function MessagesScreen({ navigation }) {
   }, [navigation, load]);
 
   function openThread(item) {
+    if (item.kind === 'group') {
+      navigation?.navigate('Chat', {
+        thread_id: item.thread_id,
+        isGroup: true,
+        group: { id: item.group_id, name: item.other_full_name },
+      });
+      return;
+    }
     navigation?.navigate('Chat', {
       thread_id: item.thread_id,
       other: {
@@ -219,22 +228,31 @@ export default function MessagesScreen({ navigation }) {
 }
 
 // ─── Compose modal ────────────────────────────────────────────────────────
-// Bottom-sheet listing everyone I can message (people I've connected/waved
-// with, either direction). Tap → start_direct_thread → Chat.
+// Bottom-sheet listing everyone I can message (people I've connected with,
+// either direction). Tap → start_direct_thread → Chat.
 function ComposeModal({ visible, onClose, onPick, busy }) {
   const [contacts, setContacts] = useState([]);
   const [loading, setLoading]   = useState(true);
+  const [failed, setFailed]     = useState(false);
+
+  const loadContacts = useCallback(async () => {
+    setLoading(true);
+    setFailed(false);
+    const { data, error } = await supabase.rpc('messageable_contacts');
+    if (error) {
+      console.warn('[compose] contacts failed', error.message);
+      setFailed(true);
+      setContacts([]);
+    } else {
+      setContacts(data ?? []);
+    }
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
     if (!visible) return;
-    setLoading(true);
-    (async () => {
-      const { data, error } = await supabase.rpc('messageable_contacts');
-      if (error) console.warn('[compose] contacts failed', error.message);
-      setContacts(data ?? []);
-      setLoading(false);
-    })();
-  }, [visible]);
+    loadContacts();
+  }, [visible, loadContacts]);
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
@@ -252,12 +270,28 @@ function ComposeModal({ visible, onClose, onPick, busy }) {
             <View style={modalStyles.centerPad}>
               <ActivityIndicator color={COLORS.textTertiary} />
             </View>
+          ) : failed ? (
+            <View style={modalStyles.centerPad}>
+              <Ionicons name="cloud-offline-outline" size={28} color={COLORS.textTertiary} />
+              <Text style={modalStyles.emptyTitle}>Couldn't load contacts</Text>
+              <Text style={modalStyles.emptyBody}>
+                Something went wrong. Check your connection and try again.
+              </Text>
+              <TouchableOpacity
+                style={modalStyles.retryBtn}
+                onPress={loadContacts}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="refresh" size={15} color={COLORS.text} />
+                <Text style={modalStyles.retryText}>Try again</Text>
+              </TouchableOpacity>
+            </View>
           ) : contacts.length === 0 ? (
             <View style={modalStyles.centerPad}>
               <Ionicons name="people-outline" size={28} color={COLORS.textTertiary} />
               <Text style={modalStyles.emptyTitle}>No contacts yet</Text>
               <Text style={modalStyles.emptyBody}>
-                Connect or wave at someone in Discover, then come back here to start a chat.
+                Connect with someone in Discover, then come back here to start a chat.
               </Text>
             </View>
           ) : (
@@ -310,8 +344,13 @@ const modalStyles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.4)',
     justifyContent: 'flex-end',
+    // On web the Modal portals to the document root, escaping the phone-width
+    // column in App.js — center it so the sheet doesn't span the whole browser.
+    alignItems: 'center',
   },
   sheet: {
+    width: '100%',
+    maxWidth: Platform.OS === 'web' ? 430 : undefined,
     backgroundColor: COLORS.bg,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
@@ -338,6 +377,20 @@ const modalStyles = StyleSheet.create({
   centerPad: { alignItems: 'center', padding: SPACING.xl, gap: 8 },
   emptyTitle: { fontFamily: FONT.serifItalic, fontSize: 18, color: COLORS.text, marginTop: 6 },
   emptyBody:  { fontFamily: FONT.regular, fontSize: 13, color: COLORS.textSecondary, textAlign: 'center', lineHeight: 18 },
+
+  retryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 12,
+    paddingVertical: 9,
+    paddingHorizontal: 16,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surface,
+  },
+  retryText: { fontFamily: FONT.semiBold, fontSize: 13, color: COLORS.text },
 
   row: {
     flexDirection: 'row',

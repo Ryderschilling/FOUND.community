@@ -58,9 +58,18 @@
       <button type="button" data-open-waitlist class="hover:text-black">Join waitlist</button>
     </nav>
 
-    <button type="button" data-open-waitlist class="rounded-full bg-black text-white px-5 py-3 text-sm font-medium hover:opacity-90 transition">
+    <!-- Logged-out CTA: primary signup link Sam shares with people -->
+    <a href="/signup.html" data-cta-when-logged-out
+       class="rounded-full bg-black text-white px-5 py-3 text-sm font-medium hover:opacity-90 transition">
       Get Early Access
-    </button>
+    </a>
+
+    <!-- Logged-in CTA (swaps in via auth.js once a session is detected) -->
+    <a href="/account.html" data-cta-when-logged-in
+       class="hidden items-center gap-3 rounded-full bg-black text-white pl-1.5 pr-5 h-12 text-sm font-medium hover:opacity-90 transition">
+      <span class="w-9 h-9 rounded-full bg-white text-black inline-flex items-center justify-center text-sm font-semibold leading-none" data-initials>··</span>
+      <span class="leading-none">Open app</span>
+    </a>
   </div>
 </header>
 
@@ -88,13 +97,19 @@
         </p>
 
         <div class="flex flex-col sm:flex-row gap-4">
-          <button type="button" data-open-waitlist class="rounded-full bg-black text-white px-8 py-4 text-center text-lg font-medium hover:opacity-90 transition">
+          <!-- Hero CTA → real signup (label per Sam's spec) -->
+          <a href="/signup.html" class="rounded-full bg-black text-white px-8 py-4 text-center text-lg font-medium hover:opacity-90 transition">
             Join the Waitlist
-          </button>
+          </a>
           <a href="#how" class="rounded-full bg-white border border-black/10 px-8 py-4 text-center text-lg font-medium hover:bg-[#efe9e1] transition">
             See How It Works
           </a>
         </div>
+
+        <p class="text-sm text-neutral-500 mt-4">
+          Already have an account?
+          <a href="/login.html" class="underline underline-offset-2 hover:text-black">Sign in</a>
+        </p>
       </div>
 
       <div class="relative flex justify-center lg:justify-end">
@@ -200,20 +215,54 @@
         <h2 class="serif text-4xl md:text-6xl leading-tight mb-6">Help build real Christian community.</h2>
       </div>
       <div class="grid md:grid-cols-3 gap-5">
-        <div class="bg-[#f8f6f3] rounded-[32px] p-8 border border-black/5">
+        <!-- GIVE: direct Stripe payment link (one-click donation) -->
+        <div class="bg-[#f8f6f3] rounded-[32px] p-8 border border-black/5 flex flex-col">
           <h3 class="text-2xl font-semibold mb-4">Give</h3>
           <p class="text-neutral-600 mb-8">Support early development and launch.</p>
-          <a href="mailto:foundcommunityapp@gmail.com?subject=I%20want%20to%20give%20to%20FOUND" class="inline-flex rounded-full bg-black text-white px-6 py-3 font-medium hover:opacity-90 transition">Give Support</a>
+          <!-- Live Stripe Payment Link (donation). Connected 2026-05-21. -->
+          <a href="https://buy.stripe.com/bJecN61w98a3gDl2Pd5Ne00"
+             target="_blank" rel="noopener"
+             class="inline-flex rounded-full bg-black text-white px-6 py-3 font-medium hover:opacity-90 transition self-start">
+            Give via Stripe
+          </a>
         </div>
+
+        <!-- INVEST: contact form → Supabase + Netlify Forms (email hello@found.community) -->
         <div class="bg-[#f8f6f3] rounded-[32px] p-8 border border-black/5">
           <h3 class="text-2xl font-semibold mb-4">Invest</h3>
-          <p class="text-neutral-600 mb-8">Interested in helping fund the vision?</p>
-          <a href="mailto:foundcommunityapp@gmail.com?subject=Investment%20Interest%20in%20FOUND" class="inline-flex rounded-full bg-black text-white px-6 py-3 font-medium hover:opacity-90 transition">Investor Interest</a>
+          <p class="text-neutral-600 mb-6">Interested in helping fund the vision?</p>
+          <form class="contact-form space-y-3" data-type="invest" name="found-contact-invest">
+            <input type="hidden" name="form-name" value="found-contact-invest" />
+            <input type="hidden" name="type" value="invest" />
+            <p class="hidden"><input name="bot-field" /></p>
+            <input required name="name" type="text" placeholder="Your name" class="w-full rounded-full bg-white border border-black/10 px-4 py-3 text-sm outline-none focus:border-black transition" />
+            <input required name="email" type="email" placeholder="Email address" class="w-full rounded-full bg-white border border-black/10 px-4 py-3 text-sm outline-none focus:border-black transition" />
+            <textarea name="message" placeholder="Tell us about your investment interest." rows="3" class="w-full rounded-2xl bg-white border border-black/10 px-4 py-3 text-sm outline-none focus:border-black transition resize-none"></textarea>
+            <button type="submit" class="contact-submit w-full rounded-full bg-black text-white px-6 py-3 text-sm font-medium hover:opacity-90 transition disabled:opacity-50">Send Message</button>
+          </form>
+          <div class="contact-success hidden mt-4 rounded-2xl bg-black/5 p-5 text-center">
+            <p class="font-semibold text-sm mb-1">Message received.</p>
+            <p class="text-sm text-neutral-500">We'll be in touch soon.</p>
+          </div>
         </div>
+
+        <!-- DONATE: contact form -->
         <div class="bg-[#f8f6f3] rounded-[32px] p-8 border border-black/5">
           <h3 class="text-2xl font-semibold mb-4">Donate</h3>
-          <p class="text-neutral-600 mb-8">Help accelerate the launch of FOUND.</p>
-          <a href="mailto:foundcommunityapp@gmail.com?subject=I%20want%20to%20donate%20to%20FOUND" class="inline-flex rounded-full bg-black text-white px-6 py-3 font-medium hover:opacity-90 transition">Donate</a>
+          <p class="text-neutral-600 mb-6">Help accelerate the launch of FOUND.</p>
+          <form class="contact-form space-y-3" data-type="donate" name="found-contact-donate">
+            <input type="hidden" name="form-name" value="found-contact-donate" />
+            <input type="hidden" name="type" value="donate" />
+            <p class="hidden"><input name="bot-field" /></p>
+            <input required name="name" type="text" placeholder="Your name" class="w-full rounded-full bg-white border border-black/10 px-4 py-3 text-sm outline-none focus:border-black transition" />
+            <input required name="email" type="email" placeholder="Email address" class="w-full rounded-full bg-white border border-black/10 px-4 py-3 text-sm outline-none focus:border-black transition" />
+            <textarea name="message" placeholder="What inspired you to donate?" rows="3" class="w-full rounded-2xl bg-white border border-black/10 px-4 py-3 text-sm outline-none focus:border-black transition resize-none"></textarea>
+            <button type="submit" class="contact-submit w-full rounded-full bg-black text-white px-6 py-3 text-sm font-medium hover:opacity-90 transition disabled:opacity-50">Send Message</button>
+          </form>
+          <div class="contact-success hidden mt-4 rounded-2xl bg-black/5 p-5 text-center">
+            <p class="font-semibold text-sm mb-1">Message received.</p>
+            <p class="text-sm text-neutral-500">We'll be in touch soon.</p>
+          </div>
         </div>
       </div>
     </div>
@@ -245,13 +294,21 @@
 
 </main>
 
-<!-- Netlify hidden form detector -->
+<!-- Netlify hidden form detectors (deploy-time detection for email notifications) -->
 <form name="found-waitlist" data-netlify="true" netlify-honeypot="bot-field" hidden>
   <input type="hidden" name="form-name" value="found-waitlist" />
   <input name="name" type="text" />
   <input name="email" type="email" />
   <input name="city" type="text" />
   <input name="state" type="text" />
+</form>
+<form name="found-contact-invest" data-netlify="true" netlify-honeypot="bot-field" hidden>
+  <input type="hidden" name="form-name" value="found-contact-invest" />
+  <input name="bot-field" /><input name="type" /><input name="name" /><input name="email" /><textarea name="message"></textarea>
+</form>
+<form name="found-contact-donate" data-netlify="true" netlify-honeypot="bot-field" hidden>
+  <input type="hidden" name="form-name" value="found-contact-donate" />
+  <input name="bot-field" /><input name="type" /><input name="name" /><input name="email" /><textarea name="message"></textarea>
 </form>
 
 <!-- Waitlist Modal -->
@@ -279,45 +336,92 @@
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="/assets/auth.js"></script>
 <script>
-const waitlistModal = document.getElementById('waitlistModal');
-const openWaitlistButtons = document.querySelectorAll('[data-open-waitlist]');
-const closeWaitlistButtons = document.querySelectorAll('[data-close-waitlist]');
-const popupWaitlistForm = document.getElementById('popupWaitlistForm');
-const waitlistSuccess = document.getElementById('waitlistSuccess');
+  // auth.js already created the shared Supabase client.
+  const _supabase = window._supabase;
 
-function openWaitlistModal() {
-  waitlistModal.classList.remove('modal-hidden');
-  waitlistModal.classList.add('modal-visible');
-  document.body.style.overflow = 'hidden';
-}
+  // Swap header CTA based on session (Get Early Access ↔ Open app + initials)
+  foundAuth.applyHeaderSession();
 
-function closeWaitlistModal() {
-  waitlistModal.classList.add('modal-hidden');
-  waitlistModal.classList.remove('modal-visible');
-  document.body.style.overflow = '';
-}
+  const waitlistModal = document.getElementById('waitlistModal');
+  const openWaitlistButtons = document.querySelectorAll('[data-open-waitlist]');
+  const closeWaitlistButtons = document.querySelectorAll('[data-close-waitlist]');
+  const popupWaitlistForm = document.getElementById('popupWaitlistForm');
+  const waitlistSuccess = document.getElementById('waitlistSuccess');
 
-openWaitlistButtons.forEach((button) => button.addEventListener('click', openWaitlistModal));
-closeWaitlistButtons.forEach((button) => button.addEventListener('click', closeWaitlistModal));
-document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeWaitlistModal(); });
+  function openWaitlistModal() {
+    waitlistModal.classList.remove('modal-hidden');
+    waitlistModal.classList.add('modal-visible');
+    document.body.style.overflow = 'hidden';
+  }
 
-popupWaitlistForm.addEventListener('submit', function(event) {
-  event.preventDefault();
-  const formData = new FormData(popupWaitlistForm);
-  fetch('/', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams(formData).toString()
-  })
-  .then(() => {
+  function closeWaitlistModal() {
+    waitlistModal.classList.add('modal-hidden');
+    waitlistModal.classList.remove('modal-visible');
+    document.body.style.overflow = '';
+  }
+
+  openWaitlistButtons.forEach((button) => button.addEventListener('click', openWaitlistModal));
+  closeWaitlistButtons.forEach((button) => button.addEventListener('click', closeWaitlistModal));
+  document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeWaitlistModal(); });
+
+  // Waitlist modal: write to Supabase AND Netlify Forms (DB + email)
+  popupWaitlistForm.addEventListener('submit', async function (event) {
+    event.preventDefault();
+    const name  = popupWaitlistForm.querySelector('[name="name"]').value.trim();
+    const email = popupWaitlistForm.querySelector('[name="email"]').value.trim();
+    const city  = popupWaitlistForm.querySelector('[name="city"]').value.trim() || null;
+    const state = popupWaitlistForm.querySelector('[name="state"]').value.trim() || null;
+
+    const formData = new FormData(popupWaitlistForm);
+
+    const [dbRes] = await Promise.allSettled([
+      _supabase.from('waitlist_signups').insert({ name, email, city, state }),
+      fetch('/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams(formData).toString(),
+      }),
+    ]);
+
+    // 23505 = unique violation (duplicate email) → still show success to avoid enumeration
+    if (dbRes.status === 'fulfilled' && dbRes.value?.error && dbRes.value.error.code !== '23505') {
+      alert('Something went wrong. Please email hello@found.community.');
+      return;
+    }
     popupWaitlistForm.classList.add('hidden');
     waitlistSuccess.classList.remove('hidden');
-  })
-  .catch(() => {
-    alert('Something went wrong. Please email foundcommunityapp@gmail.com.');
   });
-});
+
+  // Contact forms (Invest / Donate): Supabase + Netlify Forms
+  document.querySelectorAll('.contact-form').forEach((form) => {
+    form.addEventListener('submit', async function (e) {
+      e.preventDefault();
+      const btn = form.querySelector('.contact-submit');
+      const successEl = form.nextElementSibling;
+      btn.disabled = true;
+      btn.textContent = 'Sending...';
+
+      const type    = form.dataset.type;
+      const name    = form.querySelector('[name="name"]').value.trim();
+      const email   = form.querySelector('[name="email"]').value.trim();
+      const message = form.querySelector('[name="message"]').value.trim();
+
+      await Promise.allSettled([
+        _supabase.from('contact_submissions').insert({ type, name, email, message }),
+        fetch('/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ 'form-name': `found-contact-${type}`, type, name, email, message }).toString(),
+        }),
+      ]);
+
+      form.classList.add('hidden');
+      successEl.classList.remove('hidden');
+    });
+  });
 </script>
 
 </body>

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,9 @@ import {
   ActivityIndicator,
   RefreshControl,
   TouchableOpacity,
+  TextInput,
+  Modal,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING } from '../theme';
@@ -29,10 +32,11 @@ import {
 
 // Filter chips (non-location). Location lives in the dedicated pill above.
 const FILTERS = [
-  { id: 'all',    label: 'All'         },
-  { id: 'stage',  label: 'Life Stage'  },
-  { id: 'church', label: 'Same Church' },
-  { id: 'new',    label: 'New'         },
+  { id: 'all',    label: 'All'           },
+  { id: 'saved',  label: 'Connect Later' },
+  { id: 'stage',  label: 'Life Stage'    },
+  { id: 'church', label: 'Same Church'   },
+  { id: 'new',    label: 'New'           },
 ];
 
 // Height of the FOUND + bell header block
@@ -81,13 +85,20 @@ function rowToMatch(row) {
   return {
     id:          row.profile_id,
     name:        row.full_name || row.handle || 'Someone',
+    handle:      row.handle || null,
+    bio:         row.bio || null,
+    city:        row.city || null,
+    state:       row.state || null,
     initials:    initialsFor(row.full_name || row.handle),
     avatarUrl:   row.avatar_url || null,
     avatarColor: gradientFor(row.profile_id),
     matchScore:  row.score ?? 0,
     lifeStage:   row.life_stage_label || '',
+    lifeStageId: row.life_stage_id || null,
     distance:    formatDistance(row.distance_mi) || [row.city, row.state].filter(Boolean).join(', ') || '',
     church:      row.church_name,
+    churchId:    row.church_id || null,
+    createdAt:   row.created_at || null,
     interests:   (row.activities ?? []).map((a) => ({
       id:        a.id,
       label:     a.label,
@@ -95,16 +106,28 @@ function rowToMatch(row) {
       iconColor: a.icon_color,
     })),
     connected:   row.my_kind    === 'like',
-    waved:       row.my_kind    === 'wave',
+    saved:       false, // overwritten from saved_profiles after the feed loads
     theirKind:   row.their_kind || null,
     isMatch:     !!row.is_match,
   };
 }
 
+// "New" filter window — surface profiles created within the last N days.
+const NEW_WINDOW_DAYS = 30;
+
+// How long after Discover mounts before nudging the user to add a bio.
+const BIO_PROMPT_DELAY_MS = 120000; // 2 minutes
+
+// True when the profile has no usable bio (null, empty, or whitespace).
+function bioIsEmpty(p) {
+  return !p || !p.bio || p.bio.trim().length === 0;
+}
+
 export default function HomeScreen({ navigation }) {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
 
   const [activeFilter, setActiveFilter] = useState('all');
+  const [query, setQuery]               = useState('');
   const [matches, setMatches]           = useState([]);
   const [inbound, setInbound]           = useState([]);
   const [loading, setLoading]           = useState(true);
@@ -120,6 +143,12 @@ export default function HomeScreen({ navigation }) {
   const [selfLocation, setSelfLoc]  = useState(null);
   const [locSheetOpen, setLocSheet] = useState(false);
 
+  // Incomplete-profile nudge: a dismissable modal that fires once, two minutes
+  // into the session, if the user still hasn't written a bio.
+  const [bioPromptOpen, setBioPromptOpen] = useState(false);
+  const profileRef        = useRef(profile);  // latest profile for the timeout closure
+  const bioPromptShownRef = useRef(false);    // once-per-session guard
+
   const headerTranslate = useRef(new Animated.Value(0)).current;
   const lastScrollY     = useRef(0);
   const headerVisible   = useRef(true);
@@ -131,15 +160,23 @@ export default function HomeScreen({ navigation }) {
       // Translate the active location filter into RPC override args.
       const overrideArgs = filterToRpcArgs(locFilter, selfLocation);
 
-      // Matches feed + inbound in parallel.
-      const [matchesRes, inboundRes] = await Promise.all([
+      // Matches feed + inbound + my Connect Later list, in parallel.
+      const [matchesRes, inboundRes, savedRes] = await Promise.all([
         supabase.rpc('top_matches_detailed', { p_limit: 100, ...overrideArgs }),
         supabase.rpc('inbound_connections'),
+        supabase.from('saved_profiles').select('saved_id'),
       ]);
       if (matchesRes.error) throw matchesRes.error;
       if (inboundRes.error) console.warn('[discover] inbound failed', inboundRes.error.message);
+      if (savedRes.error)   console.warn('[discover] saved list failed', savedRes.error.message);
 
-      setMatches((matchesRes.data ?? []).map(rowToMatch));
+      // Flag which feed rows are already in the private Connect Later list.
+      const savedSet = new Set((savedRes.data ?? []).map((r) => r.saved_id));
+      setMatches((matchesRes.data ?? []).map((row) => {
+        const m = rowToMatch(row);
+        m.saved = savedSet.has(m.id);
+        return m;
+      }));
       setInbound(inboundRes.data ?? []);
     } catch (e) {
       console.warn('[discover] load failed', e?.message);
@@ -192,6 +229,25 @@ export default function HomeScreen({ navigation }) {
     return unsub;
   }, [navigation, loadMatches]);
 
+  // Keep a ref to the freshest profile so the bio-nudge timeout (set once on
+  // mount) reads current state instead of a stale closure value.
+  useEffect(() => {
+    profileRef.current = profile;
+  }, [profile]);
+
+  // Two minutes in, nudge the user to add a bio — once per session, and only
+  // if they still don't have one. Dismissable; not a hard requirement.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (bioPromptShownRef.current) return;
+      if (bioIsEmpty(profileRef.current)) {
+        bioPromptShownRef.current = true;
+        setBioPromptOpen(true);
+      }
+    }, BIO_PROMPT_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, []);
+
   // Mutate one match row in place — used by all three handlers below to
   // keep the visible card in sync with the server without a full refetch.
   const patchMatch = useCallback((id, patch) => {
@@ -202,7 +258,7 @@ export default function HomeScreen({ navigation }) {
   // PK (from, to, kind) → re-tap is a no-op via ignoreDuplicates.
   const handleConnect = useCallback(async (toProfileId) => {
     if (!user || !toProfileId) return;
-    patchMatch(toProfileId, { connected: true, waved: false });
+    patchMatch(toProfileId, { connected: true });
     const { error: insErr } = await supabase
       .from('connections')
       .upsert(
@@ -215,41 +271,40 @@ export default function HomeScreen({ navigation }) {
     }
   }, [user, patchMatch]);
 
-  // Wave = softer "hi" signal. Same upsert pattern with kind='wave'.
-  const handleWave = useCallback(async (toProfileId) => {
+  // Connect Later — toggle this person in the user's private saved list.
+  // Optimistic; saved_profiles RLS scopes every row to saver_id = auth.uid().
+  // `currentlySaved` is passed in by the card so we don't close over `matches`.
+  const handleSave = useCallback(async (toProfileId, currentlySaved) => {
     if (!user || !toProfileId) return;
-    patchMatch(toProfileId, { waved: true });
-    const { error: insErr } = await supabase
-      .from('connections')
-      .upsert(
-        { from_profile: user.id, to_profile: toProfileId, kind: 'wave' },
-        { onConflict: 'from_profile,to_profile,kind', ignoreDuplicates: true }
-      );
-    if (insErr) {
-      patchMatch(toProfileId, { waved: false });
-      console.warn('[discover] wave failed', insErr.message);
+    patchMatch(toProfileId, { saved: !currentlySaved });
+    const { error } = currentlySaved
+      ? await supabase
+          .from('saved_profiles')
+          .delete()
+          .eq('saver_id', user.id)
+          .eq('saved_id', toProfileId)
+      : await supabase
+          .from('saved_profiles')
+          .upsert(
+            { saver_id: user.id, saved_id: toProfileId },
+            { onConflict: 'saver_id,saved_id', ignoreDuplicates: true }
+          );
+    if (error) {
+      patchMatch(toProfileId, { saved: !!currentlySaved }); // revert
+      console.warn('[discover] save toggle failed', error.message);
     }
   }, [user, patchMatch]);
 
-  // Undo a connect (pending OR mutual) or a wave.
-  // kind === 'like' cancels the connect; kind === 'wave' cancels the wave.
-  const handleCancel = useCallback(async (toProfileId, kind) => {
-    if (!user || !toProfileId || !kind) return;
-    // Optimistic patch
-    const patch = kind === 'like'
-      ? { connected: false, isMatch: false }
-      : { waved: false };
-    patchMatch(toProfileId, patch);
+  // Undo a connect (pending OR mutual). PersonCard only ever cancels 'like'.
+  const handleCancel = useCallback(async (toProfileId) => {
+    if (!user || !toProfileId) return;
+    patchMatch(toProfileId, { connected: false, isMatch: false });
     const { error: rpcErr } = await supabase.rpc('remove_connection', {
       p_other: toProfileId,
-      p_kind:  kind,
+      p_kind:  'like',
     });
     if (rpcErr) {
-      // Revert
-      const revert = kind === 'like'
-        ? { connected: true }
-        : { waved: true };
-      patchMatch(toProfileId, revert);
+      patchMatch(toProfileId, { connected: true }); // revert
       console.warn('[discover] remove failed', rpcErr.message);
     }
   }, [user, patchMatch]);
@@ -286,9 +341,9 @@ export default function HomeScreen({ navigation }) {
   }
 
   // The strip is an action prompt — "people you haven't dealt with yet."
-  // Once you've accepted (became a match) OR sent them anything ('like' / 'wave'),
+  // Once you've accepted (became a match) OR sent them a connect request,
   // the row should drop off here. They still live in the matches list below
-  // (with the appropriate Connected / Pending / Waved state).
+  // (with the appropriate Connected / Pending state).
   const pendingInbound = inbound.filter(
     (r) => !r.is_match && !r.my_kind
   );
@@ -298,6 +353,8 @@ export default function HomeScreen({ navigation }) {
     return {
       id:          row.profile_id,
       name:        row.full_name || row.handle || 'Someone',
+      handle:      row.handle || null,
+      bio:         row.bio || null,
       initials:    initialsFor(row.full_name || row.handle),
       avatarUrl:   row.avatar_url || null,
       avatarColor: gradientFor(row.profile_id),
@@ -307,20 +364,79 @@ export default function HomeScreen({ navigation }) {
       church:      null,
       interests:   [],
       connected:   row.my_kind   === 'like',
-      waved:       row.my_kind   === 'wave',
       theirKind:   row.their_kind || null,
       isMatch:     !!row.is_match,
     };
   }
 
-  // Title row + location pill + inbound strip + filter chips
-  const ListHeader = () => (
+  // Client-side view of the already-loaded match feed: apply the active filter
+  // chip first, then the text search. Cheap (feed is capped at 100 rows) and
+  // instant — no extra round-trip. Promote to a server RPC if the feed ever
+  // grows past a few hundred rows.
+  //   all    → everything
+  //   saved  → only people in my private Connect Later list
+  //   stage  → same life stage as me   (compares life_stage_id, not the label)
+  //   church → same church as me       (compares church_id)
+  //   new    → joined in the last NEW_WINDOW_DAYS days
+  const visibleMatches = useMemo(() => {
+    let list = matches;
+
+    if (activeFilter === 'saved') {
+      list = list.filter((m) => m.saved);
+    } else if (activeFilter === 'stage' && profile?.life_stage_id) {
+      list = list.filter((m) => m.lifeStageId === profile.life_stage_id);
+    } else if (activeFilter === 'church' && profile?.church_id) {
+      list = list.filter((m) => m.churchId === profile.church_id);
+    } else if (activeFilter === 'new') {
+      const cutoff = Date.now() - NEW_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+      list = list.filter((m) => {
+        const t = m.createdAt ? new Date(m.createdAt).getTime() : NaN;
+        return Number.isFinite(t) && t >= cutoff;
+      });
+    }
+
+    const q = query.trim().toLowerCase();
+    if (q) {
+      // Search across every text field on a profile, not just the name.
+      // Builds one lowercased haystack per row (name, handle, bio, church,
+      // life stage, city/state, distance label, and every interest label).
+      list = list.filter((m) => {
+        const haystack = [
+          m.name,
+          m.handle,
+          m.bio,
+          m.church,
+          m.lifeStage,
+          m.city,
+          m.state,
+          m.distance,
+          ...(m.interests ?? []).map((i) => i.label),
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+        return haystack.includes(q);
+      });
+    }
+    return list;
+  }, [matches, query, activeFilter, profile]);
+
+  const searching   = query.trim().length > 0;
+  const filtering   = activeFilter !== 'all';
+  const narrowed    = searching || filtering;
+
+  // Title row + location pill + search + inbound strip + filter chips.
+  // NOTE: this is a JSX *element*, not a component function. Passing an element
+  // to FlatList's ListHeaderComponent keeps the search TextInput mounted across
+  // re-renders (a new function identity on every keystroke would remount it and
+  // drop keyboard focus).
+  const listHeader = (
     <View style={styles.listHeader}>
       <View style={styles.titleRow}>
-        <Text style={styles.pageTitle}>Your Matches</Text>
+        <Text style={styles.pageTitle}>FOUND People</Text>
         <Pill
           label={`${matches.length} nearby`}
-          variant="sage"
+          variant="neutral"
           style={{ alignSelf: 'flex-end', marginBottom: 4 }}
         />
       </View>
@@ -336,6 +452,28 @@ export default function HomeScreen({ navigation }) {
           <Text style={styles.locationPillText}>{filterLabel(locFilter)}</Text>
           <Ionicons name="chevron-down" size={14} color={COLORS.textSecondary} />
         </TouchableOpacity>
+      </View>
+
+      {/* Search */}
+      <View style={styles.searchRow}>
+        <View style={styles.searchBox}>
+          <Ionicons name="search" size={16} color={COLORS.textTertiary} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search people, churches, interests…"
+            placeholderTextColor={COLORS.textTertiary}
+            value={query}
+            onChangeText={setQuery}
+            returnKeyType="search"
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          {searching ? (
+            <TouchableOpacity onPress={() => setQuery('')} hitSlop={8}>
+              <Ionicons name="close-circle" size={17} color={COLORS.textTertiary} />
+            </TouchableOpacity>
+          ) : null}
+        </View>
       </View>
 
       <InboundStrip
@@ -369,16 +507,31 @@ export default function HomeScreen({ navigation }) {
       return (
         <View style={styles.stateBox}>
           <Ionicons name="cloud-offline-outline" size={28} color={COLORS.textTertiary} />
-          <Text style={styles.stateTitle}>Couldn't load matches</Text>
+          <Text style={styles.stateTitle}>Couldn't load people</Text>
           <Text style={styles.stateBody}>{error}</Text>
           <Text style={styles.stateHint}>Pull down to retry.</Text>
+        </View>
+      );
+    }
+    // Feed has people, but the current search/filter matched none of them.
+    if (narrowed && matches.length > 0) {
+      const filterLabelText =
+        FILTERS.find((f) => f.id === activeFilter)?.label || 'this filter';
+      const body = searching
+        ? `No one matches “${query.trim()}”${filtering ? ` in “${filterLabelText}”` : ''}. Try a different search.`
+        : `No one fits “${filterLabelText}” yet. Tap “All” to see everyone.`;
+      return (
+        <View style={styles.stateBox}>
+          <Ionicons name="search-outline" size={28} color={COLORS.textTertiary} />
+          <Text style={styles.stateTitle}>No matches</Text>
+          <Text style={styles.stateBody}>{body}</Text>
         </View>
       );
     }
     return (
       <View style={styles.stateBox}>
         <Ionicons name="people-outline" size={28} color={COLORS.textTertiary} />
-        <Text style={styles.stateTitle}>No matches yet</Text>
+        <Text style={styles.stateTitle}>No one FOUND yet</Text>
         <Text style={styles.stateBody}>
           As more local Christians join, we'll surface the best fits for you here.
         </Text>
@@ -403,16 +556,16 @@ export default function HomeScreen({ navigation }) {
 
       {/* ── Match cards — paddingTop reserves room under the fixed header ── */}
       <FlatList
-        data={matches}
+        data={visibleMatches}
         keyExtractor={(item) => item.id}
-        ListHeaderComponent={ListHeader}
+        ListHeaderComponent={listHeader}
         ListEmptyComponent={EmptyState}
         renderItem={({ item }) => (
           <PersonCard
             match={item}
             onConnect={() => handleConnect(item.id)}
-            onWave={() => handleWave(item.id)}
-            onCancel={(kind) => handleCancel(item.id, kind)}
+            onSave={() => handleSave(item.id, item.saved)}
+            onCancel={() => handleCancel(item.id)}
             onPress={() => navigation?.navigate('MatchDetail', { match: item })}
           />
         )}
@@ -437,6 +590,43 @@ export default function HomeScreen({ navigation }) {
         initialFilter={locFilter}
         selfHasLocation={!!selfLocation}
       />
+
+      {/* Incomplete-profile nudge — dismissable, fires once per session */}
+      <Modal
+        visible={bioPromptOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setBioPromptOpen(false)}
+      >
+        <View style={styles.bioModalOverlay}>
+          <View style={styles.bioModalCard}>
+            <View style={styles.bioModalIcon}>
+              <Ionicons name="person-circle-outline" size={32} color={COLORS.sage} />
+            </View>
+            <Text style={styles.bioModalTitle}>Account not complete</Text>
+            <Text style={styles.bioModalBody}>
+              Add a bio to help find closer connections.
+            </Text>
+            <TouchableOpacity
+              style={styles.bioModalPrimary}
+              activeOpacity={0.85}
+              onPress={() => {
+                setBioPromptOpen(false);
+                navigation?.navigate('EditProfile');
+              }}
+            >
+              <Text style={styles.bioModalPrimaryText}>Add bio</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.bioModalSecondary}
+              activeOpacity={0.7}
+              onPress={() => setBioPromptOpen(false)}
+            >
+              <Text style={styles.bioModalSecondaryText}>Maybe later</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -517,6 +707,32 @@ const styles = StyleSheet.create({
     color: COLORS.text,
   },
 
+  // Search bar
+  searchRow: {
+    paddingHorizontal: SPACING.lg,
+    marginBottom: SPACING.md,
+  },
+  searchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: COLORS.surface,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingHorizontal: 14,
+    paddingVertical: Platform.OS === 'web' ? 9 : 10,
+  },
+  searchInput: {
+    flex: 1,
+    fontFamily: FONT.regular,
+    fontSize: 14,
+    color: COLORS.text,
+    padding: 0,
+    // Kill the default focus ring on web — the box already has a border.
+    ...(Platform.OS === 'web' ? { outlineStyle: 'none' } : null),
+  },
+
   list: {
     paddingTop: HEADER_HEIGHT,   // content starts below the fixed header
     paddingHorizontal: SPACING.lg,
@@ -549,5 +765,65 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     color: COLORS.textTertiary,
     marginTop: SPACING.xs,
+  },
+
+  // Incomplete-profile nudge modal.
+  // alignItems:'center' + maxWidth keeps the card phone-width on web, where a
+  // transparent Modal portals to the full-window document root.
+  bioModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: SPACING.lg,
+  },
+  bioModalCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: COLORS.bg,
+    borderRadius: 20,
+    padding: SPACING.lg,
+    alignItems: 'center',
+  },
+  bioModalIcon: {
+    marginBottom: SPACING.sm,
+  },
+  bioModalTitle: {
+    fontFamily: FONT.serifItalic,
+    fontSize: 22,
+    color: COLORS.text,
+    textAlign: 'center',
+    marginBottom: SPACING.xs,
+  },
+  bioModalBody: {
+    fontFamily: FONT.regular,
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: SPACING.lg,
+  },
+  bioModalPrimary: {
+    width: '100%',
+    backgroundColor: COLORS.sage,
+    borderRadius: 999,
+    paddingVertical: 13,
+    alignItems: 'center',
+  },
+  bioModalPrimaryText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 15,
+    color: '#FFFFFF',
+  },
+  bioModalSecondary: {
+    width: '100%',
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginTop: SPACING.xs,
+  },
+  bioModalSecondaryText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 14,
+    color: COLORS.textSecondary,
   },
 });

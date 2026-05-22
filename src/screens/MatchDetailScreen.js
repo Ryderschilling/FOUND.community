@@ -9,7 +9,6 @@ import {
   SafeAreaView,
   ActivityIndicator,
   Alert,
-  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
@@ -19,32 +18,21 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../auth/AuthContext';
 import { fetchProfilePhotos } from '../lib/profilePhotos';
 import HighlightReelView from '../components/HighlightReelView';
+import { useConfirm } from '../components/ConfirmProvider';
 
 export default function MatchDetailScreen({ route, navigation }) {
   const { user } = useAuth();
   const match = route?.params?.match ?? FALLBACK_MATCH;
   const [connected, setConnected] = useState(match.connected ?? false);
-  const [waved, setWaved]         = useState(match.waved ?? false);
+  const [saved, setSaved]         = useState(match.saved ?? false);
   const [isMatch, setIsMatch]     = useState(match.isMatch ?? false);
   const [openingChat, setOpeningChat] = useState(false);
   const [photos, setPhotos] = useState([]);
+  const [photosLoaded, setPhotosLoaded] = useState(false);
+  const confirm = useConfirm();
 
   // 3-state derivation, mirrors PersonCard
   const ctaState = isMatch ? 'connected' : (connected ? 'pending' : 'idle');
-
-  // Cross-platform confirm
-  function confirmThen(title, message, onConfirm, destructiveLabel = 'Remove') {
-    if (Platform.OS === 'web') {
-      if (typeof window !== 'undefined' && window.confirm(`${title}\n\n${message ?? ''}`.trim())) {
-        onConfirm();
-      }
-      return;
-    }
-    Alert.alert(title, message, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: destructiveLabel, style: 'destructive', onPress: onConfirm },
-    ]);
-  }
 
   // Fetch this match's highlight reel
   useEffect(() => {
@@ -55,9 +43,28 @@ export default function MatchDetailScreen({ route, navigation }) {
       if (cancelled) return;
       if (error) console.warn('[match] photos fetch failed', error.message);
       else setPhotos(rows);
+      setPhotosLoaded(true);
     })();
     return () => { cancelled = true; };
   }, [match?.id]);
+
+  // Sync the Connect Later (saved) state — accurate regardless of which screen
+  // opened MatchDetail, since callers don't always pass match.saved.
+  useEffect(() => {
+    if (!user || !match?.id) return;
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from('saved_profiles')
+        .select('saved_id')
+        .eq('saver_id', user.id)
+        .eq('saved_id', match.id)
+        .maybeSingle();
+      if (cancelled) return;
+      if (!error) setSaved(!!data);
+    })();
+    return () => { cancelled = true; };
+  }, [user, match?.id]);
 
   async function handleConnect() {
     if (connected || !user || !match.id) return;
@@ -74,62 +81,77 @@ export default function MatchDetailScreen({ route, navigation }) {
     }
   }
 
-  async function handleWave() {
-    if (waved || !user || !match.id) return;
-    setWaved(true); // optimistic
+  // Connect Later — add to your private saved list. No signal to the other
+  // person. saved_profiles RLS scopes every row to saver_id = auth.uid().
+  async function handleSave() {
+    if (saved || !user || !match.id) return;
+    setSaved(true); // optimistic
     const { error } = await supabase
-      .from('connections')
+      .from('saved_profiles')
       .upsert(
-        { from_profile: user.id, to_profile: match.id, kind: 'wave' },
-        { onConflict: 'from_profile,to_profile,kind', ignoreDuplicates: true }
+        { saver_id: user.id, saved_id: match.id },
+        { onConflict: 'saver_id,saved_id', ignoreDuplicates: true }
       );
     if (error) {
-      setWaved(false);
-      console.warn('[match] wave failed', error.message);
+      setSaved(false);
+      console.warn('[match] save failed', error.message);
     }
   }
 
-  // Undo a connect (pending or mutual) or a wave.
-  async function doCancel(kind) {
+  async function handleUnsave() {
+    if (!saved || !user || !match.id) return;
+    setSaved(false); // optimistic
+    const { error } = await supabase
+      .from('saved_profiles')
+      .delete()
+      .eq('saver_id', user.id)
+      .eq('saved_id', match.id);
+    if (error) {
+      setSaved(true);
+      console.warn('[match] unsave failed', error.message);
+    }
+  }
+
+  // Undo a connect (pending or mutual).
+  async function doDisconnect() {
     if (!user || !match.id) return;
-    // Optimistic
-    if (kind === 'like') { setConnected(false); setIsMatch(false); }
-    else                  { setWaved(false); }
+    setConnected(false); setIsMatch(false); // optimistic
     const { error } = await supabase.rpc('remove_connection', {
       p_other: match.id,
-      p_kind:  kind,
+      p_kind:  'like',
     });
     if (error) {
-      // Revert
-      if (kind === 'like') setConnected(true);
-      else                 setWaved(true);
+      setConnected(true); // revert
       Alert.alert('Could not undo', error.message);
     }
   }
 
-  function handleConnectTap() {
-    if (ctaState === 'idle')      return handleConnect();
-    if (ctaState === 'pending')   {
-      confirmThen('Cancel request?',
-        `${match.name} won't see your connection request anymore.`,
-        () => doCancel('like'),
-        'Cancel request');
+  async function handleConnectTap() {
+    if (ctaState === 'idle') return handleConnect();
+    if (ctaState === 'pending') {
+      const ok = await confirm({
+        title: 'Cancel request?',
+        message: `${match.name} won't see your connection request anymore.`,
+        confirmLabel: 'Cancel request',
+        destructive: true,
+      });
+      if (ok) doDisconnect();
       return;
     }
     if (ctaState === 'connected') {
-      confirmThen('Disconnect?',
-        `You and ${match.name} will no longer be connected.`,
-        () => doCancel('like'),
-        'Disconnect');
+      const ok = await confirm({
+        title: 'Disconnect?',
+        message: `You and ${match.name} will no longer be connected.`,
+        confirmLabel: 'Disconnect',
+        destructive: true,
+      });
+      if (ok) doDisconnect();
     }
   }
 
-  function handleWaveTap() {
-    if (!waved) return handleWave();
-    confirmThen('Cancel wave?',
-      `Your wave to ${match.name} will be undone.`,
-      () => doCancel('wave'),
-      'Cancel wave');
+  function handleSaveTap() {
+    if (saved) handleUnsave();
+    else       handleSave();
   }
 
   async function handleOpenChat() {
@@ -166,7 +188,7 @@ export default function MatchDetailScreen({ route, navigation }) {
         </TouchableOpacity>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 150 }}>
 
         {/* Hero */}
         <View style={styles.hero}>
@@ -198,13 +220,32 @@ export default function MatchDetailScreen({ route, navigation }) {
 
           {/* Highlight Reel — horizontal strip, matches own-profile layout.
               HighlightReelView applies its own negative side margin so the
-              tiles bleed past the parent's SPACING.lg padding to both edges. */}
-          {photos.length > 0 && (
+              tiles bleed past the parent's SPACING.lg padding to both edges.
+              Empty state shows once the fetch resolves with no photos. */}
+          {photos.length > 0 ? (
             <View style={styles.section}>
               <SectionHeader label="Highlight Reel" />
               <HighlightReelView photos={photos} sideInset={SPACING.lg} />
             </View>
-          )}
+          ) : photosLoaded ? (
+            <View style={styles.section}>
+              <SectionHeader label="Highlight Reel" />
+              <View style={styles.reelEmpty}>
+                <Ionicons name="images-outline" size={22} color={COLORS.textTertiary} />
+                <Text style={styles.reelEmptyText}>
+                  {match.name?.split(' ')[0] || 'They'} hasn't added any photos yet.
+                </Text>
+              </View>
+            </View>
+          ) : null}
+
+          {/* About — their bio, only if they've written one */}
+          {match.bio ? (
+            <View style={styles.section}>
+              <SectionHeader label="About" />
+              <Text style={styles.bioText}>{match.bio}</Text>
+            </View>
+          ) : null}
 
           {/* Interests */}
           <View style={styles.section}>
@@ -239,20 +280,23 @@ export default function MatchDetailScreen({ route, navigation }) {
             </View>
           </View>
 
-          <RuleLabel label="connect · wave · message" style={styles.rule} />
-
         </View>
       </ScrollView>
 
-      {/* Sticky CTA bar */}
-      <View style={styles.ctaBar}>
-        {/* Wave — tap empty to wave, tap filled to undo */}
+      {/* Sticky bottom dock — caption sits directly above the action bar so
+          there's no floating gap when the page content is short. */}
+      <View style={styles.bottomDock}>
+        <RuleLabel label="connect · save · message" style={styles.rule} />
+
+        <View style={styles.ctaBar}>
+        {/* Connect Later — private bookmark. Tap to toggle. */}
         <TouchableOpacity
-          style={[styles.btnWave, waved && styles.btnWaveDone]}
-          onPress={handleWaveTap}
+          style={[styles.btnSave, saved && styles.btnSaveDone]}
+          onPress={handleSaveTap}
           activeOpacity={0.8}
+          accessibilityLabel={saved ? 'Remove from Connect Later' : 'Save to Connect Later'}
         >
-          <Ionicons name={waved ? 'checkmark' : 'hand-left-outline'} size={20} color={waved ? COLORS.sage : COLORS.textSecondary} />
+          <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={20} color={saved ? COLORS.sage : COLORS.textSecondary} />
         </TouchableOpacity>
 
         {/* Connect — 3-state, tap-to-undo */}
@@ -289,6 +333,7 @@ export default function MatchDetailScreen({ route, navigation }) {
             <Ionicons name="chatbubble-outline" size={20} color={COLORS.text} />
           )}
         </TouchableOpacity>
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -368,6 +413,31 @@ const styles = StyleSheet.create({
 
   pillsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
 
+  reelEmpty: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.md,
+  },
+  reelEmptyText: {
+    flex: 1,
+    fontFamily: FONT.regular,
+    fontSize: 14,
+    color: COLORS.textSecondary,
+  },
+
+  bioText: {
+    fontFamily: FONT.regular,
+    fontSize: 15,
+    color: COLORS.text,
+    lineHeight: 23,
+  },
+
   commonCard: {
     backgroundColor: COLORS.surface,
     borderRadius: RADIUS.lg,
@@ -379,14 +449,18 @@ const styles = StyleSheet.create({
   commonRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
   commonText: { fontFamily: FONT.regular, fontSize: 14, color: COLORS.text },
 
-  rule: { marginVertical: SPACING.md },
+  rule: { marginBottom: SPACING.sm },
 
-  // Sticky CTA
-  ctaBar: {
+  // Sticky bottom dock — anchors the caption + action bar to the screen bottom.
+  bottomDock: {
     position: 'absolute',
     bottom: 24,
     left: SPACING.lg,
     right: SPACING.lg,
+  },
+
+  // Action bar (a normal child of bottomDock now — no absolute positioning).
+  ctaBar: {
     flexDirection: 'row',
     gap: 10,
     backgroundColor: COLORS.white,
@@ -396,7 +470,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     ...SHADOW.lg,
   },
-  btnWave: {
+  btnSave: {
     width: 50,
     height: 50,
     borderRadius: RADIUS.lg,
@@ -406,7 +480,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  btnWaveDone: { backgroundColor: COLORS.sageBg, borderColor: COLORS.sageLight },
+  btnSaveDone: { backgroundColor: COLORS.sageBg, borderColor: COLORS.sageLight },
   btnConnect: {
     flex: 1,
     backgroundColor: COLORS.accent,

@@ -30,6 +30,9 @@ import GroupCard from '../components/GroupCard';
 import { PrimaryButton } from '../components/Atoms';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../auth/AuthContext';
+import { geocode } from '../lib/geocode';
+import { publicUrlForGroupPhoto } from '../lib/groupPhotos';
+import { useConfirm } from '../components/ConfirmProvider';
 
 // RPC row → GroupCard shape
 function rowToGroup(row) {
@@ -43,11 +46,14 @@ function rowToGroup(row) {
     memberCount: row.member_count,
     meetingDay:  row.schedule_text,
     joined:      !!row.is_member,
+    createdBy:   row.created_by,
+    coverUrl:    row.cover_path ? publicUrlForGroupPhoto(row.cover_path) : null,
   };
 }
 
 export default function GroupsScreen({ navigation }) {
   const { user } = useAuth();
+  const confirm = useConfirm();
   const [groups, setGroups]         = useState([]);
   const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -93,30 +99,27 @@ export default function GroupsScreen({ navigation }) {
   }, [busyId]);
 
   // Confirm + optimistic leave
-  const handleLeave = useCallback((group) => {
-    const doLeave = async () => {
-      if (busyId) return;
-      setBusyId(group.id);
+  const handleLeave = useCallback(async (group) => {
+    const ok = await confirm({
+      title: 'Leave group?',
+      message: `You'll stop seeing posts and messages from "${group.name}".`,
+      confirmLabel: 'Leave',
+      destructive: true,
+    });
+    if (!ok) return;
+    if (busyId) return;
+    setBusyId(group.id);
+    setGroups((prev) => prev.map((g) =>
+      g.id === group.id ? { ...g, joined: false, memberCount: Math.max(0, (g.memberCount ?? 1) - 1) } : g));
+    const { error } = await supabase.rpc('leave_group', { p_group: group.id });
+    setBusyId(null);
+    if (error) {
+      console.warn('[groups] leave failed', error.message);
       setGroups((prev) => prev.map((g) =>
-        g.id === group.id ? { ...g, joined: false, memberCount: Math.max(0, (g.memberCount ?? 1) - 1) } : g));
-      const { error } = await supabase.rpc('leave_group', { p_group: group.id });
-      setBusyId(null);
-      if (error) {
-        console.warn('[groups] leave failed', error.message);
-        setGroups((prev) => prev.map((g) =>
-          g.id === group.id ? { ...g, joined: true, memberCount: (g.memberCount ?? 0) + 1 } : g));
-        Alert.alert('Could not leave', error.message);
-      }
-    };
-    if (Platform.OS === 'web') {
-      if (typeof window !== 'undefined' && window.confirm(`Leave "${group.name}"?`)) doLeave();
-      return;
+        g.id === group.id ? { ...g, joined: true, memberCount: (g.memberCount ?? 0) + 1 } : g));
+      Alert.alert('Could not leave', error.message);
     }
-    Alert.alert('Leave group?', `You'll stop seeing posts and messages from "${group.name}".`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Leave', style: 'destructive', onPress: doLeave },
-    ]);
-  }, [busyId]);
+  }, [busyId, confirm]);
 
   // Split into sections
   const sections = useMemo(() => {
@@ -147,7 +150,7 @@ export default function GroupsScreen({ navigation }) {
                 onJoin={() => handleJoin(item)}
                 onLeave={() => handleLeave(item)}
                 busy={busyId === item.id}
-                onPress={() => {}}
+                onPress={() => navigation.navigate('GroupDetail', { groupId: item.id, group: item })}
               />
             </View>
           )}
@@ -220,12 +223,33 @@ function CreateGroupModal({ visible, onClose, onCreated }) {
       return;
     }
     setBusy(true);
+
+    // Geocode city/state so the group can be distance-sorted/filtered.
+    // Non-fatal: if geocoding fails the group is still created without a
+    // location (lat/lng null → create_group leaves `location` NULL).
+    let lat = null;
+    let lng = null;
+    const loc = [city.trim(), state.trim()].filter(Boolean).join(', ');
+    if (loc) {
+      try {
+        const g = await geocode(loc);
+        if (!g.error && Number.isFinite(g.lat) && Number.isFinite(g.lng)) {
+          lat = g.lat;
+          lng = g.lng;
+        }
+      } catch {
+        // ignore — group still gets created without coords
+      }
+    }
+
     const { error } = await supabase.rpc('create_group', {
       p_name:          name,
       p_description:   desc,
       p_city:          city,
       p_state:         state,
       p_schedule_text: schedule,
+      p_lat:           lat,
+      p_lng:           lng,
     });
     setBusy(false);
     if (error) {
@@ -377,6 +401,11 @@ const modalStyles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.4)',
     justifyContent: 'flex-end',
+    // Center the sheet horizontally. On web the Modal portals to the document
+    // root (outside the phone-width frame in App.js), so without this the sheet
+    // stretches the full browser width. Centering + maxWidth keeps it inside
+    // the phone column. No-op on native (the app already fills the screen).
+    alignItems: 'center',
   },
   sheet: {
     backgroundColor: COLORS.bg,
@@ -386,6 +415,8 @@ const modalStyles = StyleSheet.create({
     paddingTop: SPACING.sm,
     paddingBottom: SPACING.lg,
     maxHeight: '85%',
+    width: '100%',
+    maxWidth: Platform.OS === 'web' ? 430 : undefined,
   },
   handle: {
     alignSelf: 'center',
@@ -421,6 +452,8 @@ const modalStyles = StyleSheet.create({
     fontFamily: FONT.regular,
     fontSize: 15,
     color: COLORS.text,
+    // Kill the default browser focus ring on web — the box already has a border.
+    ...(Platform.OS === 'web' ? { outlineStyle: 'none' } : null),
   },
   textarea: { minHeight: 80, textAlignVertical: 'top' },
 });

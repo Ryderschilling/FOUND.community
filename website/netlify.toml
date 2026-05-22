@@ -1,0 +1,67 @@
+# =============================================================================
+# Netlify build config for found.community
+# Lives at the repo root. Netlify auto-detects on every deploy.
+# =============================================================================
+
+[build]
+  publish = "."
+
+# ---- Security headers --------------------------------------------------------
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options        = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy        = "strict-origin-when-cross-origin"
+    Permissions-Policy     = "geolocation=(), microphone=(), camera=()"
+
+# ---- Cache: HTML lives short, static assets live long ------------------------
+[[headers]]
+  for = "/*.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/*.css"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/*.js"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/*.png"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/*.jpg"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/*.svg"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/*.ico"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# ---- Redirects ---------------------------------------------------------------
+# Force HTTPS (Netlify also does this by default — being explicit is safer).
+[[redirects]]
+  from   = "http://found.community/*"
+  to     = "https://found.community/:splat"
+  status = 301
+  force  = true
+
+# Canonicalize www → apex
+[[redirects]]
+  from   = "https://www.found.community/*"
+  to     = "https://found.community/:splat"
+  status = 301
+  force  = true

@@ -22,6 +22,7 @@ import ChatScreen         from '../screens/ChatScreen';
 import SignInScreen       from '../screens/auth/SignInScreen';
 import SignUpScreen       from '../screens/auth/SignUpScreen';
 import EditProfileScreen  from '../screens/EditProfileScreen';
+import GroupDetailScreen  from '../screens/GroupDetailScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab   = createBottomTabNavigator();
@@ -70,7 +71,10 @@ function useUnreadCounts() {
 // ── Custom floating tab bar ────────────────────────────────────────
 function FloatingTabBar({ state, descriptors, navigation }) {
   const insets = useSafeAreaInsets();
-  const bottom = Math.max(insets.bottom, 8);
+  // Always reserve at least 16pt + 8pt breathing room. Some devices report
+  // insets.bottom = 0 (e.g. older iPhones, Expo web) which previously cut off
+  // the floating pill against the screen edge.
+  const bottom = Math.max(insets.bottom, 16) + 8;
   const { counts, refresh: refreshCounts } = useUnreadCounts();
 
   return (
@@ -184,6 +188,7 @@ function AppStack({ needsOnboarding }) {
           <Stack.Screen name="MatchDetail" component={MatchDetailScreen} options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="Chat"        component={ChatScreen}        options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="EditProfile" component={EditProfileScreen} options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="GroupDetail" component={GroupDetailScreen} options={{ animation: 'slide_from_right' }} />
         </>
       )}
     </Stack.Navigator>

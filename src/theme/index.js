@@ -7,8 +7,8 @@
 // ─────────────────────────────────────────────────────────────────
 
 export const COLORS = {
-  // ── Backgrounds
-  bg: '#F7F4EF',
+  // ── Backgrounds — matches website exactly (less brown, brighter/whiter per Sam)
+  bg: '#F8F6F3',
   surface: '#FFFFFF',
   surfaceAlt: '#EFE9E1',          // matches website "sand" tone
 

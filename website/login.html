@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sign In — FOUND</title>
+  <meta name="description" content="Sign in to your FOUND account." />
+
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <meta name="theme-color" content="#000000">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <style>
+    body {
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f8f6f3;
+      color: #111111;
+    }
+    .serif { font-family: Georgia, "Times New Roman", serif; }
+    .grain {
+      background-image:
+        radial-gradient(circle at 20% 20%, rgba(0,0,0,0.035) 0, transparent 24%),
+        radial-gradient(circle at 80% 0%, rgba(122,132,106,0.18) 0, transparent 28%),
+        radial-gradient(circle at 50% 90%, rgba(217,204,189,0.35) 0, transparent 32%);
+    }
+    .input-field {
+      width: 100%;
+      padding: 14px 16px;
+      border: 1px solid rgba(0,0,0,0.12);
+      border-radius: 12px;
+      background: #ffffff;
+      font-size: 16px;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .input-field:focus {
+      outline: none;
+      border-color: #111111;
+      box-shadow: 0 0 0 3px rgba(17,17,17,0.06);
+    }
+  </style>
+</head>
+
+<body class="min-h-screen flex flex-col">
+
+<!-- ── Header ──────────────────────────────────────────────────────── -->
+<header class="bg-[#f8f6f3]/85 backdrop-blur border-b border-black/5">
+  <div class="max-w-7xl mx-auto px-5 md:px-8 h-20 flex items-center justify-between">
+    <a href="/" class="flex items-center gap-3">
+      <svg width="36" height="36" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="FOUND Logo">
+        <circle cx="20" cy="20" r="20" fill="#111111"/>
+        <circle cx="20" cy="20" r="17" fill="#ffffff"/>
+        <rect x="11" y="8" width="5" height="23" rx="2" fill="#111111"/>
+        <rect x="11" y="8" width="14" height="5" rx="2" fill="#111111"/>
+        <rect x="11" y="17.5" width="10.5" height="4.5" rx="2" fill="#111111"/>
+        <circle cx="27" cy="29.5" r="3" fill="#111111"/>
+      </svg>
+      <span class="text-2xl tracking-tight font-semibold">FOUND</span>
+    </a>
+    <a href="/signup.html" class="text-sm text-neutral-600 hover:text-black">Need an account? Sign up</a>
+  </div>
+</header>
+
+<!-- ── Form ────────────────────────────────────────────────────────── -->
+<main class="grain flex-1 flex items-center justify-center px-5 md:px-8 py-16">
+  <div class="w-full max-w-md">
+    <div class="bg-white border border-black/10 rounded-3xl shadow-sm p-8 md:p-10">
+      <div class="mb-7">
+        <h1 class="serif text-4xl tracking-tight mb-2">Welcome back.</h1>
+        <p class="text-neutral-600">Sign in to your FOUND account.</p>
+      </div>
+
+      <form id="loginForm" class="space-y-4" novalidate>
+        <div>
+          <label class="block text-sm text-neutral-700 mb-1.5" for="email">Email</label>
+          <input id="email" name="email" type="email" autocomplete="email" required
+                 class="input-field" placeholder="you@example.com" />
+        </div>
+
+        <div>
+          <label class="block text-sm text-neutral-700 mb-1.5" for="password">Password</label>
+          <input id="password" name="password" type="password" autocomplete="current-password" required
+                 class="input-field" placeholder="Your password" />
+        </div>
+
+        <div id="loginError" class="hidden text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-4 py-3"></div>
+
+        <button id="loginBtn" type="submit"
+                class="w-full rounded-full bg-black text-white py-4 text-base font-medium hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed">
+          Sign in
+        </button>
+      </form>
+
+      <!-- Divider -->
+      <div class="flex items-center my-6">
+        <div class="flex-1 h-px bg-black/10"></div>
+        <span class="px-3 text-xs uppercase tracking-wider text-neutral-500">or</span>
+        <div class="flex-1 h-px bg-black/10"></div>
+      </div>
+
+      <!-- Magic link -->
+      <button id="magicLinkBtn" type="button"
+              class="w-full rounded-full bg-white border border-black/10 py-4 text-base font-medium hover:bg-[#efe9e1] transition disabled:opacity-50 disabled:cursor-not-allowed">
+        Email me a sign-in link
+      </button>
+
+      <div id="magicLinkSent" class="hidden mt-4 text-sm text-[#7a846a] bg-[#7a846a]/10 border border-[#7a846a]/20 rounded-lg px-4 py-3">
+        Check your email for a sign-in link.
+      </div>
+
+      <p class="text-sm text-neutral-500 text-center mt-7">
+        New to FOUND?
+        <a href="/signup.html" class="text-black underline underline-offset-2">Create an account</a>
+      </p>
+    </div>
+  </div>
+</main>
+
+<!-- ── Scripts ─────────────────────────────────────────────────────── -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="/assets/auth.js"></script>
+<script>
+  // If already signed in, send them to /account.html immediately.
+  (async () => {
+    const session = await foundAuth.getSession();
+    if (session) window.location.replace('/account.html');
+  })();
+
+  const form        = document.getElementById('loginForm');
+  const emailEl     = document.getElementById('email');
+  const passwordEl  = document.getElementById('password');
+  const errorEl     = document.getElementById('loginError');
+  const loginBtn    = document.getElementById('loginBtn');
+  const magicBtn    = document.getElementById('magicLinkBtn');
+  const magicSent   = document.getElementById('magicLinkSent');
+
+  function showError(msg) {
+    errorEl.textContent = msg;
+    errorEl.classList.remove('hidden');
+  }
+  function clearError() { errorEl.classList.add('hidden'); }
+
+  function isValidEmail(value) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+  }
+
+  function friendlySignInError(raw) {
+    const msg = (raw || '').toLowerCase();
+    if (msg.includes('invalid login credentials')) {
+      return "No account found with that email and password. Double-check, or create an account.";
+    }
+    if (msg.includes('email not confirmed')) {
+      return "You haven't confirmed your email yet. Check your inbox for the confirmation link.";
+    }
+    if (msg.includes('invalid format') || msg.includes('validate email')) {
+      return "That doesn't look like a valid email. Make sure it has an @ and a domain.";
+    }
+    if (msg.includes('rate limit') || msg.includes('too many')) {
+      return 'Too many attempts. Wait a minute and try again.';
+    }
+    return raw || 'Sign in failed.';
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    clearError();
+
+    const email    = emailEl.value.trim();
+    const password = passwordEl.value;
+
+    if (!isValidEmail(email)) {
+      showError("That doesn't look like a valid email. Make sure it has an @ and a domain (e.g. you@example.com).");
+      emailEl.focus();
+      return;
+    }
+    if (!password) {
+      showError('Enter your password.');
+      passwordEl.focus();
+      return;
+    }
+
+    loginBtn.disabled = true;
+    loginBtn.textContent = 'Signing in…';
+    try {
+      await foundAuth.signIn({ email, password });
+      window.location.replace('/account.html');
+    } catch (err) {
+      showError(friendlySignInError(err?.message));
+      loginBtn.disabled = false;
+      loginBtn.textContent = 'Sign in';
+    }
+  });
+
+  magicBtn.addEventListener('click', async () => {
+    clearError();
+    const email = emailEl.value.trim();
+    if (!isValidEmail(email)) {
+      showError("Enter a valid email above first (e.g. you@example.com).");
+      emailEl.focus();
+      return;
+    }
+    magicBtn.disabled = true;
+    magicBtn.textContent = 'Sending…';
+    try {
+      await foundAuth.signInWithMagicLink({ email });
+      magicSent.classList.remove('hidden');
+      magicBtn.textContent = 'Link sent';
+    } catch (err) {
+      showError(friendlySignInError(err?.message));
+      magicBtn.disabled = false;
+      magicBtn.textContent = 'Email me a sign-in link';
+    }
+  });
+</script>
+
+</body>
+</html>
