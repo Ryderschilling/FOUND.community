@@ -14,6 +14,7 @@ import {
   unregisterForPush,
   attachNotificationResponseListener,
 } from '../lib/push';
+import { useUnreadNotifications } from '../lib/notifications';
 
 // Shared ref so a tapped push notification can navigate from outside React.
 export const navigationRef = createNavigationContainerRef();
@@ -90,6 +91,8 @@ function FloatingTabBar({ state, descriptors, navigation }) {
   // the floating pill against the screen edge.
   const bottom = Math.max(insets.bottom, 16) + 8;
   const { counts, refresh: refreshCounts } = useUnreadCounts();
+  const { user } = useAuth();
+  const { count: notifCount, refresh: refreshNotifs } = useUnreadNotifications(user?.id);
 
   return (
     <View style={[styles.tabBarOuter, { paddingBottom: bottom }]}>
@@ -106,14 +109,17 @@ function FloatingTabBar({ state, descriptors, navigation }) {
             // Activity screen marks-all-seen on focus; Messages screen marks
             // each thread read when opened. Refresh shortly after navigating
             // so the badges drop.
-            if (route.name === 'Activity' || route.name === 'Messages') {
+            if (route.name === 'Activity') {
+              setTimeout(() => { refreshCounts(); refreshNotifs(); }, 800);
+            } else if (route.name === 'Messages') {
               setTimeout(refreshCounts, 800);
             }
           };
 
-          // Pick badge value per tab
+          // Pick badge value per tab.
+          // Activity uses the same notification count as the top-right bell.
           const badgeCount =
-            route.name === 'Activity' ? counts.activity
+            route.name === 'Activity' ? notifCount
           : route.name === 'Messages' ? counts.messages
           : 0;
           const showBadge = badgeCount > 0;
