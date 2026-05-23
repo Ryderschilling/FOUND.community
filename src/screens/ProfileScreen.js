@@ -147,20 +147,20 @@ function GroupsModal({ visible, onClose, onOpen }) {
           ) : (
             <ScrollView
               style={{ flexGrow: 0 }}
-              contentContainerStyle={{ paddingHorizontal: SPACING.lg, paddingBottom: SPACING.lg }}
+              contentContainerStyle={{ paddingHorizontal: SPACING.lg, paddingTop: SPACING.sm, paddingBottom: SPACING.lg }}
               showsVerticalScrollIndicator={false}
             >
               {groups.map((g) => (
                 <TouchableOpacity
                   key={g.id}
-                  style={styles.connRow}
+                  style={[styles.connRow, { paddingVertical: SPACING.sm + 4, gap: SPACING.md }]}
                   activeOpacity={0.85}
                   onPress={() => onOpen?.(g)}
                 >
                   <View style={styles.groupIconWrap}>
                     <Ionicons name="people-outline" size={20} color={COLORS.textSecondary} />
                   </View>
-                  <View style={{ flex: 1, gap: 2 }}>
+                  <View style={{ flex: 1, gap: 4 }}>
                     <Text style={styles.connRowName}>{g.name || 'Unnamed Group'}</Text>
                     <Text style={styles.connRowMeta} numberOfLines={1}>
                       {[
@@ -182,10 +182,15 @@ function GroupsModal({ visible, onClose, onOpen }) {
 
 // ConnectionsModal — list of mutual connections (LinkedIn-style "Connected").
 // Tap a row → opens MatchDetail. Long-press or tap the trash icon → remove.
+const DESTRUCTIVE_RED = '#D24A4A';
+
 function ConnectionsModal({ visible, rows = [], loading, onClose, onOpen, onRemove }) {
   const fadeAnim  = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.95)).current;
-  const confirm   = useConfirm();
+  // Track which row is pending removal for the inline confirm.
+  // Using local state instead of useConfirm() avoids the z-index bug where
+  // a second <Modal> renders behind this one on web.
+  const [pendingRemove, setPendingRemove] = React.useState(null);
 
   useEffect(() => {
     if (visible) {
@@ -268,23 +273,43 @@ function ConnectionsModal({ visible, rows = [], loading, onClose, onOpen, onRemo
                       style={styles.connRemoveBtn}
                       hitSlop={8}
                       activeOpacity={0.7}
-                      onPress={async () => {
-                        const ok = await confirm({
-                          title: 'Remove connection?',
-                          message: `You and ${name} will no longer be connected.`,
-                          confirmLabel: 'Remove',
-                          destructive: true,
-                        });
-                        if (ok) onRemove?.(row);
-                      }}
+                      onPress={() => setPendingRemove(row)}
                     >
-                      <Ionicons name="person-remove-outline" size={17} color={COLORS.textTertiary} />
+                      <Ionicons name="person-remove-outline" size={17} color={DESTRUCTIVE_RED} />
                     </TouchableOpacity>
                   </View>
                 );
               })}
             </ScrollView>
           )}
+          {/* Inline confirm — rendered inside this Modal so it's never behind it */}
+          {pendingRemove ? (
+            <View style={styles.connInlineConfirm}>
+              <Text style={styles.connInlineTitle}>Remove connection?</Text>
+              <Text style={styles.connInlineMsg}>
+                You and {pendingRemove.full_name || pendingRemove.handle || 'this person'} will no longer be connected.
+              </Text>
+              <View style={styles.connInlineActions}>
+                <TouchableOpacity
+                  style={[styles.connInlineBtn, styles.connInlineBtnCancel]}
+                  onPress={() => setPendingRemove(null)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.connInlineBtnCancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.connInlineBtn, styles.connInlineBtnRemove]}
+                  onPress={() => {
+                    onRemove?.(pendingRemove);
+                    setPendingRemove(null);
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.connInlineBtnRemoveText}>Remove</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : null}
         </Animated.View>
       </Animated.View>
     </Modal>
@@ -1149,7 +1174,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: SPACING.lg,
-    paddingBottom: SPACING.md,
+    paddingBottom: SPACING.md + 4,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.borderLight,
   },
@@ -1206,6 +1231,58 @@ const styles = StyleSheet.create({
     fontFamily: FONT.regular,
     fontSize: 12,
     color: COLORS.textSecondary,
+  },
+  connInlineConfirm: {
+    marginHorizontal: SPACING.lg,
+    marginBottom: SPACING.lg,
+    marginTop: SPACING.sm,
+    backgroundColor: COLORS.bg,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: SPACING.md,
+  },
+  connInlineTitle: {
+    fontFamily: FONT.semiBold,
+    fontSize: 15,
+    color: COLORS.text,
+    marginBottom: 4,
+  },
+  connInlineMsg: {
+    fontFamily: FONT.regular,
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    lineHeight: 19,
+    marginBottom: SPACING.md,
+  },
+  connInlineActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  connInlineBtn: {
+    flex: 1,
+    height: 40,
+    borderRadius: RADIUS.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  connInlineBtnCancel: {
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  connInlineBtnCancelText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 14,
+    color: COLORS.textSecondary,
+  },
+  connInlineBtnRemove: {
+    backgroundColor: '#D24A4A',
+  },
+  connInlineBtnRemoveText: {
+    fontFamily: FONT.bold,
+    fontSize: 14,
+    color: '#fff',
   },
   connEmpty: {
     alignItems: 'center',

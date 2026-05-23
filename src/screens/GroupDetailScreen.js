@@ -119,14 +119,19 @@ export default function GroupDetailScreen({ route, navigation }) {
   const [composerImage, setComposerImage] = useState(null); // picked { uri, base64 }
   const [posting, setPosting]             = useState(false);
 
-  const [editOpen, setEditOpen]         = useState(false);
-  const [manageTarget, setManageTarget] = useState(null); // member row
-  const [lightbox, setLightbox]         = useState(null);
+  const [editOpen, setEditOpen]               = useState(false);
+  const [manageTarget, setManageTarget]       = useState(null); // member row
+  const [lightbox, setLightbox]               = useState(null);
+  const [membersModalOpen, setMembersModalOpen] = useState(false);
 
   const isOwner  = detail?.my_role === 'owner';
   const isAdmin  = isOwner || detail?.my_role === 'admin';
   const isMember = !!detail?.is_member;
   const meMember = members.find((m) => m.profile_id === user?.id) ?? null;
+  // Connections who are already in this group (excludes self).
+  const friendsInGroup = members.filter(
+    (m) => m.is_connection && m.profile_id !== user?.id,
+  );
   const canPost  = (composerBody.trim().length > 0 || !!composerImage) && !posting;
 
   const name        = detail?.name        ?? preview?.name        ?? 'Group';
@@ -420,10 +425,16 @@ export default function GroupDetailScreen({ route, navigation }) {
 
           {/* Meta row */}
           <View style={styles.metaRow}>
-            <Ionicons name="people-outline" size={13} color={COLORS.textSecondary} />
-            <Text style={styles.metaText}>
-              {memberCount} {memberCount === 1 ? 'member' : 'members'}
-            </Text>
+            <TouchableOpacity
+              style={styles.memberCountBtn}
+              activeOpacity={0.7}
+              onPress={() => setMembersModalOpen(true)}
+            >
+              <Ionicons name="people-outline" size={13} color={COLORS.accent} />
+              <Text style={styles.memberCountText}>
+                {memberCount} {memberCount === 1 ? 'member' : 'members'}
+              </Text>
+            </TouchableOpacity>
             {detail?.schedule_text ? (
               <>
                 <Text style={styles.metaDot}>·</Text>
@@ -453,6 +464,42 @@ export default function GroupDetailScreen({ route, navigation }) {
 
           {detail?.description ? (
             <Text style={styles.description}>{detail.description}</Text>
+          ) : null}
+
+          {/* Friends-in-group strip — only shown to non-members */}
+          {!isMember && friendsInGroup.length > 0 ? (
+            <TouchableOpacity
+              style={styles.friendsStrip}
+              activeOpacity={0.8}
+              onPress={() => setMembersModalOpen(true)}
+            >
+              <View style={styles.friendsAvatarStack}>
+                {friendsInGroup.slice(0, 4).map((m, i) => (
+                  <View
+                    key={m.profile_id}
+                    style={[styles.friendsAvatarWrap, { zIndex: 10 - i, marginLeft: i === 0 ? 0 : -10 }]}
+                  >
+                    <Avatar
+                      uri={m.avatar_url || undefined}
+                      initials={initialsFor(m.full_name)}
+                      size={30}
+                      gradientColors={gradientFor(m.profile_id)}
+                    />
+                  </View>
+                ))}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.friendsStripText}>
+                  {friendsInGroup.length === 1
+                    ? `${friendsInGroup[0].full_name?.split(' ')[0] || 'A connection'} is in this group`
+                    : friendsInGroup.length === 2
+                    ? `${friendsInGroup[0].full_name?.split(' ')[0]} & ${friendsInGroup[1].full_name?.split(' ')[0]} are here`
+                    : `${friendsInGroup[0].full_name?.split(' ')[0]} and ${friendsInGroup.length - 1} other connections are here`}
+                </Text>
+                <Text style={styles.friendsStripSub}>Tap to see all members</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={14} color={COLORS.textTertiary} />
+            </TouchableOpacity>
           ) : null}
 
           {/* Activity feed */}
@@ -721,6 +768,14 @@ export default function GroupDetailScreen({ route, navigation }) {
       {/* Lightbox */}
       <PhotoLightbox photo={lightbox} onClose={() => setLightbox(null)} />
 
+      {/* Members list modal */}
+      <MembersModal
+        visible={membersModalOpen}
+        members={members}
+        currentUserId={user?.id}
+        onClose={() => setMembersModalOpen(false)}
+      />
+
       {/* Manage member sheet */}
       <ManageMemberModal
         member={manageTarget}
@@ -740,6 +795,70 @@ export default function GroupDetailScreen({ route, navigation }) {
         onDelete={handleDeleteGroup}
       />
     </SafeAreaView>
+  );
+}
+
+// ─── Members modal ────────────────────────────────────────────────────────
+function MembersModal({ visible, members = [], currentUserId, onClose }) {
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={modalStyles.backdrop}>
+        <TouchableOpacity activeOpacity={1} style={StyleSheet.absoluteFill} onPress={onClose} />
+        <View style={[modalStyles.sheet, { maxHeight: '80%' }]}>
+          <View style={modalStyles.handle} />
+          <View style={[modalStyles.headerRow, { marginBottom: SPACING.sm }]}>
+            <Text style={modalStyles.title}>
+              Members · {members.length}
+            </Text>
+            <TouchableOpacity onPress={onClose} hitSlop={10}>
+              <Ionicons name="close" size={22} color={COLORS.textSecondary} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: SPACING.md }}>
+            {members.map((m) => (
+              <View key={m.profile_id} style={styles.memberRow}>
+                <Avatar
+                  uri={m.avatar_url || undefined}
+                  initials={initialsFor(m.full_name)}
+                  size={40}
+                  gradientColors={gradientFor(m.profile_id)}
+                />
+                <View style={styles.memberInfo}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={styles.memberName} numberOfLines={1}>
+                      {m.full_name || 'Member'}
+                      {m.profile_id === currentUserId ? '  (you)' : ''}
+                    </Text>
+                    {m.is_connection && m.profile_id !== currentUserId ? (
+                      <View style={styles.connectionBadge}>
+                        <Text style={styles.connectionBadgeText}>Connected</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                  {m.handle ? (
+                    <Text style={styles.memberHandle} numberOfLines={1}>@{m.handle}</Text>
+                  ) : null}
+                </View>
+                {m.role !== 'member' ? (
+                  <View style={[
+                    styles.roleBadge,
+                    m.role === 'owner' ? styles.roleBadgeOwner : styles.roleBadgeAdmin,
+                  ]}>
+                    <Text style={[
+                      styles.roleBadgeText,
+                      m.role === 'owner' ? styles.roleBadgeTextOwner : styles.roleBadgeTextAdmin,
+                    ]}>
+                      {m.role}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            ))}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -1316,6 +1435,71 @@ const styles = StyleSheet.create({
 
   emptyTitle: { fontFamily: FONT.serifItalic, fontSize: 20, color: COLORS.text, marginTop: 4 },
   emptyBody:  { fontFamily: FONT.regular, fontSize: 14, color: COLORS.textSecondary },
+
+  // Tappable member count in meta row
+  memberCountBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  memberCountText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 13,
+    color: COLORS.accent,
+    textDecorationLine: 'underline',
+    textDecorationStyle: 'dotted',
+  },
+
+  // Friends-in-group strip (shown to non-members)
+  friendsStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    marginTop: SPACING.md,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm + 2,
+  },
+  friendsAvatarStack: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  friendsAvatarWrap: {
+    borderWidth: 2,
+    borderColor: COLORS.surface,
+    borderRadius: RADIUS.full,
+  },
+  friendsStripText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 13,
+    color: COLORS.text,
+  },
+  friendsStripSub: {
+    fontFamily: FONT.regular,
+    fontSize: 11,
+    color: COLORS.textTertiary,
+    marginTop: 2,
+  },
+
+  // Connection badge in members modal
+  connectionBadge: {
+    backgroundColor: COLORS.sageBg,
+    borderRadius: RADIUS.full,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: COLORS.sageLight,
+  },
+  connectionBadgeText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 9,
+    letterSpacing: 0.3,
+    color: COLORS.sage,
+    textTransform: 'uppercase',
+  },
 
   // Sticky CTA
   ctaBar: {
