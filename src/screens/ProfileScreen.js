@@ -181,10 +181,11 @@ function GroupsModal({ visible, onClose, onOpen }) {
 }
 
 // ConnectionsModal — list of mutual connections (LinkedIn-style "Connected").
-// Tap a row → opens MatchDetail. Dismiss = backdrop tap or X button.
-function ConnectionsModal({ visible, rows = [], loading, onClose, onOpen }) {
+// Tap a row → opens MatchDetail. Long-press or tap the trash icon → remove.
+function ConnectionsModal({ visible, rows = [], loading, onClose, onOpen, onRemove }) {
   const fadeAnim  = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.95)).current;
+  const confirm   = useConfirm();
 
   useEffect(() => {
     if (visible) {
@@ -243,26 +244,43 @@ function ConnectionsModal({ visible, rows = [], loading, onClose, onOpen }) {
                 const grad     = gradientFor(row.profile_id);
                 const loc      = [row.city, row.state].filter(Boolean).join(', ');
                 return (
-                  <TouchableOpacity
-                    key={row.profile_id}
-                    style={styles.connRow}
-                    activeOpacity={0.85}
-                    onPress={() => onOpen?.(row)}
-                  >
-                    <Avatar
-                      initials={initials}
-                      size={44}
-                      gradientColors={grad}
-                      uri={row.avatar_url || undefined}
-                    />
-                    <View style={{ flex: 1, gap: 2 }}>
-                      <Text style={styles.connRowName}>{name}</Text>
-                      <Text style={styles.connRowMeta} numberOfLines={1}>
-                        {[row.life_stage_label, loc].filter(Boolean).join(' · ') || '—'}
-                      </Text>
-                    </View>
-                    <Ionicons name="chevron-forward" size={16} color={COLORS.textTertiary} />
-                  </TouchableOpacity>
+                  <View key={row.profile_id} style={styles.connRow}>
+                    <TouchableOpacity
+                      style={styles.connRowMain}
+                      activeOpacity={0.85}
+                      onPress={() => onOpen?.(row)}
+                    >
+                      <Avatar
+                        initials={initials}
+                        size={44}
+                        gradientColors={grad}
+                        uri={row.avatar_url || undefined}
+                      />
+                      <View style={{ flex: 1, gap: 2 }}>
+                        <Text style={styles.connRowName}>{name}</Text>
+                        <Text style={styles.connRowMeta} numberOfLines={1}>
+                          {[row.life_stage_label, loc].filter(Boolean).join(' · ') || '—'}
+                        </Text>
+                      </View>
+                      <Ionicons name="chevron-forward" size={16} color={COLORS.textTertiary} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.connRemoveBtn}
+                      hitSlop={8}
+                      activeOpacity={0.7}
+                      onPress={async () => {
+                        const ok = await confirm({
+                          title: 'Remove connection?',
+                          message: `You and ${name} will no longer be connected.`,
+                          confirmLabel: 'Remove',
+                          destructive: true,
+                        });
+                        if (ok) onRemove?.(row);
+                      }}
+                    >
+                      <Ionicons name="person-remove-outline" size={17} color={COLORS.textTertiary} />
+                    </TouchableOpacity>
+                  </View>
                 );
               })}
             </ScrollView>
@@ -849,6 +867,22 @@ export default function ProfileScreen({ navigation }) {
             },
           });
         }}
+        onRemove={async (row) => {
+          const { error } = await supabase.rpc('remove_connection', {
+            p_other: row.profile_id,
+            p_kind:  'like',
+          });
+          if (error) {
+            Alert.alert('Could not remove', error.message);
+            return;
+          }
+          // Remove from local list + refresh stats
+          setConnections((prev) => prev.filter((r) => r.profile_id !== row.profile_id));
+          setStats((prev) => ({
+            ...prev,
+            connections: Math.max(0, (prev.connections ?? 1) - 1),
+          }));
+        }}
       />
 
       {/* Groups popup (tapping the "Groups" stat) */}
@@ -1138,10 +1172,21 @@ const styles = StyleSheet.create({
   connRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: SPACING.md,
-    paddingVertical: SPACING.sm + 2,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.borderLight,
+  },
+  connRowMain: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+    paddingVertical: SPACING.sm + 2,
+  },
+  connRemoveBtn: {
+    paddingHorizontal: 6,
+    paddingVertical: SPACING.sm + 2,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   groupIconWrap: {
     width: 44, height: 44,

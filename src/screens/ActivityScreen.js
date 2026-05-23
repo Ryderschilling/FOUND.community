@@ -126,13 +126,6 @@ function ActivityRow({ row, onAccept, onDismiss, onOpen, onMessage, busy }) {
                 <Ionicons name="chatbubble-outline" size={14} color={COLORS.white} />
                 <Text style={styles.btnPrimaryText}>Message</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.btnGhost}
-                onPress={() => onDismiss?.(row)}
-                disabled={busy}
-              >
-                <Text style={styles.btnGhostText}>Clear</Text>
-              </TouchableOpacity>
             </>
           ) : (
             <>
@@ -170,6 +163,7 @@ export default function ActivityScreen({ navigation }) {
   const [refreshing, setRefreshing]   = useState(false);
   const [error, setError]             = useState(null);
   const [busyProfileId, setBusyProfileId] = useState(null);
+  const [markingAll,   setMarkingAll]    = useState(false);
 
   // Guard against setState after unmount / after blur
   const mountedRef = useRef(true);
@@ -325,10 +319,33 @@ export default function ActivityScreen({ navigation }) {
     });
   }
 
+  async function handleMarkAllRead() {
+    if (markingAll || rows.length === 0) return;
+    setMarkingAll(true);
+    await supabase.rpc('dismiss_all_inbound');
+    if (!mountedRef.current) return;
+    setMarkingAll(false);
+    setRows([]);
+  }
+
   const Header = () => (
     <View style={styles.pageHeader}>
-      <Text style={styles.headerMeta}>Your Inbox</Text>
-      <Text style={styles.pageTitle}>Activity</Text>
+      <View>
+        <Text style={styles.headerMeta}>Your Inbox</Text>
+        <Text style={styles.pageTitle}>Activity</Text>
+      </View>
+      {rows.length > 0 ? (
+        <TouchableOpacity
+          style={styles.markAllBtn}
+          onPress={handleMarkAllRead}
+          disabled={markingAll}
+          activeOpacity={0.7}
+        >
+          {markingAll
+            ? <ActivityIndicator size="small" color={COLORS.textSecondary} />
+            : <Text style={styles.markAllText}>Mark all read</Text>}
+        </TouchableOpacity>
+      ) : null}
     </View>
   );
 
@@ -401,6 +418,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.lg,
     paddingTop: SPACING.sm,
     paddingBottom: SPACING.md,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+  },
+  markAllBtn: {
+    paddingBottom: 4,
+    minWidth: 40,
+    alignItems: 'flex-end',
+  },
+  markAllText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 13,
+    color: COLORS.textSecondary,
   },
   headerMeta: {
     fontFamily: FONT.mono,

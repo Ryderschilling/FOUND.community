@@ -103,7 +103,11 @@ export default function MessagesScreen({ navigation }) {
       const { data, error } = await supabase.rpc('my_threads_detailed');
       if (error) throw error;
       // Only show threads that have at least one message sent
-      const withMessages = (data ?? []).filter((t) => t.last_message_at != null);
+      // Filter to threads that have at least one message.
+      // Use last_message_body (from the messages CTE) rather than last_message_at
+      // (the threads table column) — the touch_thread trigger was blocked by RLS
+      // so last_message_at is unreliable until migration 0032 is applied.
+      const withMessages = (data ?? []).filter((t) => t.last_message_body != null);
       setThreads(withMessages);
     } catch (e) {
       console.warn('[messages] load failed', e?.message);
