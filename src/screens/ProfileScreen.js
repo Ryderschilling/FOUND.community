@@ -15,6 +15,7 @@ import {
   Modal,
   Dimensions,
   useWindowDimensions,
+  Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -76,18 +77,138 @@ function StatCard({ value, label, onPress }) {
   return <View style={styles.statCard}>{Inner}</View>;
 }
 
+// GroupsModal — centered fade popup listing the user's groups.
+// Tap a row → GroupDetail. Dismiss = backdrop tap or X.
+function GroupsModal({ visible, onClose, onOpen }) {
+  const [groups,  setGroups]  = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [failed,  setFailed]  = useState(false);
+
+  const fadeAnim  = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(0.95)).current;
+
+  useEffect(() => {
+    if (visible) {
+      Animated.parallel([
+        Animated.timing(fadeAnim,  { toValue: 1,    duration: 180, useNativeDriver: true }),
+        Animated.spring(scaleAnim, { toValue: 1,    tension: 280,  friction: 22, useNativeDriver: true }),
+      ]).start();
+      // Fetch on open
+      (async () => {
+        setLoading(true); setFailed(false);
+        const { data, error } = await supabase.rpc('my_groups_feed');
+        if (error) { setFailed(true); }
+        else {
+          // my_groups_feed returns both joined + suggested; filter to joined only
+          setGroups((data ?? []).filter((g) => g.is_member));
+        }
+        setLoading(false);
+      })();
+    } else {
+      Animated.parallel([
+        Animated.timing(fadeAnim,  { toValue: 0,    duration: 130, useNativeDriver: true }),
+        Animated.timing(scaleAnim, { toValue: 0.95, duration: 130, useNativeDriver: true }),
+      ]).start();
+    }
+  }, [visible]);
+
+  return (
+    <Modal visible={visible} transparent animationType="none" statusBarTranslucent onRequestClose={onClose}>
+      <Animated.View style={[styles.connModalRoot, { opacity: fadeAnim }]}>
+        <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onClose} />
+        <Animated.View style={[styles.connModalSheet, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
+          <View style={styles.connModalHeader}>
+            <View>
+              <Text style={styles.headerMeta}>Your Community</Text>
+              <Text style={styles.connModalTitle}>Groups · {loading ? '…' : groups.length}</Text>
+            </View>
+            <TouchableOpacity onPress={onClose} style={styles.connModalClose}>
+              <Ionicons name="close" size={20} color={COLORS.text} />
+            </TouchableOpacity>
+          </View>
+
+          {loading ? (
+            <View style={styles.connEmpty}>
+              <ActivityIndicator color={COLORS.textTertiary} />
+            </View>
+          ) : failed ? (
+            <View style={styles.connEmpty}>
+              <Ionicons name="cloud-offline-outline" size={28} color={COLORS.textTertiary} />
+              <Text style={styles.connEmptyTitle}>Couldn't load groups</Text>
+            </View>
+          ) : groups.length === 0 ? (
+            <View style={styles.connEmpty}>
+              <Ionicons name="grid-outline" size={28} color={COLORS.textTertiary} />
+              <Text style={styles.connEmptyTitle}>No groups yet</Text>
+              <Text style={styles.connEmptyBody}>
+                Join a group in the Groups tab to see it here.
+              </Text>
+            </View>
+          ) : (
+            <ScrollView
+              style={{ flexGrow: 0 }}
+              contentContainerStyle={{ paddingHorizontal: SPACING.lg, paddingBottom: SPACING.lg }}
+              showsVerticalScrollIndicator={false}
+            >
+              {groups.map((g) => (
+                <TouchableOpacity
+                  key={g.id}
+                  style={styles.connRow}
+                  activeOpacity={0.85}
+                  onPress={() => onOpen?.(g)}
+                >
+                  <View style={styles.groupIconWrap}>
+                    <Ionicons name="people-outline" size={20} color={COLORS.textSecondary} />
+                  </View>
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <Text style={styles.connRowName}>{g.name || 'Unnamed Group'}</Text>
+                    <Text style={styles.connRowMeta} numberOfLines={1}>
+                      {[
+                        g.member_count != null ? `${g.member_count} members` : null,
+                        g.city && g.state ? `${g.city}, ${g.state}` : null,
+                      ].filter(Boolean).join(' · ') || ' '}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color={COLORS.textTertiary} />
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
+        </Animated.View>
+      </Animated.View>
+    </Modal>
+  );
+}
+
 // ConnectionsModal — list of mutual connections (LinkedIn-style "Connected").
 // Tap a row → opens MatchDetail. Dismiss = backdrop tap or X button.
 function ConnectionsModal({ visible, rows = [], loading, onClose, onOpen }) {
+  const fadeAnim  = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(0.95)).current;
+
+  useEffect(() => {
+    if (visible) {
+      Animated.parallel([
+        Animated.timing(fadeAnim,  { toValue: 1,    duration: 180, useNativeDriver: true }),
+        Animated.spring(scaleAnim, { toValue: 1,    tension: 280,  friction: 22, useNativeDriver: true }),
+      ]).start();
+    } else {
+      Animated.parallel([
+        Animated.timing(fadeAnim,  { toValue: 0,    duration: 130, useNativeDriver: true }),
+        Animated.timing(scaleAnim, { toValue: 0.95, duration: 130, useNativeDriver: true }),
+      ]).start();
+    }
+  }, [visible]);
+
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.connModalRoot}>
+    <Modal visible={visible} transparent animationType="none" statusBarTranslucent onRequestClose={onClose}>
+      <Animated.View style={[styles.connModalRoot, { opacity: fadeAnim }]}>
         <TouchableOpacity
           style={StyleSheet.absoluteFill}
           activeOpacity={1}
           onPress={onClose}
         />
-        <View style={styles.connModalSheet}>
+        <Animated.View style={[styles.connModalSheet, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
           <View style={styles.connModalHeader}>
             <View>
               <Text style={styles.headerMeta}>Your Network</Text>
@@ -146,8 +267,8 @@ function ConnectionsModal({ visible, rows = [], loading, onClose, onOpen }) {
               })}
             </ScrollView>
           )}
-        </View>
-      </View>
+        </Animated.View>
+      </Animated.View>
     </Modal>
   );
 }
@@ -343,6 +464,7 @@ export default function ProfileScreen({ navigation }) {
   const [viewerPhoto, setViewerPhoto]   = useState(null);
   const [connections, setConnections]   = useState([]);
   const [connectionsOpen, setConnectionsOpen] = useState(false);
+  const [groupsOpen,       setGroupsOpen]      = useState(false);
 
   const load = useCallback(async ({ isRefresh } = {}) => {
     if (!user) return;
@@ -602,7 +724,11 @@ export default function ProfileScreen({ navigation }) {
               label="Connected"
               onPress={() => setConnectionsOpen(true)}
             />
-            <StatCard value={stats.groups}      label="Groups"    />
+            <StatCard
+              value={stats.groups}
+              label="Groups"
+              onPress={() => setGroupsOpen(true)}
+            />
           </View>
 
           {/* Bio */}
@@ -722,6 +848,16 @@ export default function ProfileScreen({ navigation }) {
               isMatch:     true,
             },
           });
+        }}
+      />
+
+      {/* Groups popup (tapping the "Groups" stat) */}
+      <GroupsModal
+        visible={groupsOpen}
+        onClose={() => setGroupsOpen(false)}
+        onOpen={(group) => {
+          setGroupsOpen(false);
+          navigation?.navigate('GroupDetail', { groupId: group.id, group });
         }}
       />
     </SafeAreaView>
@@ -957,18 +1093,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  // Connections popup (bottom sheet style)
+  // Connections popup — centered card
   connModalRoot: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'flex-end',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
   },
   connModalSheet: {
-    backgroundColor: COLORS.bg,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    width: '100%',
+    maxWidth: 420,
     maxHeight: '75%',
+    backgroundColor: COLORS.bg,
+    borderRadius: RADIUS.xl,
     paddingTop: SPACING.md,
+    ...SHADOW.lg,
   },
   connModalHeader: {
     flexDirection: 'row',
@@ -1002,6 +1142,15 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.sm + 2,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.borderLight,
+  },
+  groupIconWrap: {
+    width: 44, height: 44,
+    borderRadius: RADIUS.lg,
+    backgroundColor: COLORS.surfaceAlt,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   connRowName: {
     fontFamily: FONT.semiBold,

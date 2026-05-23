@@ -13,7 +13,7 @@
 // backfill) and it lights up.
 // ─────────────────────────────────────────────────────────────────────────
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -22,6 +22,7 @@ import {
   StyleSheet,
   Pressable,
   Alert,
+  Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
@@ -63,6 +64,9 @@ export default function LocationFilterSheet({
   const [mode, setMode]         = useState(start.mode);
   const [radiusMi, setRadiusMi] = useState(start.radiusMi ?? DEFAULT_RADIUS);
 
+  const fadeAnim  = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(0.95)).current;
+
   // Re-sync when the sheet re-opens with a different filter.
   useEffect(() => {
     if (!visible) return;
@@ -70,6 +74,21 @@ export default function LocationFilterSheet({
     setMode(s.mode);
     setRadiusMi(s.radiusMi ?? DEFAULT_RADIUS);
   }, [visible, initialFilter]);
+
+  // Fade + scale animation
+  useEffect(() => {
+    if (visible) {
+      Animated.parallel([
+        Animated.timing(fadeAnim,  { toValue: 1,    duration: 180, useNativeDriver: true }),
+        Animated.spring(scaleAnim, { toValue: 1,    tension: 280,  friction: 22, useNativeDriver: true }),
+      ]).start();
+    } else {
+      Animated.parallel([
+        Animated.timing(fadeAnim,  { toValue: 0,    duration: 130, useNativeDriver: true }),
+        Animated.timing(scaleAnim, { toValue: 0.95, duration: 130, useNativeDriver: true }),
+      ]).start();
+    }
+  }, [visible]);
 
   function handleApply() {
     if (mode === 'self') {
@@ -87,13 +106,22 @@ export default function LocationFilterSheet({
   const radiusDisabled = mode !== 'self';
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.backdrop}>
-        <View style={styles.sheet}>
-          <View style={styles.handle} />
+    <Modal
+      visible={visible}
+      animationType="none"
+      transparent
+      statusBarTranslucent
+      onRequestClose={onClose}
+    >
+      <Animated.View style={[styles.backdrop, { opacity: fadeAnim }]}>
+        {/* Tap-away to dismiss */}
+        <TouchableOpacity style={StyleSheet.absoluteFill} onPress={onClose} activeOpacity={1} />
+
+        {/* Centered card */}
+        <Animated.View style={[styles.card, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
           <View style={styles.headerRow}>
             <Text style={styles.title}>Location</Text>
-            <TouchableOpacity onPress={onClose} hitSlop={10}>
+            <TouchableOpacity onPress={onClose} hitSlop={10} activeOpacity={0.7}>
               <Ionicons name="close" size={22} color={COLORS.textSecondary} />
             </TouchableOpacity>
           </View>
@@ -155,8 +183,8 @@ export default function LocationFilterSheet({
             onPress={handleApply}
             style={{ marginTop: SPACING.md }}
           />
-        </View>
-      </View>
+        </Animated.View>
+      </Animated.View>
     </Modal>
   );
 }
@@ -164,24 +192,20 @@ export default function LocationFilterSheet({
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
   },
-  sheet: {
+  card: {
+    width: '100%',
+    maxWidth: 400,
     backgroundColor: COLORS.bg,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
+    borderRadius: RADIUS.xl,
     paddingHorizontal: SPACING.lg,
-    paddingTop: SPACING.sm,
+    paddingTop: SPACING.lg,
     paddingBottom: SPACING.lg,
-    maxHeight: '92%',
-  },
-  handle: {
-    alignSelf: 'center',
-    width: 40, height: 4,
-    borderRadius: 2,
-    backgroundColor: COLORS.border,
-    marginBottom: SPACING.sm,
+    ...SHADOW.lg,
   },
   headerRow: {
     flexDirection: 'row',

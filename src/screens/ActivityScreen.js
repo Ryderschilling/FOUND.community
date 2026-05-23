@@ -14,7 +14,7 @@
 // On screen focus we call mark_inbound_seen(NULL) so the tab badge clears.
 // ─────────────────────────────────────────────────────────────────────────
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -171,18 +171,25 @@ export default function ActivityScreen({ navigation }) {
   const [error, setError]             = useState(null);
   const [busyProfileId, setBusyProfileId] = useState(null);
 
+  // Guard against setState after unmount / after blur
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
+
   const load = useCallback(async ({ isRefresh } = {}) => {
-    if (!user) return;
+    if (!user || !mountedRef.current) return;
     if (isRefresh) setRefreshing(true); else setLoading(true);
     setError(null);
     try {
       const { data, error: rpcErr } = await supabase.rpc('inbound_connections');
+      if (!mountedRef.current) return;
       if (rpcErr) throw rpcErr;
       setRows(data ?? []);
     } catch (e) {
+      if (!mountedRef.current) return;
       console.warn('[activity] load failed', e?.message);
       setError(e?.message ?? 'Could not load activity.');
     } finally {
+      if (!mountedRef.current) return;
       setLoading(false);
       setRefreshing(false);
     }
@@ -191,15 +198,23 @@ export default function ActivityScreen({ navigation }) {
   useEffect(() => { load(); }, [load]);
 
   // Refresh + mark-all-seen whenever the user lands on this tab.
+  // We track a per-focus abort flag so a load that starts on Activity but
+  // completes after the user has already switched to Discover doesn't write
+  // stale state back. This is what was causing the nav glitch.
   useEffect(() => {
-    const unsub = navigation?.addListener?.('focus', async () => {
+    let abortFocus = false;
+    const unsubFocus = navigation?.addListener?.('focus', () => {
+      abortFocus = false;
       load({ isRefresh: true });
-      // Fire-and-forget; tab badge updates on next poll.
-      // The Postgrest builder is thenable but not a real Promise — it has no
-      // `.catch()`. Wrap in Promise.resolve() so a rejection can't crash focus.
       Promise.resolve(supabase.rpc('mark_inbound_seen', { p_from: null })).catch(() => {});
     });
-    return unsub;
+    const unsubBlur = navigation?.addListener?.('blur', () => {
+      abortFocus = true;
+    });
+    return () => {
+      unsubFocus?.();
+      unsubBlur?.();
+    };
   }, [navigation, load]);
 
   // Accept = reciprocal like. Updates the row optimistically to "match" state
@@ -214,6 +229,7 @@ export default function ActivityScreen({ navigation }) {
         { from_profile: user.id, to_profile: row.profile_id, kind: 'like' },
         { onConflict: 'from_profile,to_profile,kind', ignoreDuplicates: true }
       );
+    if (!mountedRef.current) return;
     setBusyProfileId(null);
     if (insErr) {
       Alert.alert('Could not accept', insErr.message);
@@ -277,6 +293,7 @@ export default function ActivityScreen({ navigation }) {
     if (!ok) return;
     setBusyProfileId(row.profile_id);
     const { error: rpcErr } = await supabase.rpc('dismiss_inbound', { p_from: row.profile_id });
+    if (!mountedRef.current) return;
     setBusyProfileId(null);
     if (rpcErr) {
       Alert.alert('Could not dismiss', rpcErr.message);
