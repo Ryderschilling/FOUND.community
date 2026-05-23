@@ -156,6 +156,50 @@ export async function pickAndUploadGroupPhoto({ groupId, source = 'library' }) {
 }
 
 /**
+ * Pick an image WITHOUT uploading it. Used by the Create Group flow, where the
+ * group (and therefore its id / storage path) doesn't exist yet — the picked
+ * image is held in memory and uploaded with uploadGroupPhoto() once the group
+ * has been created.
+ * @returns {Promise<{ picked: {uri,base64}|null, error: Error|null }>}
+ *          picked === null with error === null means the user cancelled.
+ */
+export async function pickGroupImage(source = 'library') {
+  try {
+    const granted = await ensurePermission(source);
+    if (!granted) {
+      return {
+        picked: null,
+        error: new Error(
+          source === 'camera'
+            ? 'Camera permission denied. Enable it in Settings.'
+            : 'Photo library permission denied. Enable it in Settings.'
+        ),
+      };
+    }
+    const picked = await pickImage(source);
+    return { picked, error: null };
+  } catch (e) {
+    return { picked: null, error: e instanceof Error ? e : new Error(String(e)) };
+  }
+}
+
+/**
+ * Upload an already-picked image (from pickGroupImage) to a group's gallery.
+ * Server-side RLS rejects the upload unless the caller is the group owner/admin.
+ * @returns {Promise<{ photo: object|null, error: Error|null }>}
+ */
+export async function uploadGroupPhoto(groupId, picked) {
+  if (!groupId) return { photo: null, error: new Error('Missing group id') };
+  if (!picked)  return { photo: null, error: new Error('No image selected') };
+  try {
+    const photo = await uploadOne(groupId, picked);
+    return { photo, error: null };
+  } catch (e) {
+    return { photo: null, error: e instanceof Error ? e : new Error(String(e)) };
+  }
+}
+
+/**
  * Fetch a group's photos, ordered. Returns [{ id, storage_path, url, sort_order }].
  * RLS allows public read on the photos table.
  */

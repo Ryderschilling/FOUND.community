@@ -51,3 +51,55 @@ export async function geocode(query) {
     return { error: e instanceof Error ? e : new Error(String(e)) };
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// geocodeZip(zip)
+//
+// Resolves a 5-digit US ZIP to { lat, lng, city, state } via Zippopotam.us —
+// the same free service the signup form uses for ZIP → City/State auto-fill.
+// A ZIP maps to a single exact centroid, so this is more reliable than the
+// "City, State" Nominatim path (no ambiguous duplicate-city matches) and is
+// not rate-limited for our volume.
+//
+// This is the canonical way location is captured: once, from the ZIP entered
+// at signup. The user never types a location anywhere else.
+//
+// Returns { lat, lng, city, state, error }. A ZIP that simply isn't found is
+// NOT an error — it returns null coords with error: null.
+// ─────────────────────────────────────────────────────────────────────────
+export async function geocodeZip(zip) {
+  const z = (zip || '').trim();
+  if (!/^\d{5}$/.test(z)) {
+    return { lat: null, lng: null, city: null, state: null, error: null };
+  }
+
+  try {
+    const res = await fetch(`https://api.zippopotam.us/us/${z}`);
+    // 404 = ZIP not in the dataset. Treat as "no match", not a hard failure.
+    if (res.status === 404) {
+      return { lat: null, lng: null, city: null, state: null, error: null };
+    }
+    if (!res.ok) {
+      return { error: new Error(`ZIP lookup returned ${res.status}`) };
+    }
+    const data  = await res.json();
+    const place = data?.places?.[0];
+    if (!place) {
+      return { lat: null, lng: null, city: null, state: null, error: null };
+    }
+    const lat = parseFloat(place.latitude);
+    const lng = parseFloat(place.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return { error: new Error('ZIP lookup returned invalid coordinates') };
+    }
+    return {
+      lat,
+      lng,
+      city:  place['place name'] || null,
+      state: place['state abbreviation'] || null,
+      error: null,
+    };
+  } catch (e) {
+    return { error: e instanceof Error ? e : new Error(String(e)) };
+  }
+}

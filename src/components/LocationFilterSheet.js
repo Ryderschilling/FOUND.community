@@ -1,13 +1,16 @@
 // ─────────────────────────────────────────────────────────────────────────
-// LocationFilterSheet — bottom-sheet modal for choosing the Discover location
-// filter. Three modes:
+// LocationFilterSheet — bottom-sheet modal for the Discover location filter.
 //
-//   Anywhere     → no geographic filter, see everyone
-//   Near Me      → centered on your profile location, capped by radius
-//   Search city  → geocode an entered "City, State" via Nominatim, capped by radius
+// Two modes:
+//   Anywhere  → no override; the feed uses your saved Settings radius.
+//   Near Me   → centered on your profile location, hard-capped by the radius.
 //
-// On Apply we hand the resolved filter object back to the parent which is
-// responsible for (a) persisting via saveFilter() and (b) refetching matches.
+// On Apply we hand the resolved filter object back to the parent, which
+// (a) persists it via saveFilter() and (b) refetches matches.
+//
+// "Near Me" needs a geocoded profile location. If you don't have one yet the
+// option is disabled — set your city in Edit Profile (or run the location
+// backfill) and it lights up.
 // ─────────────────────────────────────────────────────────────────────────
 
 import React, { useEffect, useState } from 'react';
@@ -17,17 +20,12 @@ import {
   Modal,
   TouchableOpacity,
   StyleSheet,
-  TextInput,
   Pressable,
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
 import { PrimaryButton } from './Atoms';
-import { geocode } from '../lib/geocode';
 import { DEFAULT_RADIUS, RADIUS_OPTIONS, DEFAULT_FILTER } from '../lib/locationFilter';
 
 function ModeRow({ icon, label, subLabel, selected, disabled, onPress }) {
@@ -62,57 +60,18 @@ export default function LocationFilterSheet({
 }) {
   const start = initialFilter ?? DEFAULT_FILTER;
 
-  const [mode, setMode]               = useState(start.mode);
-  const [cityText, setCityText]       = useState(start.cityText ?? '');
-  const [cityLat, setCityLat]         = useState(start.lat ?? null);
-  const [cityLng, setCityLng]         = useState(start.lng ?? null);
-  const [resolvedCity, setResolved]   = useState(start.cityText ?? null); // last text that was geocoded
-  const [radiusMi, setRadiusMi]       = useState(start.radiusMi ?? DEFAULT_RADIUS);
-  const [geocoding, setGeocoding]     = useState(false);
-  const [geoError, setGeoError]       = useState(null);
+  const [mode, setMode]         = useState(start.mode);
+  const [radiusMi, setRadiusMi] = useState(start.radiusMi ?? DEFAULT_RADIUS);
 
-  // Re-sync when the sheet re-opens with a different filter
+  // Re-sync when the sheet re-opens with a different filter.
   useEffect(() => {
     if (!visible) return;
     const s = initialFilter ?? DEFAULT_FILTER;
     setMode(s.mode);
-    setCityText(s.cityText ?? '');
-    setCityLat(s.lat ?? null);
-    setCityLng(s.lng ?? null);
-    setResolved(s.cityText ?? null);
     setRadiusMi(s.radiusMi ?? DEFAULT_RADIUS);
-    setGeoError(null);
   }, [visible, initialFilter]);
 
-  // When the user picks "Search city" we don't auto-geocode on every keystroke
-  // (1 req/sec polite limit). Geocode happens on the Search button or Apply.
-  async function resolveCity() {
-    const q = cityText.trim();
-    if (!q) {
-      setGeoError('Enter a city to search.');
-      return null;
-    }
-    setGeoError(null);
-    setGeocoding(true);
-    const { lat, lng, displayName, error } = await geocode(q);
-    setGeocoding(false);
-    if (error) {
-      setGeoError(error.message || 'Geocoder error');
-      return null;
-    }
-    if (lat == null || lng == null) {
-      setGeoError(`Couldn't find "${q}". Try "City, State" (e.g. Santa Rosa Beach, FL).`);
-      return null;
-    }
-    setCityLat(lat); setCityLng(lng); setResolved(q);
-    return { lat, lng, displayName };
-  }
-
-  async function handleApply() {
-    if (mode === 'anywhere') {
-      onApply?.({ mode: 'anywhere', radiusMi });
-      return;
-    }
+  function handleApply() {
     if (mode === 'self') {
       if (!selfHasLocation) {
         Alert.alert('No location set', 'Set your city in Edit Profile to use Near Me.');
@@ -121,23 +80,15 @@ export default function LocationFilterSheet({
       onApply?.({ mode: 'self', radiusMi });
       return;
     }
-    // city mode
-    let lat = cityLat, lng = cityLng;
-    // If the text changed since last geocode, re-resolve
-    if (!lat || !lng || resolvedCity !== cityText.trim()) {
-      const r = await resolveCity();
-      if (!r) return;
-      lat = r.lat; lng = r.lng;
-    }
-    onApply?.({ mode: 'city', cityText: cityText.trim(), lat, lng, radiusMi });
+    // anywhere
+    onApply?.({ mode: 'anywhere', radiusMi });
   }
+
+  const radiusDisabled = mode !== 'self';
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        style={styles.backdrop}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
+      <View style={styles.backdrop}>
         <View style={styles.sheet}>
           <View style={styles.handle} />
           <View style={styles.headerRow}>
@@ -151,87 +102,45 @@ export default function LocationFilterSheet({
             <ModeRow
               icon="globe-outline"
               label="Anywhere"
-              subLabel="No location filter"
+              subLabel="Uses your Settings radius"
               selected={mode === 'anywhere'}
               onPress={() => setMode('anywhere')}
             />
             <ModeRow
               icon="location-outline"
               label="Near Me"
-              subLabel={selfHasLocation ? 'Centered on your profile location' : 'Set your location first in Edit Profile'}
+              subLabel={
+                selfHasLocation
+                  ? 'People within the radius below'
+                  : 'Set your location first in Edit Profile'
+              }
               selected={mode === 'self'}
               disabled={!selfHasLocation}
               onPress={() => setMode('self')}
             />
-            <ModeRow
-              icon="search-outline"
-              label="Search a city"
-              subLabel="Find Christians in another area"
-              selected={mode === 'city'}
-              onPress={() => setMode('city')}
-            />
           </View>
 
-          {/* City search input (visible only in city mode) */}
-          {mode === 'city' ? (
-            <View style={styles.searchBlock}>
-              <View style={styles.searchRow}>
-                <TextInput
-                  style={styles.input}
-                  value={cityText}
-                  onChangeText={(t) => { setCityText(t); setGeoError(null); }}
-                  placeholder="City, State (e.g. Nashville, TN)"
-                  placeholderTextColor={COLORS.textTertiary}
-                  autoCapitalize="words"
-                  returnKeyType="search"
-                  onSubmitEditing={resolveCity}
-                />
-                <TouchableOpacity
-                  style={styles.searchBtn}
-                  onPress={resolveCity}
-                  disabled={geocoding}
-                  activeOpacity={0.8}
-                >
-                  {geocoding ? (
-                    <ActivityIndicator size="small" color={COLORS.white} />
-                  ) : (
-                    <Ionicons name="arrow-forward" size={16} color={COLORS.white} />
-                  )}
-                </TouchableOpacity>
-              </View>
-              {geoError ? (
-                <Text style={styles.geoError}>{geoError}</Text>
-              ) : (cityLat != null && cityLng != null && resolvedCity === cityText.trim()) ? (
-                <View style={styles.geoOk}>
-                  <Ionicons name="checkmark-circle" size={12} color={COLORS.sage} />
-                  <Text style={styles.geoOkText}>Found {resolvedCity}</Text>
-                </View>
-              ) : null}
-            </View>
-          ) : null}
-
-          {/* Radius picker — disabled in Anywhere mode */}
+          {/* Radius picker — applies to Near Me only */}
           <View style={styles.radiusBlock}>
             <Text style={styles.radiusLabel}>Radius</Text>
             <View style={styles.radiusRow}>
               {RADIUS_OPTIONS.map((r) => {
                 const selected = radiusMi === r;
-                const disabled = mode === 'anywhere';
                 return (
                   <Pressable
                     key={r}
                     style={[
                       styles.radiusChip,
                       selected && styles.radiusChipSelected,
-                      disabled && styles.radiusChipDisabled,
+                      radiusDisabled && styles.radiusChipDisabled,
                     ]}
-                    disabled={disabled}
+                    disabled={radiusDisabled}
                     onPress={() => setRadiusMi(r)}
                   >
                     <Text style={[
                       styles.radiusChipText,
                       selected && styles.radiusChipTextSelected,
-                      disabled && styles.radiusChipTextDisabled,
+                      radiusDisabled && styles.radiusChipTextDisabled,
                     ]}>
                       {r} mi
                     </Text>
@@ -242,14 +151,12 @@ export default function LocationFilterSheet({
           </View>
 
           <PrimaryButton
-            label={geocoding ? 'Searching…' : 'Apply'}
+            label="Apply"
             onPress={handleApply}
-            disabled={geocoding}
-            loading={geocoding}
             style={{ marginTop: SPACING.md }}
           />
         </View>
-      </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 }
@@ -313,29 +220,6 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.sage,
     alignItems: 'center', justifyContent: 'center',
   },
-
-  searchBlock: { marginTop: SPACING.md, gap: 6 },
-  searchRow: { flexDirection: 'row', gap: 8 },
-  input: {
-    flex: 1,
-    backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.lg,
-    borderWidth: 1, borderColor: COLORS.border,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: 12,
-    fontFamily: FONT.regular,
-    fontSize: 15,
-    color: COLORS.text,
-  },
-  searchBtn: {
-    width: 48, height: 48,
-    borderRadius: RADIUS.lg,
-    backgroundColor: COLORS.accent,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  geoError: { fontFamily: FONT.regular, fontSize: 12, color: '#C0392B', paddingHorizontal: 4 },
-  geoOk:    { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 4 },
-  geoOkText:{ fontFamily: FONT.semiBold, fontSize: 12, color: COLORS.sage },
 
   radiusBlock: { marginTop: SPACING.lg },
   radiusLabel: {

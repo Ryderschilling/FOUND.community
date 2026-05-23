@@ -680,11 +680,10 @@ export default function ProfileScreen({ navigation }) {
           <View style={styles.section}>
             <SectionHeader label="Settings" />
             <View style={styles.settingsGroup}>
-              <SettingsItem iconName="notifications-outline" label="Notifications"       />
-              <SettingsItem iconName="location-outline"      label="Location Settings"   />
-              <SettingsItem iconName="lock-closed-outline"   label="Privacy"             />
-              <SettingsItem iconName="business-outline"      label="My Church Dashboard" />
-              <SettingsItem iconName="help-circle-outline"   label="Help & Support"      />
+              <SettingsItem iconName="notifications-outline" label="Notifications"       onPress={() => navigation?.navigate('Notifications')}    />
+              <SettingsItem iconName="location-outline"      label="Location Settings"   onPress={() => navigation?.navigate('LocationSettings')} />
+              <SettingsItem iconName="lock-closed-outline"   label="Privacy"             onPress={() => navigation?.navigate('Privacy')}          />
+              <SettingsItem iconName="help-circle-outline"   label="Help & Support"      onPress={() => navigation?.navigate('HelpSupport')}      />
               <SettingsItem iconName="log-out-outline"       label="Sign Out" danger onPress={handleSignOut} />
             </View>
           </View>

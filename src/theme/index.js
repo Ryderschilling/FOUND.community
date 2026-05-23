@@ -140,26 +140,28 @@ export const RADIUS = {
   full: 999,
 };
 
+// Softened for a quieter, more premium feel — shadows now whisper instead of
+// announce. Cards lift gently; buttons sit flat against the surface.
 export const SHADOW = {
   sm: {
     shadowColor: '#1A1A1A',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowOpacity: 0.03,
+    shadowRadius: 3,
+    elevation: 1,
   },
   md: {
     shadowColor: '#1A1A1A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.07,
-    shadowRadius: 16,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 2,
   },
   lg: {
     shadowColor: '#1A1A1A',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.10,
-    shadowRadius: 28,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.07,
+    shadowRadius: 22,
+    elevation: 5,
   },
 };

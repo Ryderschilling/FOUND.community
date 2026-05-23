@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -18,7 +18,6 @@ import { PrimaryButton } from '../components/Atoms';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../auth/AuthContext';
 import { useConfirm } from '../components/ConfirmProvider';
-import { geocode } from '../lib/geocode';
 import {
   LIFE_STAGES,
   HAS_KIDS_STAGES,
@@ -29,23 +28,11 @@ import {
   COMMUNITY_GOALS,
 } from '../data/mock';
 
-// ─── Helpers ──────────────────────────────────────────────────────────────
-// Parse "Nashville, TN" -> { city: 'Nashville', state: 'TN' }.
-// Split on the LAST comma so multi-comma city names ("Washington, D.C.") still work.
-function parseLocation(text) {
-  if (!text || !text.trim()) return { city: null, state: null };
-  const trimmed = text.trim();
-  const idx = trimmed.lastIndexOf(',');
-  if (idx < 0) return { city: trimmed, state: null };
-  return {
-    city:  trimmed.slice(0, idx).trim() || null,
-    state: trimmed.slice(idx + 1).trim() || null,
-  };
-}
-
 // ─── Step ID sequence ────────────────────────────────────────────────────────
-// School-type is conditionally inserted based on life stage answer
-const BASE_STEPS = ['life-stage', 'activities', 'location', 'family-values', 'love-language', 'personality', 'community-goals', 'church', 'reveal'];
+// School-type is conditionally inserted based on life stage answer.
+// Location is intentionally NOT here — it's captured once at signup (from the
+// ZIP) and never asked again.
+const BASE_STEPS = ['life-stage', 'activities', 'family-values', 'love-language', 'personality', 'community-goals', 'church', 'reveal'];
 
 function buildSteps(lifeStage) {
   const steps = [...BASE_STEPS];
@@ -117,25 +104,6 @@ function StepActivities({ selections, onToggle }) {
           <OptionCard key={item.id} item={item} selected={selections.includes(item.id)} onPress={() => onToggle(item.id)} />
         ))}
       </View>
-    </>
-  );
-}
-
-function StepLocation({ value, onChange }) {
-  return (
-    <>
-      <Text style={styles.stepTitle}>Where are you located?</Text>
-      <Text style={styles.stepSub}>Helps us surface people nearby.</Text>
-      <TextInput
-        style={styles.textInput}
-        placeholder="City, State (e.g. Nashville, TN)"
-        placeholderTextColor={COLORS.textTertiary}
-        value={value}
-        onChangeText={onChange}
-        autoCapitalize="words"
-        returnKeyType="done"
-      />
-      <Text style={styles.optionalNote}>Optional — you can skip this step.</Text>
     </>
   );
 }
@@ -342,20 +310,6 @@ export default function OnboardingScreen({ navigation }) {
   const [step, setStep]                     = useState(1);
   const [lifeStage, setLifeStage]           = useState(null);
   const [activities, setActivities]         = useState([]);
-  const [location, setLocation]             = useState('');
-
-  // Pre-fill the location step with the city/state captured at signup.
-  // Runs once when the profile row arrives; never clobbers a value the user
-  // has already typed during this onboarding session.
-  const locationPrefilled = useRef(false);
-  useEffect(() => {
-    if (locationPrefilled.current || !profile) return;
-    const c  = (profile.city  || '').trim();
-    const st = (profile.state || '').trim();
-    if (c || st) setLocation([c, st].filter(Boolean).join(', '));
-    locationPrefilled.current = true;
-  }, [profile]);
-
   const [familyValues, setFamilyValues]     = useState([]);
   const [schoolType, setSchoolType]         = useState(null);
   const [loveLanguage, setLoveLanguage]     = useState(null);
@@ -405,7 +359,6 @@ export default function OnboardingScreen({ navigation }) {
     switch (currentStepId) {
       case 'life-stage':      return lifeStage !== null;
       case 'activities':      return activities.length >= 1;
-      case 'location':        return true; // optional
       case 'family-values':   return true; // optional
       case 'school-type':     return true; // optional
       case 'love-language':   return loveLanguage !== null;
@@ -440,14 +393,19 @@ export default function OnboardingScreen({ navigation }) {
     if (busy) return;
     setBusy(true);
     try {
-      const { city, state } = parseLocation(location);
+      // City/state were captured at signup (from the ZIP) and already live on
+      // the profile — onboarding never asks for location. Pass the existing
+      // values straight through: complete_onboarding does an unconditional
+      // update of these columns, so sending them keeps them intact. The
+      // geocoded PostGIS `location` point is set at signup / self-healed by
+      // AuthContext — nothing to do here.
       const { error } = await supabase.rpc('complete_onboarding', {
         p_life_stage:    lifeStage,
         p_school_type:   schoolType,
         p_love_language: loveLanguage,
         p_church_id:     church,
-        p_city:          city,
-        p_state:         state,
+        p_city:          profile?.city ?? null,
+        p_state:         profile?.state ?? null,
         p_is_initiator:  initiator,
         p_is_outgoing:   outgoing,
         p_activities:    activities,
@@ -455,27 +413,6 @@ export default function OnboardingScreen({ navigation }) {
         p_values:        familyValues,
       });
       if (error) throw error;
-
-      // Geocode City, State → lat/lng → PostGIS point so the new user shows up
-      // in location-filtered Discover ("Near Me" / city-radius) immediately.
-      // Non-fatal: onboarding is already saved — if geocoding fails we just log
-      // and move on. Worst case = no proximity score until they Edit Profile.
-      if (location.trim()) {
-        try {
-          const { lat, lng, error: geoErr } = await geocode(location);
-          if (geoErr) {
-            console.warn('[onboarding] geocode failed', geoErr.message);
-          } else if (lat != null && lng != null) {
-            const { error: locErr } = await supabase.rpc('set_profile_location', {
-              p_lat: lat,
-              p_lng: lng,
-            });
-            if (locErr) console.warn('[onboarding] set location failed', locErr.message);
-          }
-        } catch (geoEx) {
-          console.warn('[onboarding] geocode threw', geoEx?.message ?? geoEx);
-        }
-      }
 
       await refreshProfile();
       // AppNavigator swaps from Onboarding → Main when onboarding_complete flips.
@@ -520,9 +457,6 @@ export default function OnboardingScreen({ navigation }) {
         )}
         {currentStepId === 'activities' && (
           <StepActivities selections={activities} onToggle={toggle(setActivities)} />
-        )}
-        {currentStepId === 'location' && (
-          <StepLocation value={location} onChange={setLocation} />
         )}
         {currentStepId === 'family-values' && (
           <StepFamilyValues selections={familyValues} onToggle={toggle(setFamilyValues)} />

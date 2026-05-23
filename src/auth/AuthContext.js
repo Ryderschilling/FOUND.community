@@ -5,6 +5,7 @@
 
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { geocodeZip } from '../lib/geocode';
 
 const AuthCtx = createContext({
   session: null,
@@ -74,6 +75,42 @@ export function AuthProvider({ children }) {
     };
   }, [session?.user?.id]);
 
+  // One-time location self-heal.
+  // Accounts created before signup-geocoding (migration 0030) have a city/ZIP
+  // but a NULL PostGIS `location`, so "Near Me" and the radius filter can't
+  // place them. The first time such a profile loads we resolve its stored ZIP
+  // to coordinates and persist the point — silently, in the background.
+  // Idempotent: once `location` is set this never runs again, which is what
+  // lets a user never re-enter their location after signup.
+  useEffect(() => {
+    if (!session?.user || !profile) return;
+    if (profile.location) return;   // already geocoded — nothing to do
+    if (!profile.zip) return;       // no ZIP to geocode from (Node backfill covers these)
+
+    let cancelled = false;
+    (async () => {
+      const { lat, lng, error } = await geocodeZip(profile.zip);
+      if (cancelled || error || lat == null || lng == null) return;
+
+      const { error: rpcErr } = await supabase.rpc('set_profile_location', {
+        p_lat: lat,
+        p_lng: lng,
+      });
+      if (cancelled || rpcErr) return;
+
+      // Re-pull the row so `profile.location` reflects the new point; this
+      // effect then short-circuits on its next run.
+      const { data } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', session.user.id)
+        .maybeSingle();
+      if (!cancelled && data) setProfile(data);
+    })();
+
+    return () => { cancelled = true; };
+  }, [session?.user?.id, profile?.id, profile?.location, profile?.zip]);
+
   const value = useMemo(
     () => ({
       session,
@@ -86,10 +123,15 @@ export function AuthProvider({ children }) {
         if (error) throw error;
         return data;
       },
-      async signUpWithPassword({ email, password, fullName, phone, zip, city, state }) {
+      async signUpWithPassword({ email, password, fullName, phone, zip, city, state, lat, lng }) {
         // Metadata keys MUST match the found.community website signup
         // (assets/auth.js) — the handle_new_user() trigger reads these keys to
         // populate the profiles row, so app + web signups must be identical.
+        //
+        // lat/lng are resolved from the ZIP at signup. The trigger (migration
+        // 0030) turns them into the PostGIS `location` point — this is the ONE
+        // place a user's location is captured. Sent as strings; absent/empty
+        // -> trigger writes a NULL location (web signup, which omits coords).
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
@@ -100,6 +142,8 @@ export function AuthProvider({ children }) {
               zip:       zip ?? '',
               city:      city ?? '',
               state:     (state ?? '').toUpperCase(),
+              lat:       lat != null ? String(lat) : '',
+              lng:       lng != null ? String(lng) : '',
             },
           },
         });

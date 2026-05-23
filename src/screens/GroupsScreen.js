@@ -22,16 +22,21 @@ import {
   RefreshControl,
   Alert,
   Platform,
+  Image,
   KeyboardAvoidingView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
+import { COLORS, FONT, SPACING, RADIUS } from '../theme';
 import GroupCard from '../components/GroupCard';
 import { PrimaryButton } from '../components/Atoms';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../auth/AuthContext';
 import { geocode } from '../lib/geocode';
-import { publicUrlForGroupPhoto } from '../lib/groupPhotos';
+import {
+  publicUrlForGroupPhoto,
+  pickGroupImage,
+  uploadGroupPhoto,
+} from '../lib/groupPhotos';
 import { useConfirm } from '../components/ConfirmProvider';
 
 // RPC row → GroupCard shape
@@ -210,12 +215,22 @@ function CreateGroupModal({ visible, onClose, onCreated }) {
   const [desc, setDesc]         = useState('');
   const [city, setCity]         = useState('');
   const [state, setState]       = useState('');
+  const [address, setAddress]   = useState('');
   const [schedule, setSchedule] = useState('');
+  const [cover, setCover]       = useState(null);   // { uri, base64 } picked, not yet uploaded
   const [busy, setBusy]         = useState(false);
 
   const reset = () => {
-    setName(''); setDesc(''); setCity(''); setState(''); setSchedule('');
+    setName(''); setDesc(''); setCity(''); setState('');
+    setAddress(''); setSchedule(''); setCover(null);
   };
+
+  async function handlePickCover() {
+    if (busy) return;
+    const { picked, error } = await pickGroupImage('library');
+    if (error) { Alert.alert('Could not add photo', error.message); return; }
+    if (picked) setCover(picked); // null = user cancelled
+  }
 
   async function handleCreate() {
     if (!name.trim()) {
@@ -242,20 +257,31 @@ function CreateGroupModal({ visible, onClose, onCreated }) {
       }
     }
 
-    const { error } = await supabase.rpc('create_group', {
+    const { data: newId, error } = await supabase.rpc('create_group', {
       p_name:          name,
       p_description:   desc,
       p_city:          city,
       p_state:         state,
+      p_address:       address,
       p_schedule_text: schedule,
       p_lat:           lat,
       p_lng:           lng,
     });
-    setBusy(false);
     if (error) {
+      setBusy(false);
       Alert.alert('Could not create group', error.message);
       return;
     }
+
+    // Upload the cover photo now that the group (and its id) exists.
+    // Non-fatal: the group is already created — a failed photo just means
+    // the owner can re-add it from the group page.
+    if (cover && newId) {
+      const { error: upErr } = await uploadGroupPhoto(newId, cover);
+      if (upErr) console.warn('[create group] cover upload failed', upErr.message);
+    }
+
+    setBusy(false);
     reset();
     onCreated?.();
   }
@@ -276,6 +302,40 @@ function CreateGroupModal({ visible, onClose, onCreated }) {
           </View>
 
           <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 24 }}>
+            {/* Cover photo */}
+            <View style={modalStyles.field}>
+              <Text style={modalStyles.fieldLabel}>Cover Photo</Text>
+              {cover ? (
+                <View style={modalStyles.coverWrap}>
+                  <Image source={{ uri: cover.uri }} style={modalStyles.coverImage} />
+                  <TouchableOpacity
+                    style={modalStyles.coverRemove}
+                    onPress={() => setCover(null)}
+                    hitSlop={8}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name="close" size={14} color={COLORS.white} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={modalStyles.coverReplace}
+                    onPress={handlePickCover}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={modalStyles.coverReplaceText}>Replace</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={modalStyles.coverEmpty}
+                  onPress={handlePickCover}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="image-outline" size={22} color={COLORS.textTertiary} />
+                  <Text style={modalStyles.coverEmptyText}>Add a cover photo</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
             <Field label="Name *" value={name} onChange={setName} placeholder="e.g. Tuesday Night Bible Study" />
             <Field
               label="Description"
@@ -286,6 +346,12 @@ function CreateGroupModal({ visible, onClose, onCreated }) {
             />
             <Field label="City"     value={city}     onChange={setCity}     placeholder="Santa Rosa Beach" />
             <Field label="State"    value={state}    onChange={setState}    placeholder="FL" />
+            <Field
+              label="Meeting Address"
+              value={address}
+              onChange={setAddress}
+              placeholder="Street address — shown to members only"
+            />
             <Field label="Schedule" value={schedule} onChange={setSchedule} placeholder="Tuesdays 7pm" />
           </ScrollView>
 
@@ -361,7 +427,6 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     paddingHorizontal: 14,
     paddingVertical: 8,
-    ...SHADOW.sm,
   },
   createBtnText: {
     fontFamily: FONT.semiBold,
@@ -456,4 +521,54 @@ const modalStyles = StyleSheet.create({
     ...(Platform.OS === 'web' ? { outlineStyle: 'none' } : null),
   },
   textarea: { minHeight: 80, textAlignVertical: 'top' },
+
+  // Cover photo picker
+  coverEmpty: {
+    height: 132,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderStyle: 'dashed',
+    backgroundColor: COLORS.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  coverEmptyText: {
+    fontFamily: FONT.regular,
+    fontSize: 13,
+    color: COLORS.textTertiary,
+  },
+  coverWrap: {
+    height: 132,
+    borderRadius: RADIUS.lg,
+    overflow: 'hidden',
+    backgroundColor: COLORS.surfaceAlt,
+  },
+  coverImage: { width: '100%', height: '100%' },
+  coverRemove: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 26,
+    height: 26,
+    borderRadius: RADIUS.full,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  coverReplace: {
+    position: 'absolute',
+    bottom: 8,
+    right: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: RADIUS.full,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+  },
+  coverReplaceText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 12,
+    color: COLORS.white,
+  },
 });

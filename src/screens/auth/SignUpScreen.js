@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, TYPE, SPACING, RADIUS } from '../../theme';
 import { PrimaryButton } from '../../components/Atoms';
 import { useAuth } from '../../auth/AuthContext';
+import { geocodeZip } from '../../lib/geocode';
 
 // Terms / Privacy live on the marketing site — same docs the website signup links to.
 const TERMS_URL   = 'https://found.community/terms.html';
@@ -141,6 +142,23 @@ export default function SignUpScreen({ navigation }) {
 
     setBusy(true);
     try {
+      // Resolve coordinates from the ZIP so the account is geocoded the moment
+      // it's created — this is the ONLY place location is captured. Done here
+      // (not relying on the on-blur lookup) so a fast "Create account" tap
+      // can't race past it. Non-fatal: if the ZIP can't be resolved we sign
+      // up without coords and AuthContext heals the location on first load.
+      let lat = null;
+      let lng = null;
+      try {
+        const geo = await geocodeZip(zipVal);
+        if (geo.lat != null && geo.lng != null) {
+          lat = geo.lat;
+          lng = geo.lng;
+        }
+      } catch {
+        // ignore — covered by the AuthContext self-heal
+      }
+
       const { session } = await signUpWithPassword({
         email:    emailVal,
         password,
@@ -149,6 +167,8 @@ export default function SignUpScreen({ navigation }) {
         zip:      zipVal,
         city:     cityVal,
         state:    stateVal,
+        lat,
+        lng,
       });
       // If "Confirm email" is disabled in Supabase: session is set and the
       // AuthContext auto-routes into onboarding. If confirmation is required

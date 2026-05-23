@@ -48,6 +48,15 @@ import {
   publicUrlForGroupPhoto,
   MAX_GROUP_PHOTOS,
 } from '../lib/groupPhotos';
+import {
+  fetchGroupPosts,
+  createGroupPost,
+  deleteGroupPost,
+  pickGroupPostImage,
+  uploadGroupPostPhoto,
+  purgeGroupPostPhotoStorage,
+  MAX_POST_BODY,
+} from '../lib/groupPosts';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 const AVATAR_GRADIENTS = [
@@ -71,6 +80,22 @@ function initialsFor(name) {
   return (a + b).toUpperCase() || '··';
 }
 
+// Compact relative time for the activity feed: "now", "5m", "3h", "2d", or a date.
+function timeAgo(iso) {
+  if (!iso) return '';
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) return '';
+  const secs = Math.max(0, Math.floor((Date.now() - then) / 1000));
+  if (secs < 60)     return 'now';
+  const mins = Math.floor(secs / 60);
+  if (mins < 60)     return `${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24)      return `${hrs}h`;
+  const days = Math.floor(hrs / 24);
+  if (days < 7)      return `${days}d`;
+  return new Date(then).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
 // ─── Screen ───────────────────────────────────────────────────────────────
 export default function GroupDetailScreen({ route, navigation }) {
   const { user } = useAuth();
@@ -81,12 +106,18 @@ export default function GroupDetailScreen({ route, navigation }) {
   const [detail, setDetail]     = useState(null);
   const [members, setMembers]   = useState([]);
   const [photos, setPhotos]     = useState([]);
+  const [posts, setPosts]       = useState([]);
   const [loading, setLoading]   = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const [busy, setBusy]               = useState(false); // join / leave
   const [openingChat, setOpeningChat] = useState(false);
   const [uploading, setUploading]     = useState(false);
+
+  // Composer state
+  const [composerBody, setComposerBody]   = useState('');
+  const [composerImage, setComposerImage] = useState(null); // picked { uri, base64 }
+  const [posting, setPosting]             = useState(false);
 
   const [editOpen, setEditOpen]         = useState(false);
   const [manageTarget, setManageTarget] = useState(null); // member row
@@ -95,6 +126,8 @@ export default function GroupDetailScreen({ route, navigation }) {
   const isOwner  = detail?.my_role === 'owner';
   const isAdmin  = isOwner || detail?.my_role === 'admin';
   const isMember = !!detail?.is_member;
+  const meMember = members.find((m) => m.profile_id === user?.id) ?? null;
+  const canPost  = (composerBody.trim().length > 0 || !!composerImage) && !posting;
 
   const name        = detail?.name        ?? preview?.name        ?? 'Group';
   const icon        = detail?.icon        ?? preview?.icon        ?? 'people-outline';
@@ -108,10 +141,11 @@ export default function GroupDetailScreen({ route, navigation }) {
     if (!groupId) { setLoading(false); return; }
     if (isRefresh) setRefreshing(true); else setLoading(true);
     try {
-      const [dRes, mRes, pRes] = await Promise.all([
+      const [dRes, mRes, pRes, postRes] = await Promise.all([
         supabase.rpc('group_detail', { p_group: groupId }),
         supabase.rpc('group_members_list', { p_group: groupId }),
         fetchGroupPhotos(groupId),
+        fetchGroupPosts(groupId),
       ]);
       if (dRes.error) console.warn('[group] detail failed', dRes.error.message);
       else setDetail((dRes.data ?? [])[0] ?? null);
@@ -119,6 +153,8 @@ export default function GroupDetailScreen({ route, navigation }) {
       else setMembers(mRes.data ?? []);
       if (pRes.error) console.warn('[group] photos failed', pRes.error.message);
       else setPhotos(pRes.photos ?? []);
+      if (postRes.error) console.warn('[group] posts failed', postRes.error.message);
+      else setPosts(postRes.posts ?? []);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -140,6 +176,11 @@ export default function GroupDetailScreen({ route, navigation }) {
   const refreshPhotos = useCallback(async () => {
     const { photos: p } = await fetchGroupPhotos(groupId);
     setPhotos(p ?? []);
+  }, [groupId]);
+
+  const refreshPosts = useCallback(async () => {
+    const { posts: p } = await fetchGroupPosts(groupId);
+    setPosts(p ?? []);
   }, [groupId]);
 
   // ── Actions ──────────────────────────────────────────────────────────────
@@ -214,6 +255,53 @@ export default function GroupDetailScreen({ route, navigation }) {
     await refreshPhotos();
   }
 
+  // ── Posts / activity feed ────────────────────────────────────────────────
+  async function handlePickPostImage() {
+    if (posting) return;
+    const { picked, error } = await pickGroupPostImage('library');
+    if (error) { Alert.alert('Could not add photo', error.message); return; }
+    if (picked) setComposerImage(picked);
+  }
+
+  async function handleSubmitPost() {
+    if (posting) return;
+    const body = composerBody.trim();
+    if (!body && !composerImage) return; // nothing to post
+    if (body.length > MAX_POST_BODY) {
+      Alert.alert('Too long', `Posts are limited to ${MAX_POST_BODY} characters.`);
+      return;
+    }
+    setPosting(true);
+    try {
+      let photoUrl = null;
+      if (composerImage) {
+        const up = await uploadGroupPostPhoto(groupId, composerImage);
+        if (up.error) { Alert.alert('Photo upload failed', up.error.message); return; }
+        photoUrl = up.url;
+      }
+      const { error } = await createGroupPost({ groupId, body, photoUrl });
+      if (error) { Alert.alert('Could not post', error.message); return; }
+      setComposerBody('');
+      setComposerImage(null);
+      await refreshPosts();
+    } finally {
+      setPosting(false);
+    }
+  }
+
+  async function handleDeletePost(post) {
+    const ok = await confirm({
+      title: 'Delete post?',
+      message: 'This removes it from the group activity feed.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    });
+    if (!ok) return;
+    const { error } = await deleteGroupPost(post.id, post.photo_url);
+    if (error) { Alert.alert('Could not delete', error.message); return; }
+    await refreshPosts();
+  }
+
   async function handleDeleteGroup() {
     const ok = await confirm({
       title: 'Delete this group?',
@@ -224,6 +312,7 @@ export default function GroupDetailScreen({ route, navigation }) {
     if (!ok) return;
     // Clear storage objects first — delete_group only clears DB rows.
     await purgeGroupPhotoStorage(groupId);
+    await purgeGroupPostPhotoStorage(groupId);
     const { error } = await supabase.rpc('delete_group', { p_group: groupId });
     if (error) { Alert.alert('Could not delete group', error.message); return; }
     setEditOpen(false);
@@ -308,6 +397,7 @@ export default function GroupDetailScreen({ route, navigation }) {
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 130 }}
+        keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -352,9 +442,113 @@ export default function GroupDetailScreen({ route, navigation }) {
             </View>
           ) : null}
 
+          {/* Meeting address — the RPC only returns this to members, so it
+              naturally stays hidden from people just previewing the group. */}
+          {detail?.address ? (
+            <View style={styles.metaRow}>
+              <Ionicons name="navigate-outline" size={13} color={COLORS.textSecondary} />
+              <Text style={styles.metaText}>{detail.address}</Text>
+            </View>
+          ) : null}
+
           {detail?.description ? (
             <Text style={styles.description}>{detail.description}</Text>
           ) : null}
+
+          {/* Activity feed */}
+          <View style={styles.section}>
+            <View style={styles.sectionHeadRow}>
+              <Text style={styles.sectionLabel}>
+                ACTIVITY{posts.length ? ` · ${posts.length}` : ''}
+              </Text>
+            </View>
+
+            {/* Composer — members + admins only */}
+            {isMember ? (
+              <View style={styles.composer}>
+                <View style={styles.composerTop}>
+                  <Avatar
+                    uri={meMember?.avatar_url || undefined}
+                    initials={initialsFor(meMember?.full_name)}
+                    size={36}
+                    gradientColors={gradientFor(user?.id)}
+                  />
+                  <TextInput
+                    style={styles.composerInput}
+                    value={composerBody}
+                    onChangeText={setComposerBody}
+                    placeholder="Share something with the group…"
+                    placeholderTextColor={COLORS.textTertiary}
+                    multiline
+                    maxLength={MAX_POST_BODY}
+                  />
+                </View>
+
+                {composerImage ? (
+                  <View style={styles.composerPreviewWrap}>
+                    <Image source={{ uri: composerImage.uri }} style={styles.composerPreview} />
+                    <TouchableOpacity
+                      style={styles.composerPreviewRemove}
+                      onPress={() => setComposerImage(null)}
+                      hitSlop={8}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="close" size={14} color={COLORS.white} />
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
+
+                <View style={styles.composerActions}>
+                  <TouchableOpacity
+                    style={styles.composerPhotoBtn}
+                    onPress={handlePickPostImage}
+                    disabled={posting}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="image-outline" size={18} color={COLORS.textSecondary} />
+                    <Text style={styles.composerPhotoText}>
+                      {composerImage ? 'Change photo' : 'Photo'}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.composerPostBtn, !canPost && styles.composerPostBtnDisabled]}
+                    onPress={handleSubmitPost}
+                    disabled={!canPost}
+                    activeOpacity={0.85}
+                  >
+                    {posting ? (
+                      <ActivityIndicator color={COLORS.white} size="small" />
+                    ) : (
+                      <Text style={styles.composerPostText}>Post</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : null}
+
+            {/* Posts */}
+            {posts.length === 0 ? (
+              <View style={styles.postsEmpty}>
+                <Ionicons name="chatbubbles-outline" size={22} color={COLORS.textTertiary} />
+                <Text style={styles.postsEmptyText}>
+                  {isMember
+                    ? 'No posts yet — share the first update.'
+                    : 'No activity in this group yet.'}
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.postList}>
+                {posts.map((post) => (
+                  <PostCard
+                    key={post.id}
+                    post={post}
+                    onDelete={handleDeletePost}
+                    onViewPhoto={(url) => setLightbox({ url })}
+                  />
+                ))}
+              </View>
+            )}
+          </View>
 
           {/* Photo gallery */}
           {(photos.length > 0 || isAdmin) ? (
@@ -568,6 +762,63 @@ function PhotoLightbox({ photo, onClose }) {
         </TouchableOpacity>
       </View>
     </Modal>
+  );
+}
+
+// ─── Post card ────────────────────────────────────────────────────────────
+function PostCard({ post, onDelete, onViewPhoto }) {
+  const isStaff = post.author_role === 'owner' || post.author_role === 'admin';
+  return (
+    <View style={styles.postCard}>
+      <View style={styles.postHead}>
+        <Avatar
+          uri={post.author_avatar || undefined}
+          initials={initialsFor(post.author_name)}
+          size={36}
+          gradientColors={gradientFor(post.author_id)}
+        />
+        <View style={styles.postHeadInfo}>
+          <View style={styles.postNameRow}>
+            <Text style={styles.postAuthor} numberOfLines={1}>
+              {post.author_name || 'Member'}
+            </Text>
+            {isStaff ? (
+              <View style={[
+                styles.roleBadge,
+                styles.postRoleBadge,
+                post.author_role === 'owner' ? styles.roleBadgeOwner : styles.roleBadgeAdmin,
+              ]}>
+                <Text style={[
+                  styles.roleBadgeText,
+                  post.author_role === 'owner' ? styles.roleBadgeTextOwner : styles.roleBadgeTextAdmin,
+                ]}>
+                  {post.author_role}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+          <Text style={styles.postTime}>{timeAgo(post.created_at)}</Text>
+        </View>
+        {post.can_delete ? (
+          <TouchableOpacity
+            onPress={() => onDelete(post)}
+            hitSlop={8}
+            style={styles.postDeleteBtn}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="trash-outline" size={15} color={COLORS.textTertiary} />
+          </TouchableOpacity>
+        ) : null}
+      </View>
+
+      {post.body ? <Text style={styles.postBody}>{post.body}</Text> : null}
+
+      {post.photo_url ? (
+        <TouchableOpacity activeOpacity={0.9} onPress={() => onViewPhoto(post.photo_url)}>
+          <Image source={{ uri: post.photo_url }} style={styles.postPhoto} />
+        </TouchableOpacity>
+      ) : null}
+    </View>
   );
 }
 
@@ -821,6 +1072,156 @@ const styles = StyleSheet.create({
     fontFamily: FONT.semiBold,
     fontSize: 12,
     color: COLORS.sage,
+  },
+
+  // Composer
+  composer: {
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: SPACING.md,
+    marginBottom: SPACING.sm,
+  },
+  composerTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: SPACING.sm,
+  },
+  composerInput: {
+    flex: 1,
+    minHeight: 38,
+    maxHeight: 140,
+    paddingTop: 8,
+    fontFamily: FONT.regular,
+    fontSize: 15,
+    color: COLORS.text,
+    lineHeight: 21,
+  },
+  composerPreviewWrap: {
+    position: 'relative',
+    marginTop: SPACING.sm,
+  },
+  composerPreview: {
+    width: '100%',
+    height: 170,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.surfaceAlt,
+  },
+  composerPreviewRemove: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  composerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: SPACING.sm,
+  },
+  composerPhotoBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+  },
+  composerPhotoText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 13,
+    color: COLORS.textSecondary,
+  },
+  composerPostBtn: {
+    backgroundColor: COLORS.accent,
+    borderRadius: RADIUS.lg,
+    paddingHorizontal: 20,
+    height: 36,
+    minWidth: 76,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  composerPostBtnDisabled: {
+    backgroundColor: COLORS.border,
+  },
+  composerPostText: {
+    fontFamily: FONT.bold,
+    fontSize: 14,
+    color: COLORS.white,
+  },
+
+  // Posts feed
+  postsEmpty: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: SPACING.lg,
+  },
+  postsEmptyText: {
+    fontFamily: FONT.regular,
+    fontSize: 13,
+    color: COLORS.textTertiary,
+  },
+  postList: { gap: SPACING.sm },
+  postCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: SPACING.md,
+  },
+  postHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
+  postHeadInfo: { flex: 1 },
+  postNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  postAuthor: {
+    fontFamily: FONT.semiBold,
+    fontSize: 14,
+    color: COLORS.text,
+    flexShrink: 1,
+  },
+  postRoleBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  postTime: {
+    fontFamily: FONT.regular,
+    fontSize: 11,
+    color: COLORS.textTertiary,
+    marginTop: 1,
+  },
+  postDeleteBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: RADIUS.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  postBody: {
+    fontFamily: FONT.regular,
+    fontSize: 15,
+    color: COLORS.text,
+    lineHeight: 22,
+    marginTop: SPACING.sm,
+  },
+  postPhoto: {
+    width: '100%',
+    height: 220,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.surfaceAlt,
+    marginTop: SPACING.sm,
   },
 
   // Gallery

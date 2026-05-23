@@ -22,6 +22,7 @@ import LocationFilterSheet from '../components/LocationFilterSheet';
 import { Wordmark, Chip, Pill, IconButton } from '../components/Atoms';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../auth/AuthContext';
+import { useUnreadNotifications } from '../lib/notifications';
 import {
   loadFilter,
   saveFilter,
@@ -40,7 +41,7 @@ const FILTERS = [
 ];
 
 // Height of the FOUND + bell header block
-const HEADER_HEIGHT = 72;
+const HEADER_HEIGHT = 88;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 // Fixed gradient palette for avatars (matches existing visual language)
@@ -125,6 +126,7 @@ function bioIsEmpty(p) {
 
 export default function HomeScreen({ navigation }) {
   const { user, profile } = useAuth();
+  const { count: notifCount } = useUnreadNotifications(user?.id);
 
   const [activeFilter, setActiveFilter] = useState('all');
   const [query, setQuery]               = useState('');
@@ -549,9 +551,18 @@ export default function HomeScreen({ navigation }) {
           <Text style={styles.headerMeta}>30A Area · Friday</Text>
           <Wordmark size="md" />
         </View>
-        <IconButton onPress={() => navigation?.navigate('Activity')}>
-          <Ionicons name="notifications-outline" size={18} color={COLORS.text} />
-        </IconButton>
+        <View style={styles.bellWrap}>
+          <IconButton onPress={() => navigation?.navigate('NotificationsFeed')}>
+            <Ionicons name="notifications-outline" size={18} color={COLORS.text} />
+          </IconButton>
+          {notifCount > 0 ? (
+            <View style={styles.bellBadge} pointerEvents="none">
+              <Text style={styles.bellBadgeText}>
+                {notifCount > 9 ? '9+' : String(notifCount)}
+              </Text>
+            </View>
+          ) : null}
+        </View>
       </Animated.View>
 
       {/* ── Match cards — paddingTop reserves room under the fixed header ── */}
@@ -634,6 +645,28 @@ export default function HomeScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
 
+  // Bell + unread badge in the header
+  bellWrap: { position: 'relative' },
+  bellBadge: {
+    position: 'absolute',
+    top: -3,
+    right: -3,
+    minWidth: 16,
+    height: 16,
+    paddingHorizontal: 4,
+    borderRadius: 8,
+    backgroundColor: '#D24A4A',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: COLORS.bg,
+  },
+  bellBadgeText: {
+    fontFamily: FONT.bold,
+    fontSize: 9,
+    color: COLORS.white,
+  },
+
   // Absolutely positioned so it overlays the list and can animate out
   header: {
     position: 'absolute',
@@ -646,7 +679,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: SPACING.lg,
-    paddingTop: SPACING.sm,
+    paddingTop: SPACING.lg,
     paddingBottom: SPACING.md,
     backgroundColor: COLORS.bg,
   },

@@ -324,14 +324,13 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
   },
 
-  // PrimaryButton
+  // PrimaryButton — flat, no shadow halo (cleaner / more premium)
   btnPrimary: {
     backgroundColor: COLORS.accent,
     borderRadius: RADIUS.lg,
     paddingVertical: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    ...SHADOW.sm,
   },
   btnPrimaryDisabled: {
     backgroundColor: COLORS.border,
@@ -348,7 +347,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.lg,
     paddingVertical: 14,
     alignItems: 'center',
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: COLORS.border,
   },
   btnGhostText: {
@@ -357,7 +356,7 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
   },
 
-  // IconButton
+  // IconButton — flat, no shadow halo (cleaner / more premium)
   iconBtn: {
     width: 40,
     height: 40,
@@ -367,7 +366,6 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     alignItems: 'center',
     justifyContent: 'center',
-    ...SHADOW.sm,
   },
 
   // SectionHeader

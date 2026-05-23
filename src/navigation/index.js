@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform, ActivityIndicator, AppState } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,6 +9,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, FONT, SHADOW } from '../theme';
 import { useAuth } from '../auth/AuthContext';
 import { supabase } from '../lib/supabase';
+import {
+  registerForPush,
+  unregisterForPush,
+  attachNotificationResponseListener,
+} from '../lib/push';
+
+// Shared ref so a tapped push notification can navigate from outside React.
+export const navigationRef = createNavigationContainerRef();
 
 import SplashScreen       from '../screens/SplashScreen';
 import OnboardingScreen   from '../screens/OnboardingScreen';
@@ -23,6 +31,12 @@ import SignInScreen       from '../screens/auth/SignInScreen';
 import SignUpScreen       from '../screens/auth/SignUpScreen';
 import EditProfileScreen  from '../screens/EditProfileScreen';
 import GroupDetailScreen  from '../screens/GroupDetailScreen';
+import NotificationsFeedScreen from '../screens/NotificationsFeedScreen';
+
+import NotificationsScreen    from '../screens/settings/NotificationsScreen';
+import LocationSettingsScreen from '../screens/settings/LocationSettingsScreen';
+import PrivacyScreen          from '../screens/settings/PrivacyScreen';
+import HelpSupportScreen      from '../screens/settings/HelpSupportScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab   = createBottomTabNavigator();
@@ -189,6 +203,12 @@ function AppStack({ needsOnboarding }) {
           <Stack.Screen name="Chat"        component={ChatScreen}        options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="EditProfile" component={EditProfileScreen} options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="GroupDetail" component={GroupDetailScreen} options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="NotificationsFeed" component={NotificationsFeedScreen} options={{ animation: 'slide_from_right' }} />
+
+          <Stack.Screen name="Notifications"    component={NotificationsScreen}    options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="LocationSettings" component={LocationSettingsScreen} options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="Privacy"          component={PrivacyScreen}          options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="HelpSupport"      component={HelpSupportScreen}      options={{ animation: 'slide_from_right' }} />
         </>
       )}
     </Stack.Navigator>
@@ -198,6 +218,21 @@ function AppStack({ needsOnboarding }) {
 // ── Root: gate on auth ─────────────────────────────────────────────
 export default function AppNavigator() {
   const { session, profile, loading, profileLoading } = useAuth();
+
+  // ── Push notifications ──────────────────────────────────────────────
+  // Register the device once per signed-in user (keyed on the stable user
+  // id, so an hourly token refresh doesn't churn). Attach the tap listener
+  // for deep-linking; release the token on sign-out. All no-ops on web.
+  const userId = session?.user?.id;
+  useEffect(() => {
+    if (!userId) return undefined;
+    registerForPush();
+    const detach = attachNotificationResponseListener(navigationRef);
+    return () => {
+      detach();
+      unregisterForPush();
+    };
+  }, [userId]);
 
   // Two wait states:
   //   loading       — bootstrapping session from AsyncStorage
@@ -219,7 +254,7 @@ export default function AppNavigator() {
   const needsOnboarding = !!session && !profile?.onboarding_complete;
 
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       {session ? <AppStack needsOnboarding={needsOnboarding} /> : <AuthStack />}
     </NavigationContainer>
   );
