@@ -154,8 +154,33 @@ export default function NotificationsFeedScreen({ navigation }) {
       });
     } else if ((n.type === 'group_message' || n.type === 'group_post') && n.entity_id) {
       navigation?.navigate('GroupDetail', { groupId: n.entity_id });
+    } else if (n.type === 'match' && n.actor_id) {
+      // Completed match — both sides connected. Go to their profile so the
+      // user can see who it is and message them. Activity won't show completed
+      // matches, only pending inbound requests.
+      const name = n.actor_name || 'Someone';
+      const parts = name.trim().split(/\s+/);
+      const initials = ((parts[0]?.[0] ?? '') + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase() || '??';
+      navigation?.navigate('MatchDetail', {
+        match: {
+          id:          n.actor_id,
+          name,
+          initials,
+          avatarUrl:   n.actor_avatar_url || null,
+          avatarColor: null,
+          connected:   true,
+          isMatch:     true,
+          bio:         null,
+          matchScore:  null,
+          lifeStage:   '',
+          distance:    '',
+          church:      null,
+          interests:   [],
+          theirKind:   'like',
+        },
+      });
     } else {
-      // connection / match → Activity tab (Accept / Dismiss live there)
+      // Pending connection request → Activity tab (Accept / Dismiss live there)
       navigation?.navigate('Main', { screen: 'Activity' });
     }
   }, [navigation]);

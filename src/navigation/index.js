@@ -117,9 +117,8 @@ function FloatingTabBar({ state, descriptors, navigation }) {
           };
 
           // Pick badge value per tab.
-          // Activity uses the same notification count as the top-right bell.
           const badgeCount =
-            route.name === 'Activity' ? notifCount
+            route.name === 'Activity' ? counts.activity
           : route.name === 'Messages' ? counts.messages
           : 0;
           const showBadge = badgeCount > 0;
