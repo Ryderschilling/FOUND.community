@@ -55,9 +55,13 @@ export async function markNotificationsRead(ids = null) {
  * (new notification, or a read-state change made elsewhere in the app).
  *
  * @param {string|null|undefined} userId  auth user id
+ * @param {string} [tag]  unique tag per call site — prevents Supabase from
+ *   reusing the same channel object when two components subscribe for the
+ *   same user (e.g. FloatingTabBar + HomeScreen), which would throw
+ *   "cannot add postgres_changes callbacks after subscribe()".
  * @returns {{ count: number, refresh: () => Promise<void> }}
  */
-export function useUnreadNotifications(userId) {
+export function useUnreadNotifications(userId, tag = 'default') {
   const [count, setCount] = useState(0);
 
   const refresh = useCallback(async () => {
@@ -77,7 +81,7 @@ export function useUnreadNotifications(userId) {
     refresh();
 
     const channel = supabase
-      .channel(`notifications:${userId}`)
+      .channel(`notifications:${userId}:${tag}`)
       .on(
         'postgres_changes',
         {

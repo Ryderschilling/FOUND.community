@@ -92,7 +92,7 @@ function FloatingTabBar({ state, descriptors, navigation }) {
   const bottom = Math.max(insets.bottom, 16) + 8;
   const { counts, refresh: refreshCounts } = useUnreadCounts();
   const { user } = useAuth();
-  const { count: notifCount, refresh: refreshNotifs } = useUnreadNotifications(user?.id);
+  const { count: notifCount, refresh: refreshNotifs } = useUnreadNotifications(user?.id, 'tab-bar');
 
   return (
     <View style={[styles.tabBarOuter, { paddingBottom: bottom }]}>

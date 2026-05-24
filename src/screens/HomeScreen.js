@@ -126,7 +126,7 @@ function bioIsEmpty(p) {
 
 export default function HomeScreen({ navigation }) {
   const { user, profile } = useAuth();
-  const { count: notifCount } = useUnreadNotifications(user?.id);
+  const { count: notifCount } = useUnreadNotifications(user?.id, 'home');
 
   const [activeFilter, setActiveFilter] = useState('all');
   const [query, setQuery]               = useState('');
