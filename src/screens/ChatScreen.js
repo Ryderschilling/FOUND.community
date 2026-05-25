@@ -21,6 +21,7 @@ import ReportSheet from '../components/ReportSheet';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../auth/AuthContext';
 import { useConfirm } from '../components/ConfirmProvider';
+import { checkText } from '../lib/contentFilter';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 const AVATAR_GRADIENTS = [
@@ -223,6 +224,13 @@ export default function ChatScreen({ route, navigation }) {
   async function handleSend() {
     const body = input.trim();
     if (!body || !threadId || !user || sending) return;
+
+    const violation = checkText(body, 'message');
+    if (!violation.ok) {
+      Alert.alert('Check your wording', violation.message);
+      return;
+    }
+
     setSending(true);
     // Optimistic insert
     const tempId = `tmp-${Date.now()}`;

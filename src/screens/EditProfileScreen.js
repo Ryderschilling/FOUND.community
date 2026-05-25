@@ -34,6 +34,7 @@ import { PrimaryButton, SectionHeader } from '../components/Atoms';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../auth/AuthContext';
 import { geocode } from '../lib/geocode';
+import { firstViolation } from '../lib/contentFilter';
 
 function parseLocation(text) {
   if (!text || !text.trim()) return { city: '', state: '' };
@@ -132,6 +133,16 @@ export default function EditProfileScreen({ navigation }) {
 
   const handleSave = useCallback(async () => {
     if (saving) return;
+
+    const violation = firstViolation([
+      { text: fullName, label: 'name' },
+      { text: bio,      label: 'bio' },
+    ]);
+    if (!violation.ok) {
+      Alert.alert('Check your wording', violation.message);
+      return;
+    }
+
     setSaving(true);
     const { city, state } = parseLocation(locationText);
 

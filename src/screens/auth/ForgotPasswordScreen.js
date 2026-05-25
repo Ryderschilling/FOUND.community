@@ -1,56 +1,55 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, StyleSheet, KeyboardAvoidingView, Platform,
-  TouchableOpacity, ActivityIndicator, Alert, ScrollView,
+  TouchableOpacity, ActivityIndicator, ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { COLORS, FONT, TYPE, SPACING, RADIUS } from '../../theme';
 import { PrimaryButton } from '../../components/Atoms';
 import { useAuth } from '../../auth/AuthContext';
 
-export default function SignInScreen({ navigation }) {
-  const { signInWithPassword } = useAuth();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [errorMsg, setErrorMsg] = useState(null);
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
 
-  // Map Supabase auth errors to plain-English copy users can act on.
-  function friendlySignInError(raw) {
+export default function ForgotPasswordScreen({ navigation }) {
+  const { sendPasswordReset } = useAuth();
+  const [email, setEmail]     = useState('');
+  const [busy, setBusy]       = useState(false);
+  const [errorMsg, setErrorMsg] = useState(null);
+  const [sent, setSent]       = useState(false);
+
+  function friendlyError(raw) {
     const msg = (raw || '').toLowerCase();
-    if (msg.includes('invalid login credentials')) {
-      return 'No account found with that email and password. Double-check, or create an account below.';
+    if (msg.includes('rate limit') || msg.includes('too many') || msg.includes('seconds')) {
+      return 'Too many requests. Wait a minute and try again.';
     }
-    if (msg.includes('email not confirmed')) {
-      return "You haven't confirmed your email yet. Check your inbox for the confirmation link.";
-    }
-    if (msg.includes('rate limit') || msg.includes('too many')) {
-      return 'Too many attempts. Wait a minute and try again.';
-    }
-    return raw || 'Sign in failed. Try again.';
+    return raw || 'Could not send the reset email. Try again.';
   }
 
-  async function handleSignIn() {
+  async function handleSend() {
     setErrorMsg(null);
-    if (!email || !password) {
-      setErrorMsg('Enter your email and password.');
+    const emailVal = email.trim().toLowerCase();
+    if (!isValidEmail(emailVal)) {
+      setErrorMsg("That doesn't look like a valid email. Make sure it has an @ and a domain.");
       return;
     }
     setBusy(true);
     try {
-      await signInWithPassword({ email: email.trim().toLowerCase(), password });
+      await sendPasswordReset({ email: emailVal });
+      // Supabase does not reveal whether the email has an account, so the
+      // confirmation copy stays deliberately neutral.
+      setSent(true);
     } catch (e) {
-      setErrorMsg(friendlySignInError(e?.message));
+      setErrorMsg(friendlyError(e?.message));
     } finally {
       setBusy(false);
     }
   }
 
-  // Back to the app's splash (the screen with "Get Started" / "I already have
-  // an account"). Same behavior on web and native.
   function handleBack() {
     if (navigation.canGoBack()) navigation.goBack();
-    else navigation.navigate('Splash');
+    else navigation.navigate('SignIn');
   }
 
   return (
@@ -58,13 +57,15 @@ export default function SignInScreen({ navigation }) {
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
           <TouchableOpacity onPress={handleBack} style={s.backLink} hitSlop={8}>
-            <Text style={s.backLinkText}>← Back to home</Text>
+            <Text style={s.backLinkText}>← Back to sign in</Text>
           </TouchableOpacity>
 
           <View style={s.header}>
             <Text style={s.overline}>FOUND</Text>
-            <Text style={s.title}>Welcome back.</Text>
-            <Text style={s.subtitle}>Sign in to find your people.</Text>
+            <Text style={s.title}>Reset your password.</Text>
+            <Text style={s.subtitle}>
+              Enter your email and we'll send you a link to set a new password.
+            </Text>
           </View>
 
           <View style={s.form}>
@@ -75,47 +76,45 @@ export default function SignInScreen({ navigation }) {
               autoCapitalize="none"
               autoCorrect={false}
               keyboardType="email-address"
+              autoComplete="email"
+              textContentType="emailAddress"
+              editable={!sent}
               placeholder="you@example.com"
               placeholderTextColor={COLORS.textTertiary}
-              style={s.input}
+              style={[s.input, sent && s.inputDisabled]}
             />
-
-            <Text style={[s.label, { marginTop: SPACING.md }]}>Password</Text>
-            <TextInput
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              placeholder="••••••••"
-              placeholderTextColor={COLORS.textTertiary}
-              style={s.input}
-            />
-
-            <TouchableOpacity
-              onPress={() => navigation.navigate('ForgotPassword')}
-              style={s.forgotLink}
-              hitSlop={8}
-            >
-              <Text style={s.forgotText}>Forgot password?</Text>
-            </TouchableOpacity>
 
             {errorMsg ? (
               <View style={s.errorBox}>
                 <Text style={s.errorText}>{errorMsg}</Text>
               </View>
             ) : null}
+            {sent ? (
+              <View style={s.infoBox}>
+                <Text style={s.infoText}>
+                  If an account exists for {email.trim().toLowerCase()}, a password
+                  reset link is on its way. Check your inbox — and your spam folder.
+                  The link expires after a short while, so use it soon.
+                </Text>
+              </View>
+            ) : null}
 
             <View style={{ height: SPACING.lg }} />
             {busy ? (
               <ActivityIndicator color={COLORS.text} />
+            ) : sent ? (
+              <TouchableOpacity onPress={() => { setSent(false); setErrorMsg(null); }} style={s.resendBtn}>
+                <Text style={s.resendText}>Use a different email</Text>
+              </TouchableOpacity>
             ) : (
-              <PrimaryButton label="Sign in" onPress={handleSignIn} />
+              <PrimaryButton label="Send reset link" onPress={handleSend} />
             )}
           </View>
 
           <View style={s.footer}>
-            <Text style={s.footerText}>New to FOUND?</Text>
-            <TouchableOpacity onPress={() => navigation.replace('SignUp')}>
-              <Text style={s.link}>Create an account</Text>
+            <Text style={s.footerText}>Remember it?</Text>
+            <TouchableOpacity onPress={handleBack}>
+              <Text style={s.link}>Back to sign in</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -130,7 +129,7 @@ const s = StyleSheet.create({
   header:  { marginTop: SPACING.xl, marginBottom: SPACING.xl },
   overline:{ ...TYPE.overline, marginBottom: SPACING.sm },
   title:   { ...TYPE.h1, marginBottom: SPACING.xs },
-  subtitle:{ ...TYPE.body, color: COLORS.textSecondary },
+  subtitle:{ ...TYPE.body, color: COLORS.textSecondary, lineHeight: 21 },
   form:    { },
   label:   { ...TYPE.label, color: COLORS.textSecondary, marginBottom: SPACING.xs },
   input:   {
@@ -138,11 +137,15 @@ const s = StyleSheet.create({
     borderColor: COLORS.border, paddingHorizontal: SPACING.md, paddingVertical: 14,
     fontFamily: FONT.regular, fontSize: 15, color: COLORS.text,
   },
+  inputDisabled: { opacity: 0.55 },
+
+  resendBtn:  { alignSelf: 'center', paddingVertical: 4 },
+  resendText: { ...TYPE.body, fontSize: 14, color: COLORS.textSecondary, textDecorationLine: 'underline' },
+
   footer:  { alignItems: 'center', paddingVertical: SPACING.xl, gap: 4 },
   footerText: { ...TYPE.body, color: COLORS.textSecondary },
-  link:       { ...TYPE.h3 },
+  link:    { ...TYPE.h3 },
 
-  // Inline error / info banners — replaces Alert.alert for auth feedback
   errorBox: {
     marginTop: SPACING.md,
     backgroundColor: '#FBECEC',
@@ -152,12 +155,16 @@ const s = StyleSheet.create({
     padding: SPACING.md,
   },
   errorText: { ...TYPE.body, color: '#8A2D2D', fontSize: 14, lineHeight: 20 },
+  infoBox: {
+    marginTop: SPACING.md,
+    backgroundColor: COLORS.sageBg,
+    borderColor: COLORS.sageLight,
+    borderWidth: 1,
+    borderRadius: RADIUS.md,
+    padding: SPACING.md,
+  },
+  infoText: { ...TYPE.body, color: COLORS.sage, fontSize: 14, lineHeight: 20 },
 
-  // Back-to-home link at the top of the screen
   backLink: { alignSelf: 'flex-start', paddingVertical: 4 },
   backLinkText: { ...TYPE.body, fontSize: 14, color: COLORS.textSecondary },
-
-  // "Forgot password?" link under the password field
-  forgotLink: { alignSelf: 'flex-end', marginTop: SPACING.sm, paddingVertical: 2 },
-  forgotText: { ...TYPE.caption, color: COLORS.textSecondary, textDecorationLine: 'underline' },
 });

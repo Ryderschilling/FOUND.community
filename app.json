@@ -2,7 +2,8 @@
   "expo": {
     "name": "FOUND",
     "slug": "found-community-app",
-    "version": "0.1.0",
+    "version": "1.0.0",
+    "scheme": "found",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "icon": "./assets/icon.png",
@@ -15,6 +16,7 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.found.community",
       "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "FOUND uses your camera so you can take a profile photo.",
         "NSPhotoLibraryUsageDescription": "FOUND uses your photo library so you can choose a profile photo.",
         "NSPhotoLibraryAddUsageDescription": "FOUND saves photos you take in the app to your photo library."

@@ -41,6 +41,7 @@ import { useAuth } from '../auth/AuthContext';
 import { useConfirm } from '../components/ConfirmProvider';
 import ReportSheet from '../components/ReportSheet';
 import { geocode } from '../lib/geocode';
+import { firstViolation } from '../lib/contentFilter';
 import {
   fetchGroupPhotos,
   pickAndUploadGroupPhoto,
@@ -1167,6 +1168,16 @@ function EditGroupModal({ visible, detail, isOwner, onClose, onSaved, onDelete }
       Alert.alert('Name required', 'Give your group a name.');
       return;
     }
+
+    const violation = firstViolation([
+      { text: name, label: 'group name' },
+      { text: desc, label: 'group description' },
+    ]);
+    if (!violation.ok) {
+      Alert.alert('Check your wording', violation.message);
+      return;
+    }
+
     setBusy(true);
 
     // Geocode if a location is set. Failure is non-fatal — we just keep the

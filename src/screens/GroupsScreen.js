@@ -32,6 +32,7 @@ import { PrimaryButton, Chip } from '../components/Atoms';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../auth/AuthContext';
 import { geocode } from '../lib/geocode';
+import { firstViolation } from '../lib/contentFilter';
 import {
   publicUrlForGroupPhoto,
   pickGroupImage,
@@ -362,6 +363,16 @@ function CreateGroupModal({ visible, onClose, onCreated }) {
       Alert.alert('Name required', 'Give your group a name.');
       return;
     }
+
+    const violation = firstViolation([
+      { text: name, label: 'group name' },
+      { text: desc, label: 'group description' },
+    ]);
+    if (!violation.ok) {
+      Alert.alert('Check your wording', violation.message);
+      return;
+    }
+
     setBusy(true);
 
     // Geocode city/state so the group can be distance-sorted/filtered.

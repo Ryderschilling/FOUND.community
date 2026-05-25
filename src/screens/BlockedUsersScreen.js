@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,9 +9,9 @@ import {
   StatusBar,
   ActivityIndicator,
   Alert,
-  useFocusEffect,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
 import { Avatar } from '../components/Atoms';
 import { supabase } from '../lib/supabase';
@@ -66,11 +66,7 @@ export default function BlockedUsersScreen({ navigation }) {
     }
   }, []);
 
-  useEffect(() => {
-    loadBlockedUsers();
-  }, [loadBlockedUsers]);
-
-  // Refetch when screen is focused
+  // Load on mount + refetch whenever the screen regains focus.
   useFocusEffect(
     useCallback(() => {
       loadBlockedUsers();

@@ -21,6 +21,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 import { decode } from 'base64-arraybuffer';
 import { supabase } from './supabase';
+import { checkText } from './contentFilter';
 
 const BUCKET = 'group-post-photos';
 export const MAX_POST_BODY = 1000;
@@ -167,6 +168,10 @@ export async function createGroupPost({ groupId, body = null, photoUrl = null })
   const trimmed = (body ?? '').trim();
   if (!trimmed && !photoUrl) {
     return { id: null, error: new Error('Post must have text or a photo') };
+  }
+  const violation = checkText(trimmed, 'post');
+  if (!violation.ok) {
+    return { id: null, error: new Error(violation.message) };
   }
   const { data, error } = await supabase.rpc('create_group_post', {
     p_group:     groupId,

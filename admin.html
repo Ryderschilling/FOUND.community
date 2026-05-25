@@ -1,0 +1,604 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>FOUND · Moderation</title>
+<style>
+  :root{
+    --bg:#F7F4EF; --surface:#FFFFFF; --ink:#1B1A17; --ink2:#6B6862;
+    --line:#E4DFD5; --accent:#B8895B; --accent-ink:#6E4A29;
+    --danger:#C0392B; --danger-bg:#FBEAE8;
+    --ok:#3F7D58; --ok-bg:#E8F1EC; --warn:#B8893B; --warn-bg:#F6EEDD;
+    --radius:14px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;
+    line-height:1.45;
+  }
+  button{font-family:inherit;cursor:pointer;border:none;background:none}
+  input,select{font-family:inherit;font-size:14px}
+
+  /* ---- shell ---- */
+  .wrap{max-width:1100px;margin:0 auto;padding:24px 20px 80px}
+  .topbar{display:flex;align-items:center;justify-content:space-between;
+    padding:14px 0;border-bottom:1px solid var(--line);margin-bottom:20px}
+  .brand{font-size:18px;font-weight:700;letter-spacing:-.3px}
+  .brand small{color:var(--ink2);font-weight:500;margin-left:8px}
+  .who{display:flex;align-items:center;gap:12px;font-size:13px;color:var(--ink2)}
+
+  /* ---- login ---- */
+  .login{max-width:360px;margin:80px auto;background:var(--surface);
+    border:1px solid var(--line);border-radius:var(--radius);padding:28px}
+  .login h1{font-size:20px;margin-bottom:4px}
+  .login p{font-size:13px;color:var(--ink2);margin-bottom:20px}
+  .field{margin-bottom:12px}
+  .field label{display:block;font-size:12px;font-weight:600;color:var(--ink2);
+    margin-bottom:5px;text-transform:uppercase;letter-spacing:.4px}
+  .field input{width:100%;padding:10px 12px;border:1px solid var(--line);
+    border-radius:10px;background:#fff}
+  .field input:focus{outline:2px solid var(--accent);outline-offset:-1px}
+
+  .btn{display:inline-flex;align-items:center;gap:6px;padding:9px 14px;
+    border-radius:10px;font-size:13px;font-weight:600;background:var(--ink);
+    color:#fff;transition:opacity .12s}
+  .btn:hover{opacity:.88}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .btn.block{width:100%;justify-content:center;padding:11px}
+  .btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}
+  .btn.danger{background:var(--danger-bg);color:var(--danger)}
+  .btn.warn{background:var(--warn-bg);color:var(--warn)}
+  .btn.ok{background:var(--ok-bg);color:var(--ok)}
+  .btn.sm{padding:6px 10px;font-size:12px;border-radius:8px}
+
+  /* ---- stats ---- */
+  .stats{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:20px}
+  .stat{background:var(--surface);border:1px solid var(--line);
+    border-radius:var(--radius);padding:14px 16px}
+  .stat .n{font-size:24px;font-weight:700;letter-spacing:-.5px}
+  .stat .l{font-size:11px;color:var(--ink2);text-transform:uppercase;
+    letter-spacing:.5px;margin-top:2px}
+  .stat.alert .n{color:var(--danger)}
+
+  /* ---- tabs ---- */
+  .tabs{display:flex;gap:4px;margin-bottom:16px;border-bottom:1px solid var(--line)}
+  .tab{padding:9px 14px;font-size:14px;font-weight:600;color:var(--ink2);
+    border-bottom:2px solid transparent;margin-bottom:-1px}
+  .tab.on{color:var(--ink);border-bottom-color:var(--accent)}
+
+  /* ---- filter chips ---- */
+  .chips{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap}
+  .chip{padding:6px 12px;font-size:12px;font-weight:600;border-radius:999px;
+    border:1px solid var(--line);background:#fff;color:var(--ink2)}
+  .chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+
+  /* ---- report card ---- */
+  .card{background:var(--surface);border:1px solid var(--line);
+    border-radius:var(--radius);padding:16px;margin-bottom:12px}
+  .card .head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+  .badges{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  .pill{font-size:11px;font-weight:700;padding:3px 8px;border-radius:6px;
+    text-transform:uppercase;letter-spacing:.4px}
+  .pill.reason{background:var(--warn-bg);color:var(--warn)}
+  .pill.kind{background:#EFEBE3;color:var(--ink2)}
+  .pill.status-open{background:var(--danger-bg);color:var(--danger)}
+  .pill.status-reviewed{background:#E9EDF2;color:#4A5A6B}
+  .pill.status-actioned{background:var(--ok-bg);color:var(--ok)}
+  .pill.status-dismissed{background:#EFEBE3;color:var(--ink2)}
+  .pill.gone{background:var(--danger-bg);color:var(--danger)}
+  .age{font-size:12px;color:var(--ink2);white-space:nowrap}
+
+  .target{margin:12px 0;padding:12px;background:var(--bg);
+    border-radius:10px;border:1px solid var(--line)}
+  .target .tlabel{font-size:12px;font-weight:700;color:var(--ink2);margin-bottom:4px}
+  .target .tbody{font-size:14px;white-space:pre-wrap;word-break:break-word}
+  .target .tbody.empty{color:var(--ink2);font-style:italic}
+  .meta{font-size:12px;color:var(--ink2);margin-top:8px}
+  .meta b{color:var(--ink);font-weight:600}
+
+  .actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:14px;
+    padding-top:12px;border-top:1px solid var(--line)}
+  .actions .spacer{flex:1}
+
+  /* ---- table ---- */
+  .toolbar{display:flex;gap:10px;margin-bottom:12px}
+  .toolbar input{flex:1;max-width:320px;padding:9px 12px;
+    border:1px solid var(--line);border-radius:10px;background:#fff}
+  table{width:100%;border-collapse:collapse;background:var(--surface);
+    border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+  th,td{text-align:left;padding:10px 12px;font-size:13px;
+    border-bottom:1px solid var(--line);vertical-align:middle}
+  th{font-size:11px;text-transform:uppercase;letter-spacing:.5px;
+    color:var(--ink2);background:var(--bg)}
+  tr:last-child td{border-bottom:none}
+  td .row-actions{display:flex;gap:6px;justify-content:flex-end}
+  .tag{font-size:11px;font-weight:700;padding:2px 7px;border-radius:5px}
+  .tag.sus{background:var(--danger-bg);color:var(--danger)}
+  .tag.adm{background:var(--ok-bg);color:var(--ok)}
+  .num{font-variant-numeric:tabular-nums}
+
+  .empty-state{text-align:center;padding:50px 20px;color:var(--ink2);font-size:14px}
+  .msg{padding:10px 12px;border-radius:10px;font-size:13px;margin-bottom:12px}
+  .msg.err{background:var(--danger-bg);color:var(--danger)}
+  .msg.info{background:#E9EDF2;color:#4A5A6B}
+  .hidden{display:none!important}
+  .spin{display:inline-block;width:14px;height:14px;border:2px solid var(--line);
+    border-top-color:var(--ink);border-radius:50%;animation:r .6s linear infinite}
+  @keyframes r{to{transform:rotate(360deg)}}
+  @media(max-width:720px){.stats{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+
+<!-- ============ LOGIN ============ -->
+<div id="loginView">
+  <div class="login">
+    <h1>FOUND Moderation</h1>
+    <p>Admin sign-in. This account must have <code>is_admin = true</code>.</p>
+    <div id="loginMsg"></div>
+    <form id="loginForm">
+      <div class="field">
+        <label>Email</label>
+        <input type="email" id="email" autocomplete="username" required />
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" id="password" autocomplete="current-password" required />
+      </div>
+      <button class="btn block" type="submit" id="loginBtn">Sign in</button>
+    </form>
+  </div>
+</div>
+
+<!-- ============ PANEL ============ -->
+<div id="panelView" class="hidden">
+  <div class="wrap">
+    <div class="topbar">
+      <div class="brand">FOUND <small>Moderation panel</small></div>
+      <div class="who"><span id="whoEmail"></span>
+        <button class="btn ghost sm" id="signOutBtn">Sign out</button></div>
+    </div>
+
+    <div class="stats" id="stats"></div>
+
+    <div class="tabs">
+      <button class="tab on" data-tab="reports">Reports</button>
+      <button class="tab" data-tab="users">Users</button>
+      <button class="tab" data-tab="groups">Groups</button>
+    </div>
+
+    <div id="panelMsg"></div>
+
+    <!-- REPORTS -->
+    <div id="tab-reports">
+      <div class="chips" id="statusChips">
+        <button class="chip on" data-status="open">Open</button>
+        <button class="chip" data-status="reviewed">Reviewed</button>
+        <button class="chip" data-status="actioned">Actioned</button>
+        <button class="chip" data-status="dismissed">Dismissed</button>
+        <button class="chip" data-status="">All</button>
+      </div>
+      <div id="reportsList"></div>
+    </div>
+
+    <!-- USERS -->
+    <div id="tab-users" class="hidden">
+      <div class="toolbar">
+        <input type="search" id="userSearch" placeholder="Search name, handle, email, city…" />
+      </div>
+      <div id="usersWrap"></div>
+    </div>
+
+    <!-- GROUPS -->
+    <div id="tab-groups" class="hidden">
+      <div class="toolbar">
+        <input type="search" id="groupSearch" placeholder="Search group name, city…" />
+      </div>
+      <div id="groupsWrap"></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+// =============================================================================
+// FOUND moderation panel — single file, no build step.
+//
+// SECURITY MODEL: this page uses ONLY the public anon key (same key the app and
+// website ship). Every action calls a SECURITY DEFINER admin_* RPC that checks
+// profiles.is_admin server-side. The anon key alone grants nothing — a non-admin
+// who opens this page can sign in but every RPC returns "not authorized".
+// The service-role key is never used here and must never be put in this file.
+// =============================================================================
+
+const SUPABASE_URL  = 'https://froqanfagdkjmfrmpfye.supabase.co';
+const SUPABASE_ANON = 'sb_publishable_TWr-nQ9gwyvuxUsdtR49hA_dkk2TNLO';
+
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON, {
+  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
+});
+
+// ---- tiny DOM helpers -------------------------------------------------------
+const $  = (id) => document.getElementById(id);
+const el = (html) => { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstChild; };
+const esc = (s) => (s == null ? '' : String(s).replace(/[&<>"']/g,
+  (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])));
+function ago(ts){
+  if(!ts) return '';
+  const d = (Date.now() - new Date(ts).getTime())/1000;
+  if(d < 60) return 'just now';
+  if(d < 3600) return Math.floor(d/60)+'m ago';
+  if(d < 86400) return Math.floor(d/3600)+'h ago';
+  return Math.floor(d/86400)+'d ago';
+}
+function flash(target, text, kind){
+  const node = $(target);
+  if(!text){ node.innerHTML=''; return; }
+  node.innerHTML = '';
+  node.appendChild(el(`<div class="msg ${kind||'info'}">${esc(text)}</div>`));
+}
+
+// ---- RPC wrapper ------------------------------------------------------------
+async function rpc(fn, args){
+  const { data, error } = await sb.rpc(fn, args || {});
+  if(error) throw error;
+  return data;
+}
+
+// =============================================================================
+// AUTH
+// =============================================================================
+$('loginForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  flash('loginMsg','');
+  const btn = $('loginBtn');
+  btn.disabled = true; btn.textContent = 'Signing in…';
+  try{
+    const { error } = await sb.auth.signInWithPassword({
+      email: $('email').value.trim(),
+      password: $('password').value,
+    });
+    if(error) throw error;
+    await boot();
+  }catch(err){
+    flash('loginMsg', err.message || 'Sign in failed', 'err');
+    btn.disabled = false; btn.textContent = 'Sign in';
+  }
+});
+
+$('signOutBtn').addEventListener('click', async () => {
+  await sb.auth.signOut();
+  location.reload();
+});
+
+// Decide which view to show. The admin gate is admin_stats() — if it throws
+// "not authorized", this account is a valid user but not an admin.
+async function boot(){
+  const { data:{ session } } = await sb.auth.getSession();
+  if(!session){ showLogin(); return; }
+  try{
+    const stats = await rpc('admin_stats');
+    $('whoEmail').textContent = session.user.email || '';
+    renderStats(stats[0]);
+    showPanel();
+    loadReports();
+  }catch(err){
+    if(String(err.message||'').toLowerCase().includes('authoriz')){
+      await sb.auth.signOut();
+      showLogin();
+      flash('loginMsg','That account is not an admin. Ask for is_admin access.','err');
+    }else{
+      showLogin();
+      flash('loginMsg', err.message || 'Could not load panel', 'err');
+    }
+  }
+}
+function showLogin(){ $('loginView').classList.remove('hidden'); $('panelView').classList.add('hidden'); }
+function showPanel(){ $('loginView').classList.add('hidden'); $('panelView').classList.remove('hidden'); }
+
+// =============================================================================
+// STATS
+// =============================================================================
+function renderStats(s){
+  s = s || {};
+  $('stats').innerHTML = '';
+  const cards = [
+    { n:s.open_reports,    l:'Open reports', alert:(s.open_reports>0) },
+    { n:s.total_reports,   l:'Total reports' },
+    { n:s.total_users,     l:'Users' },
+    { n:s.suspended_users, l:'Suspended', alert:(s.suspended_users>0) },
+    { n:s.total_groups,    l:'Groups' },
+  ];
+  cards.forEach(c => $('stats').appendChild(el(
+    `<div class="stat ${c.alert?'alert':''}">
+       <div class="n num">${c.n ?? 0}</div><div class="l">${c.l}</div></div>`)));
+}
+async function refreshStats(){
+  try{ renderStats((await rpc('admin_stats'))[0]); }catch(_){}
+}
+
+// =============================================================================
+// TABS
+// =============================================================================
+document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
+  document.querySelectorAll('.tab').forEach(x => x.classList.toggle('on', x===t));
+  ['reports','users','groups'].forEach(name =>
+    $('tab-'+name).classList.toggle('hidden', name!==t.dataset.tab));
+  flash('panelMsg','');
+  if(t.dataset.tab==='users')  loadUsers();
+  if(t.dataset.tab==='groups') loadGroups();
+}));
+
+// =============================================================================
+// REPORTS
+// =============================================================================
+let currentStatus = 'open';
+
+document.querySelectorAll('#statusChips .chip').forEach(c =>
+  c.addEventListener('click', () => {
+    document.querySelectorAll('#statusChips .chip').forEach(x => x.classList.toggle('on', x===c));
+    currentStatus = c.dataset.status;
+    loadReports();
+  }));
+
+async function loadReports(){
+  const list = $('reportsList');
+  list.innerHTML = '<div class="empty-state"><span class="spin"></span></div>';
+  try{
+    const rows = await rpc('admin_list_reports',
+      { p_status: currentStatus === '' ? null : currentStatus });
+    if(!rows.length){
+      list.innerHTML = '<div class="empty-state">No reports here. Clean queue.</div>';
+      return;
+    }
+    list.innerHTML = '';
+    rows.forEach(r => list.appendChild(reportCard(r)));
+  }catch(err){
+    list.innerHTML = '';
+    flash('panelMsg', err.message || 'Failed to load reports', 'err');
+  }
+}
+
+function reportCard(r){
+  const previewEmpty = !r.target_preview;
+  const ownerName = r.target_owner_name || '(unknown)';
+  const contentKind = (r.target_kind !== 'profile'); // message/group/group_post
+  const canRemove = contentKind && r.target_exists;
+
+  const card = el(`
+    <div class="card">
+      <div class="head">
+        <div class="badges">
+          <span class="pill reason">${esc(r.reason)}</span>
+          <span class="pill kind">${esc(r.target_kind.replace('_',' '))}</span>
+          <span class="pill status-${esc(r.status)}">${esc(r.status)}</span>
+          ${(!r.target_exists)?'<span class="pill gone">content deleted</span>':''}
+        </div>
+        <span class="age">${esc(ago(r.created_at))}</span>
+      </div>
+
+      <div class="target">
+        <div class="tlabel">${esc(r.target_label||r.target_kind)}</div>
+        <div class="tbody ${previewEmpty?'empty':''}">${
+          previewEmpty ? '(no text content)' : esc(r.target_preview)
+        }</div>
+      </div>
+
+      ${r.details?`<div class="meta">Reporter note: <b>${esc(r.details)}</b></div>`:''}
+      <div class="meta">
+        Reported by <b>${esc(r.reporter_name||'unknown')}</b>
+        ${r.reporter_handle?'(@'+esc(r.reporter_handle)+')':''}
+        · Responsible: <b>${esc(ownerName)}</b>
+      </div>
+
+      <div class="actions"></div>
+    </div>`);
+
+  const acts = card.querySelector('.actions');
+
+  if(canRemove){
+    acts.appendChild(mkBtn('Remove content','danger', async () => {
+      if(!confirm('Delete this '+r.target_kind.replace('_',' ')+'? This cannot be undone.')) return;
+      const fnMap = {
+        message:    ['admin_delete_message',    {p_message_id:r.target_id}],
+        group:      ['admin_delete_group',      {p_group_id:r.target_id}],
+        group_post: ['admin_delete_group_post', {p_post_id:r.target_id}],
+      };
+      const [fn,args] = fnMap[r.target_kind];
+      await rpc(fn, args);
+      await rpc('admin_resolve_report', {p_report_id:r.report_id, p_status:'actioned'});
+      flash('panelMsg','Content removed · report marked actioned.','info');
+      reload();
+    }));
+  }
+
+  if(r.target_owner_id){
+    acts.appendChild(mkBtn('Suspend '+ownerName,'warn', async () => {
+      const reason = prompt('Suspension reason (shown to the user):',
+        'Violation of community guidelines — '+r.reason);
+      if(reason===null) return;
+      await rpc('admin_suspend_user', {p_profile_id:r.target_owner_id, p_reason:reason});
+      await rpc('admin_resolve_report', {p_report_id:r.report_id, p_status:'actioned'});
+      flash('panelMsg','User suspended · report marked actioned.','info');
+      reload();
+    }));
+    acts.appendChild(mkBtn('Delete account','danger', async () => {
+      if(!confirm('PERMANENTLY delete '+ownerName+"'s account and all their data? This cannot be undone.")) return;
+      await rpc('admin_delete_user', {p_profile_id:r.target_owner_id});
+      await rpc('admin_resolve_report', {p_report_id:r.report_id, p_status:'actioned'});
+      flash('panelMsg','Account deleted · report marked actioned.','info');
+      reload();
+    }));
+  }
+
+  acts.appendChild(el('<div class="spacer"></div>'));
+
+  if(r.status !== 'reviewed')
+    acts.appendChild(mkBtn('Reviewed','ghost', () => setStatus(r.report_id,'reviewed')));
+  if(r.status !== 'dismissed')
+    acts.appendChild(mkBtn('Dismiss','ghost', () => setStatus(r.report_id,'dismissed')));
+  if(r.status !== 'open')
+    acts.appendChild(mkBtn('Reopen','ghost', () => setStatus(r.report_id,'open')));
+
+  return card;
+}
+
+async function setStatus(id,status){
+  try{
+    await rpc('admin_resolve_report', {p_report_id:id, p_status:status});
+    reload();
+  }catch(err){ flash('panelMsg', err.message, 'err'); }
+}
+
+// mkBtn returns a button that disables itself + shows a spinner while its async
+// handler runs, and surfaces any thrown error.
+function mkBtn(label, kind, handler){
+  const b = el(`<button class="btn ${kind} sm">${esc(label)}</button>`);
+  b.addEventListener('click', async () => {
+    b.disabled = true; const txt = b.textContent;
+    b.innerHTML = '<span class="spin"></span>';
+    try{ await handler(); }
+    catch(err){ flash('panelMsg', err.message || 'Action failed', 'err'); }
+    finally{ b.disabled = false; b.textContent = txt; }
+  });
+  return b;
+}
+
+function reload(){ loadReports(); refreshStats(); }
+
+// =============================================================================
+// USERS
+// =============================================================================
+let allUsers = [];
+
+async function loadUsers(){
+  const wrap = $('usersWrap');
+  wrap.innerHTML = '<div class="empty-state"><span class="spin"></span></div>';
+  try{
+    allUsers = await rpc('admin_list_users');
+    renderUsers();
+  }catch(err){
+    wrap.innerHTML = '';
+    flash('panelMsg', err.message || 'Failed to load users', 'err');
+  }
+}
+
+$('userSearch').addEventListener('input', renderUsers);
+
+function renderUsers(){
+  const q = $('userSearch').value.trim().toLowerCase();
+  const rows = allUsers.filter(u => !q ||
+    [u.full_name,u.handle,u.email,u.city,u.state]
+      .some(v => (v||'').toLowerCase().includes(q)));
+  const wrap = $('usersWrap');
+  if(!rows.length){ wrap.innerHTML = '<div class="empty-state">No users match.</div>'; return; }
+
+  const table = el(`<table><thead><tr>
+    <th>Name</th><th>Email</th><th>Location</th><th>Reports</th>
+    <th>Joined</th><th>Status</th><th></th></tr></thead><tbody></tbody></table>`);
+  const tb = table.querySelector('tbody');
+
+  rows.forEach(u => {
+    const tags =
+      (u.is_admin ?'<span class="tag adm">admin</span> ':'') +
+      (u.suspended?'<span class="tag sus">suspended</span>':'') ||
+      '<span style="color:var(--ink2)">active</span>';
+    const tr = el(`<tr>
+      <td><b>${esc(u.full_name||'—')}</b>${u.handle?'<br><span style="color:var(--ink2)">@'+esc(u.handle)+'</span>':''}</td>
+      <td>${esc(u.email||'—')}</td>
+      <td>${esc([u.city,u.state].filter(Boolean).join(', ')||'—')}</td>
+      <td class="num">${u.report_count||0}</td>
+      <td>${esc(new Date(u.created_at).toLocaleDateString())}</td>
+      <td>${tags}</td>
+      <td><div class="row-actions"></div></td>
+    </tr>`);
+    const ra = tr.querySelector('.row-actions');
+
+    if(!u.is_admin){
+      if(u.suspended){
+        ra.appendChild(mkBtn('Unsuspend','ok', async () => {
+          await rpc('admin_unsuspend_user',{p_profile_id:u.profile_id});
+          flash('panelMsg','User unsuspended.','info'); afterUserAction();
+        }));
+      }else{
+        ra.appendChild(mkBtn('Suspend','warn', async () => {
+          const reason = prompt('Suspension reason (shown to the user):','Violation of community guidelines');
+          if(reason===null) return;
+          await rpc('admin_suspend_user',{p_profile_id:u.profile_id,p_reason:reason});
+          flash('panelMsg','User suspended.','info'); afterUserAction();
+        }));
+      }
+      ra.appendChild(mkBtn('Delete','danger', async () => {
+        if(!confirm('PERMANENTLY delete '+(u.full_name||u.email)+' and all their data?')) return;
+        await rpc('admin_delete_user',{p_profile_id:u.profile_id});
+        flash('panelMsg','Account deleted.','info'); afterUserAction();
+      }));
+    }
+    tb.appendChild(tr);
+  });
+  wrap.innerHTML = '';
+  wrap.appendChild(table);
+}
+async function afterUserAction(){ await loadUsers(); refreshStats(); }
+
+// =============================================================================
+// GROUPS
+// =============================================================================
+let allGroups = [];
+
+async function loadGroups(){
+  const wrap = $('groupsWrap');
+  wrap.innerHTML = '<div class="empty-state"><span class="spin"></span></div>';
+  try{
+    allGroups = await rpc('admin_list_groups');
+    renderGroups();
+  }catch(err){
+    wrap.innerHTML = '';
+    flash('panelMsg', err.message || 'Failed to load groups', 'err');
+  }
+}
+
+$('groupSearch').addEventListener('input', renderGroups);
+
+function renderGroups(){
+  const q = $('groupSearch').value.trim().toLowerCase();
+  const rows = allGroups.filter(g => !q ||
+    [g.name,g.city,g.state,g.owner_name].some(v => (v||'').toLowerCase().includes(q)));
+  const wrap = $('groupsWrap');
+  if(!rows.length){ wrap.innerHTML = '<div class="empty-state">No groups match.</div>'; return; }
+
+  const table = el(`<table><thead><tr>
+    <th>Group</th><th>Owner</th><th>Location</th><th>Members</th>
+    <th>Reports</th><th>Created</th><th></th></tr></thead><tbody></tbody></table>`);
+  const tb = table.querySelector('tbody');
+
+  rows.forEach(g => {
+    const tr = el(`<tr>
+      <td><b>${esc(g.name||'—')}</b>${g.description?'<br><span style="color:var(--ink2)">'+esc((g.description||'').slice(0,80))+'</span>':''}</td>
+      <td>${esc(g.owner_name||'—')}</td>
+      <td>${esc([g.city,g.state].filter(Boolean).join(', ')||'—')}</td>
+      <td class="num">${g.member_count||0}</td>
+      <td class="num">${g.report_count||0}</td>
+      <td>${esc(new Date(g.created_at).toLocaleDateString())}</td>
+      <td><div class="row-actions"></div></td>
+    </tr>`);
+    tr.querySelector('.row-actions').appendChild(mkBtn('Delete','danger', async () => {
+      if(!confirm('Delete group "'+(g.name||'')+'"? Members, posts and chat go with it.')) return;
+      await rpc('admin_delete_group',{p_group_id:g.group_id});
+      flash('panelMsg','Group deleted.','info');
+      await loadGroups(); refreshStats();
+    }));
+    tb.appendChild(tr);
+  });
+  wrap.innerHTML = '';
+  wrap.appendChild(table);
+}
+
+// ---- go ---------------------------------------------------------------------
+boot();
+</script>
+</body>
+</html>

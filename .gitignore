@@ -1,6 +1,8 @@
 node_modules/
 .expo/
 dist/
+dist-check/
+dist-verify/
 web-build/
 *.local
 .env

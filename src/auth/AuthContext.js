@@ -4,17 +4,38 @@
 // ─────────────────────────────────────────
 
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { Platform, Linking } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { geocodeZip } from '../lib/geocode';
+
+// Where Supabase sends the user after they click the password-reset email.
+// Web: back to wherever the app is running (localhost / Vercel / found.community)
+//      — `detectSessionInUrl` then parses the recovery token from the URL hash.
+// Native: a custom-scheme deep link the OS routes back into the app. The
+//      `found` scheme must stay in sync with app.json -> expo.scheme.
+// NOTE: every value this can return must also be added to Supabase ->
+//      Authentication -> URL Configuration -> Redirect URLs, or the email
+//      link will refuse to redirect.
+export function passwordResetRedirectTo() {
+  if (Platform.OS === 'web') {
+    return typeof window !== 'undefined' && window.location
+      ? window.location.origin
+      : undefined;
+  }
+  return 'found://reset';
+}
 
 const AuthCtx = createContext({
   session: null,
   user: null,
   profile: null,
   loading: true,
+  recoveryMode: false,
   signInWithPassword: async () => {},
   signUpWithPassword: async () => {},
-  signInWithMagicLink: async () => {},
+  sendPasswordReset: async () => {},
+  updatePassword: async () => {},
+  cancelRecovery: async () => {},
   signOut: async () => {},
   refreshProfile: async () => {},
 });
@@ -23,6 +44,11 @@ export function AuthProvider({ children }) {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  // recoveryMode is true between the moment a user opens a password-reset link
+  // and the moment they set a new password. While true, the navigator forces
+  // the "Set a new password" screen even though a (recovery) session exists —
+  // otherwise the user would silently land in the app without ever resetting.
+  const [recoveryMode, setRecoveryMode] = useState(false);
   // profileLoading is true while we're fetching the user's profile after a
   // session change. The navigator uses it to avoid flashing the Onboarding
   // screen for returning users between sign-in and profile fetch.
@@ -37,12 +63,61 @@ export function AuthProvider({ children }) {
       setSession(data.session ?? null);
       setLoading(false);
     })();
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
       setSession(s ?? null);
+      // Fired by supabase-js on web when it parses a recovery token out of the
+      // URL hash (detectSessionInUrl). On native we set this flag ourselves in
+      // the deep-link effect below, since detectSessionInUrl is web-only.
+      if (event === 'PASSWORD_RECOVERY') setRecoveryMode(true);
     });
     return () => {
       mounted = false;
       sub.subscription.unsubscribe();
+    };
+  }, []);
+
+  // ── Native deep-link handler ────────────────────────────────────────
+  // On native, supabase-js does NOT parse auth tokens out of incoming URLs
+  // (detectSessionInUrl is web-only). When the password-reset email link
+  // routes back into the app via the `found://` scheme, the OS hands us a URL
+  // like `found://reset#access_token=...&refresh_token=...&type=recovery`.
+  // We parse the hash, establish the session, and flip recoveryMode so the
+  // navigator shows the "Set a new password" screen.
+  useEffect(() => {
+    if (Platform.OS === 'web') return undefined;
+
+    let cancelled = false;
+
+    async function handleUrl(url) {
+      if (!url || url.indexOf('#') === -1) return;
+      const hash = url.slice(url.indexOf('#') + 1);
+      let params;
+      try {
+        params = new URLSearchParams(hash);
+      } catch {
+        return;
+      }
+      const accessToken  = params.get('access_token');
+      const refreshToken = params.get('refresh_token');
+      const linkType     = params.get('type');
+      if (!accessToken || !refreshToken) return;
+
+      const { error } = await supabase.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+      });
+      if (cancelled || error) return;
+      if (linkType === 'recovery') setRecoveryMode(true);
+    }
+
+    // Cold start: the app was launched by the link.
+    Linking.getInitialURL().then((url) => { if (!cancelled) handleUrl(url); });
+    // Warm: the app was already open when the link was tapped.
+    const sub = Linking.addEventListener('url', ({ url }) => handleUrl(url));
+
+    return () => {
+      cancelled = true;
+      sub.remove();
     };
   }, []);
 
@@ -118,6 +193,7 @@ export function AuthProvider({ children }) {
       profile,
       loading,
       profileLoading,
+      recoveryMode,
       async signInWithPassword({ email, password }) {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
@@ -150,9 +226,28 @@ export function AuthProvider({ children }) {
         if (error) throw error;
         return data;
       },
-      async signInWithMagicLink({ email }) {
-        const { error } = await supabase.auth.signInWithOtp({ email });
+      // Send the "reset your password" email. Supabase intentionally does NOT
+      // error when the email has no account (prevents account enumeration), so
+      // the caller must show a neutral "if an account exists…" message.
+      async sendPasswordReset({ email }) {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: passwordResetRedirectTo(),
+        });
         if (error) throw error;
+      },
+      // Set the new password. Requires the recovery session established when
+      // the user opened the reset link. On success we clear recoveryMode — the
+      // user now has a valid full session and the navigator routes them in.
+      async updatePassword({ password }) {
+        const { error } = await supabase.auth.updateUser({ password });
+        if (error) throw error;
+        setRecoveryMode(false);
+      },
+      // Bail out of the reset flow (user opened the link but changed their
+      // mind). Drops the recovery session so they're not left half-signed-in.
+      async cancelRecovery() {
+        setRecoveryMode(false);
+        await supabase.auth.signOut();
       },
       async signOut() {
         await supabase.auth.signOut();
@@ -165,7 +260,7 @@ export function AuthProvider({ children }) {
         setProfileLoading(false);
       },
     }),
-    [session, profile, loading, profileLoading]
+    [session, profile, loading, profileLoading, recoveryMode]
   );
 
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;

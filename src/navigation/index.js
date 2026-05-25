@@ -30,10 +30,13 @@ import MatchDetailScreen  from '../screens/MatchDetailScreen';
 import ChatScreen         from '../screens/ChatScreen';
 import SignInScreen       from '../screens/auth/SignInScreen';
 import SignUpScreen       from '../screens/auth/SignUpScreen';
+import ForgotPasswordScreen from '../screens/auth/ForgotPasswordScreen';
+import ResetPasswordScreen  from '../screens/auth/ResetPasswordScreen';
 import EditProfileScreen  from '../screens/EditProfileScreen';
 import GroupDetailScreen  from '../screens/GroupDetailScreen';
 import NotificationsFeedScreen from '../screens/NotificationsFeedScreen';
 import BlockedUsersScreen from '../screens/BlockedUsersScreen';
+import SuspendedScreen    from '../screens/SuspendedScreen';
 
 import NotificationsScreen    from '../screens/settings/NotificationsScreen';
 import LocationSettingsScreen from '../screens/settings/LocationSettingsScreen';
@@ -183,6 +186,20 @@ function AuthStack() {
       <Stack.Screen name="Splash" component={SplashScreen} />
       <Stack.Screen name="SignIn" component={SignInScreen} options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="SignUp" component={SignUpScreen} options={{ animation: 'slide_from_right' }} />
+      <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} options={{ animation: 'slide_from_right' }} />
+    </Stack.Navigator>
+  );
+}
+
+// ── Recovery stack ─────────────────────────────────────────────────
+// Shown when the user opens a password-reset link (AuthContext.recoveryMode).
+// It pre-empts both the auth stack and the app stack: a recovery link
+// technically creates a session, so without this gate the user would land
+// straight in the app and never get a chance to set a new password.
+function RecoveryStack() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false, animation: 'fade' }}>
+      <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
     </Stack.Navigator>
   );
 }
@@ -224,7 +241,7 @@ function AppStack({ needsOnboarding }) {
 
 // ── Root: gate on auth ─────────────────────────────────────────────
 export default function AppNavigator() {
-  const { session, profile, loading, profileLoading } = useAuth();
+  const { session, profile, loading, profileLoading, recoveryMode } = useAuth();
 
   // ── Push notifications ──────────────────────────────────────────────
   // Register the device once per signed-in user (keyed on the stable user
@@ -250,12 +267,34 @@ export default function AppNavigator() {
   // returning a different element here unmounts the entire NavigationContainer
   // and resets the user back to the first tab. The first-load gate is the
   // `!profile` guard.
-  if (loading || (session && profileLoading && !profile)) {
+  const showSpinner =
+    loading || (session && profileLoading && !profile && !recoveryMode);
+  if (showSpinner) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.bg }}>
         <ActivityIndicator color={COLORS.text} />
       </View>
     );
+  }
+
+  // A password-reset link was opened. This must pre-empt both the auth stack
+  // and the app stack: the recovery link establishes a session, so without
+  // this gate the user would land in the app and never set a new password.
+  if (recoveryMode) {
+    return (
+      <NavigationContainer ref={navigationRef}>
+        <RecoveryStack />
+      </NavigationContainer>
+    );
+  }
+
+  // A suspended profile can still hold a valid session, but a moderator has
+  // revoked their access via the admin panel. This pre-empts the app stack
+  // entirely — rendered with no NavigationContainer, so the user can reach
+  // nothing but the suspension notice and a Sign Out button. The gate clears
+  // by itself if the profile is unsuspended and refetched.
+  if (session && profile?.suspended) {
+    return <SuspendedScreen />;
   }
 
   const needsOnboarding = !!session && !profile?.onboarding_complete;
