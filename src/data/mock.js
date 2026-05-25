@@ -52,6 +52,9 @@ export const ACTIVITIES = [
   { id: 'dining',      label: 'Dinner Out',           icon: 'restaurant-outline',       iconColor: '#C0795A' },
   { id: 'concerts',    label: 'Concerts',             icon: 'musical-note-outline',     iconColor: '#7A5AA8' },
   { id: 'shopping',    label: 'Mall / Shopping',      icon: 'bag-outline',              iconColor: '#A8793A' },
+  { id: 'coffee',           label: 'Coffee',              icon: 'cafe-outline',         iconColor: '#A8793A' },
+  { id: 'golf',             label: 'Golf',                icon: 'golf-outline',         iconColor: '#5A7A4A' },
+  { id: 'tennis-pickleball',label: 'Tennis / Pickleball', icon: 'tennisball-outline',   iconColor: '#4A6FA5' },
 ];
 
 // Kept for backward compat with existing match cards that reference interests
