@@ -602,6 +602,12 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   menuSheet: {
+    // On web the Modal portals to the document root, outside the phone-width
+    // frame in App.js — cap + center so the sheet stays inside the phone
+    // column instead of stretching the whole browser. No-op on native.
+    width: '100%',
+    maxWidth: Platform.OS === 'web' ? 430 : undefined,
+    alignSelf: 'center',
     backgroundColor: COLORS.surface,
     borderTopLeftRadius: RADIUS.xl,
     borderTopRightRadius: RADIUS.xl,

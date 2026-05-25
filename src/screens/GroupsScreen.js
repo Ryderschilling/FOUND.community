@@ -106,7 +106,7 @@ export default function GroupsScreen({ navigation }) {
         g.id === group.id ? { ...g, hasPendingRequest: true } : g));
     }
 
-    const { data: result, error } = await supabase.rpc('join_group', { p_group: group.id });
+    const { error } = await supabase.rpc('join_group', { p_group: group.id });
     setBusyId(null);
 
     if (error) {
@@ -116,16 +116,16 @@ export default function GroupsScreen({ navigation }) {
           ? { ...g, joined: false, hasPendingRequest: false, memberCount: Math.max(0, (g.memberCount ?? 1) - 1) }
           : g));
       Alert.alert('Could not join', error.message);
-    } else if (result === 'joined') {
-      // Already confirmed as joined
-      setGroups((prev) => prev.map((g) =>
-        g.id === group.id ? { ...g, joined: true, hasPendingRequest: false, memberCount: (g.memberCount ?? 0) + 1 } : g));
-    } else if (result === 'pending') {
-      // Request was filed for private group
-      setGroups((prev) => prev.map((g) =>
-        g.id === group.id ? { ...g, joined: false, hasPendingRequest: true } : g));
+      return;
     }
-  }, [busyId]);
+
+    // Reconcile with server truth. The optimistic update above already gave
+    // instant feedback; refetching the feed replaces every count with the
+    // live value from my_groups_feed() — no fragile client-side arithmetic,
+    // and it picks up the correct joined/pending state for both public and
+    // private groups.
+    load({ isRefresh: true });
+  }, [busyId, load]);
 
   // Confirm + optimistic leave
   const handleLeave = useCallback(async (group) => {
