@@ -28,6 +28,7 @@ import {
   SafeAreaView,
   ActivityIndicator,
   Alert,
+  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
@@ -38,6 +39,7 @@ import { useAuth } from '../auth/AuthContext';
 import { fetchProfilePhotos } from '../lib/profilePhotos';
 import HighlightReelView from '../components/HighlightReelView';
 import { useConfirm } from '../components/ConfirmProvider';
+import ReportSheet from '../components/ReportSheet';
 
 export default function MatchDetailScreen({ route, navigation }) {
   const { user } = useAuth();
@@ -52,6 +54,8 @@ export default function MatchDetailScreen({ route, navigation }) {
   const [photosLoaded, setPhotosLoaded] = useState(false);
   const [openingChat,  setOpeningChat]  = useState(false);
   const [ignoring,     setIgnoring]     = useState(false);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const [reportOpen,   setReportOpen]   = useState(false);
 
   // Full profile data — starts from whatever the caller passed, enriched by
   // get_profile_detail() when score / interests are missing.
@@ -278,6 +282,29 @@ export default function MatchDetailScreen({ route, navigation }) {
     }
   }
 
+  async function handleBlock() {
+    const ok = await confirm({
+      title: 'Block user?',
+      message: `${profile.name} won't be able to see your profile or message you.`,
+      confirmLabel: 'Block',
+      destructive: true,
+    });
+    if (!ok) return;
+
+    try {
+      await supabase.rpc('block_user', { p_target: profile.id });
+      setMoreMenuOpen(false);
+      navigation.goBack();
+    } catch (e) {
+      Alert.alert('Could not block', e?.message ?? 'Try again.');
+    }
+  }
+
+  function handleReport() {
+    setMoreMenuOpen(false);
+    setReportOpen(true);
+  }
+
   // ── Render ───────────────────────────────────────────────────────────────
   return (
     <SafeAreaView style={styles.container}>
@@ -286,6 +313,13 @@ export default function MatchDetailScreen({ route, navigation }) {
       <View style={styles.nav}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} activeOpacity={0.7}>
           <Text style={styles.backArrow}>←</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => setMoreMenuOpen(true)}
+          style={styles.moreBtn}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="ellipsis-horizontal" size={18} color={COLORS.text} />
         </TouchableOpacity>
       </View>
 
@@ -501,6 +535,7 @@ export default function MatchDetailScreen({ route, navigation }) {
                 ]}>
                   {ctaState === 'connected' ? '✓  Connected'
                    : ctaState === 'pending' ? '⏱  Pending'
+                   : isInbound ? 'Accept'
                    : 'Connect'}
                 </Text>
               </TouchableOpacity>
@@ -520,6 +555,49 @@ export default function MatchDetailScreen({ route, navigation }) {
           )}
         </View>
       </View>
+
+      {/* Action menu modal for block + report */}
+      <Modal
+        visible={moreMenuOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMoreMenuOpen(false)}
+      >
+        <View style={styles.menuBackdrop}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => setMoreMenuOpen(false)}
+          />
+          <View style={styles.menuSheet}>
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={handleBlock}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="ban-outline" size={18} color="#C0392B" />
+              <Text style={[styles.menuItemText, { color: '#C0392B' }]}>Block</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={handleReport}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="flag-outline" size={18} color={COLORS.textSecondary} />
+              <Text style={styles.menuItemText}>Report</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Report sheet */}
+      <ReportSheet
+        visible={reportOpen}
+        targetKind="profile"
+        targetId={profile.id}
+        onClose={() => setReportOpen(false)}
+        onReported={() => {}}
+      />
     </SafeAreaView>
   );
 }
@@ -547,6 +625,9 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
 
   nav: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: SPACING.lg,
     paddingTop: SPACING.sm,
     paddingBottom: SPACING.sm,
@@ -562,6 +643,16 @@ const styles = StyleSheet.create({
     ...SHADOW.sm,
   },
   backArrow: { fontSize: 20, color: COLORS.text },
+  moreBtn: {
+    width: 40, height: 40,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...SHADOW.sm,
+  },
 
   // Hero
   hero: {
@@ -677,5 +768,35 @@ const styles = StyleSheet.create({
     width: 50, height: 50, borderRadius: RADIUS.lg,
     backgroundColor: COLORS.bg, borderWidth: 1, borderColor: COLORS.border,
     alignItems: 'center', justifyContent: 'center',
+  },
+
+  // Action menu
+  menuBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
+  },
+  menuSheet: {
+    backgroundColor: COLORS.surface,
+    borderTopLeftRadius: RADIUS.xl,
+    borderTopRightRadius: RADIUS.xl,
+    paddingTop: SPACING.md,
+    paddingHorizontal: SPACING.lg,
+    paddingBottom: SPACING.lg,
+    ...SHADOW.lg,
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+    paddingVertical: SPACING.md,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  menuItemText: {
+    flex: 1,
+    fontFamily: FONT.semiBold,
+    fontSize: 15,
+    color: COLORS.text,
   },
 });

@@ -12,12 +12,15 @@ import {
   SafeAreaView,
   ActivityIndicator,
   Alert,
+  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
 import { Avatar } from '../components/Atoms';
+import ReportSheet from '../components/ReportSheet';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../auth/AuthContext';
+import { useConfirm } from '../components/ConfirmProvider';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 const AVATAR_GRADIENTS = [
@@ -98,6 +101,7 @@ function Bubble({ message, mine, isGroup, sender, showSender }) {
 // ─── Screen ───────────────────────────────────────────────────────────────
 export default function ChatScreen({ route, navigation }) {
   const { user } = useAuth();
+  const confirm = useConfirm();
   const params = route?.params ?? {};
 
   // Accept either { thread_id, other: {id, name, ...} } or the older { thread: {...} }
@@ -113,12 +117,15 @@ export default function ChatScreen({ route, navigation }) {
   const otherName     = other?.name || other?.full_name || 'Friend';
   const otherInitials = other?.initials || initialsFor(otherName);
   const otherGradient = other?.avatarColor || gradientFor(other?.id || other?.profile_id || otherName);
+  const otherProfileId = other?.id || other?.profile_id || null;
 
   const [messages, setMessages]   = useState([]);
   const [loading, setLoading]     = useState(true);
   const [input, setInput]         = useState('');
   const [sending, setSending]     = useState(false);
   const [senderMap, setSenderMap] = useState({});
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
   const listRef = useRef(null);
 
   // Group mode: load the roster once so each message can show a name + avatar.
@@ -242,6 +249,35 @@ export default function ChatScreen({ route, navigation }) {
     setSending(false);
   }
 
+  const handleBlock = async () => {
+    setMoreMenuOpen(false);
+    const ok = await confirm({
+      title: 'Block user?',
+      message: `${otherName} will not be able to see your profile or message you.`,
+      confirmLabel: 'Block',
+      destructive: true,
+    });
+    if (!ok || !otherProfileId) return;
+
+    try {
+      const { error } = await supabase.rpc('block_user', {
+        p_target: otherProfileId,
+      });
+      if (error) {
+        Alert.alert('Could not block', error.message || 'Try again.');
+      } else {
+        navigation.goBack();
+      }
+    } catch (e) {
+      Alert.alert('Error', e?.message || 'Something went wrong.');
+    }
+  };
+
+  const handleReport = () => {
+    setMoreMenuOpen(false);
+    setReportOpen(true);
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
@@ -283,7 +319,13 @@ export default function ChatScreen({ route, navigation }) {
         <TouchableOpacity
           style={styles.moreBtn}
           activeOpacity={0.7}
-          onPress={() => { if (isGroup && groupId) navigation.navigate('GroupDetail', { groupId }); }}
+          onPress={() => {
+            if (isGroup && groupId) {
+              navigation.navigate('GroupDetail', { groupId });
+            } else if (!isGroup) {
+              setMoreMenuOpen(true);
+            }
+          }}
         >
           <Ionicons name="ellipsis-horizontal" size={18} color={COLORS.text} />
         </TouchableOpacity>
@@ -360,6 +402,51 @@ export default function ChatScreen({ route, navigation }) {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+
+      {/* Action menu for direct threads */}
+      {!isGroup && (
+        <>
+          <Modal
+            visible={moreMenuOpen}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setMoreMenuOpen(false)}
+          >
+            <TouchableOpacity
+              style={styles.menuBackdrop}
+              activeOpacity={1}
+              onPress={() => setMoreMenuOpen(false)}
+            >
+              <View style={styles.menuSheet}>
+                <TouchableOpacity
+                  style={styles.menuItem}
+                  onPress={handleBlock}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="ban-outline" size={18} color={COLORS.text} />
+                  <Text style={styles.menuItemText}>Block</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.menuItem}
+                  onPress={handleReport}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="flag-outline" size={18} color={COLORS.text} />
+                  <Text style={styles.menuItemText}>Report</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableOpacity>
+          </Modal>
+
+          <ReportSheet
+            visible={reportOpen}
+            targetKind="profile"
+            targetId={otherProfileId}
+            onClose={() => setReportOpen(false)}
+            onReported={() => setReportOpen(false)}
+          />
+        </>
+      )}
     </SafeAreaView>
   );
 }
@@ -498,5 +585,35 @@ const styles = StyleSheet.create({
   },
   sendBtnDisabled: {
     backgroundColor: COLORS.border,
+  },
+
+  // Action menu
+  menuBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
+  },
+  menuSheet: {
+    backgroundColor: COLORS.surface,
+    borderTopLeftRadius: RADIUS.xl,
+    borderTopRightRadius: RADIUS.xl,
+    paddingTop: SPACING.md,
+    paddingHorizontal: SPACING.lg,
+    paddingBottom: SPACING.lg,
+    ...SHADOW.lg,
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+    paddingVertical: SPACING.md,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  menuItemText: {
+    flex: 1,
+    fontFamily: FONT.semiBold,
+    fontSize: 15,
+    color: COLORS.text,
   },
 });

@@ -684,6 +684,23 @@ export default function ProfileScreen({ navigation }) {
     }
   }
 
+  async function handleDeleteAccount() {
+    const ok = await confirm({
+      title: 'Delete your account?',
+      message: 'This permanently removes your profile, connections, messages, and groups you own. This cannot be undone.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    });
+    if (!ok) return;
+
+    try {
+      await supabase.rpc('delete_account');
+      await signOut();
+    } catch (e) {
+      Alert.alert('Delete failed', e?.message ?? 'Try again.');
+    }
+  }
+
   if (loading || !profile) {
     return (
       <SafeAreaView style={[styles.container, styles.centered]}>
@@ -853,7 +870,9 @@ export default function ProfileScreen({ navigation }) {
               <SettingsItem iconName="location-outline"      label="Location Settings"   onPress={() => navigation?.navigate('LocationSettings')} />
               <SettingsItem iconName="lock-closed-outline"   label="Privacy"             onPress={() => navigation?.navigate('Privacy')}          />
               <SettingsItem iconName="help-circle-outline"   label="Help & Support"      onPress={() => navigation?.navigate('HelpSupport')}      />
+              <SettingsItem iconName="ban-outline"           label="Blocked Users"       onPress={() => navigation?.navigate('BlockedUsers')}     />
               <SettingsItem iconName="log-out-outline"       label="Sign Out" danger onPress={handleSignOut} />
+              <SettingsItem iconName="trash-outline"         label="Delete My Account" danger onPress={handleDeleteAccount} />
             </View>
           </View>
 

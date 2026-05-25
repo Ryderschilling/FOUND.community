@@ -88,6 +88,7 @@ export default function PersonCard({ match, onConnect, onSave, onCancel, onPress
   const connectLabel =
     state === 'connected' ? 'Connected'
   : state === 'pending'   ? 'Pending'
+  : match.theirKind ? 'Accept'
   : 'Connect';
 
   const connectIcon =

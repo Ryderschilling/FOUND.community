@@ -33,6 +33,7 @@ import SignUpScreen       from '../screens/auth/SignUpScreen';
 import EditProfileScreen  from '../screens/EditProfileScreen';
 import GroupDetailScreen  from '../screens/GroupDetailScreen';
 import NotificationsFeedScreen from '../screens/NotificationsFeedScreen';
+import BlockedUsersScreen from '../screens/BlockedUsersScreen';
 
 import NotificationsScreen    from '../screens/settings/NotificationsScreen';
 import LocationSettingsScreen from '../screens/settings/LocationSettingsScreen';
@@ -214,6 +215,7 @@ function AppStack({ needsOnboarding }) {
           <Stack.Screen name="LocationSettings" component={LocationSettingsScreen} options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="Privacy"          component={PrivacyScreen}          options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="HelpSupport"      component={HelpSupportScreen}      options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="BlockedUsers"     component={BlockedUsersScreen}     options={{ animation: 'slide_from_right' }} />
         </>
       )}
     </Stack.Navigator>

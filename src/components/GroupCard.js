@@ -13,16 +13,22 @@ import { Pill } from './Atoms';
 
 /**
  * GroupCard — used in GroupsScreen for joined + suggested groups
+ * Redesigned as a compact horizontal list row with square photo thumbnail on left.
  * Props:
  *   group    { id, name, description, icon, iconColor, iconBg, memberCount,
- *              meetingDay, category, coverUrl, joined }
- *   onJoin   () => void
- *   onLeave  () => void
- *   onPress  () => void
- *   busy     boolean — disables the join/leave button
+ *              meetingDay, coverUrl, joined, isPublic, hasPendingRequest }
+ *   onJoin      () => void
+ *   onLeave     () => void
+ *   onCancelRequest () => void — withdraw pending request
+ *   onPress     () => void
+ *   busy        boolean — disables the join/leave button
  */
-export default function GroupCard({ group, onJoin, onLeave, onPress, busy }) {
+export default function GroupCard({ group, onJoin, onLeave, onCancelRequest, onPress, busy, currentUserId }) {
   const joined = !!group.joined;
+  const hasPendingRequest = !!group.hasPendingRequest;
+  const isPublic = group.isPublic !== false; // default public if undefined
+  // You can't "leave" a group you own — show an Owner badge instead.
+  const isOwner = !!group.createdBy && !!currentUserId && group.createdBy === currentUserId;
 
   const handleJoin = (e) => {
     e.stopPropagation?.();
@@ -32,26 +38,51 @@ export default function GroupCard({ group, onJoin, onLeave, onPress, busy }) {
     e.stopPropagation?.();
     onLeave?.();
   };
+  const handleCancelRequest = (e) => {
+    e.stopPropagation?.();
+    onCancelRequest?.();
+  };
 
   return (
     <Pressable
       style={({ pressed }) => [styles.card, pressed && { opacity: 0.97 }]}
       onPress={onPress}
     >
-      {/* Cover photo — full-bleed banner when the group has one */}
-      {group.coverUrl ? (
-        <Image source={{ uri: group.coverUrl }} style={styles.cover} resizeMode="cover" />
-      ) : null}
+      <View style={styles.row}>
+        {/* Left: Square photo or icon thumbnail */}
+        {group.coverUrl ? (
+          <Image
+            source={{ uri: group.coverUrl }}
+            style={styles.thumbnail}
+            resizeMode="cover"
+          />
+        ) : (
+          <View style={[styles.thumbnail, { backgroundColor: group.iconBg ?? COLORS.sageBg }]}>
+            <Ionicons
+              name={group.icon ?? 'people-outline'}
+              size={20}
+              color={group.iconColor ?? COLORS.sage}
+            />
+          </View>
+        )}
 
-      {/* Icon + name row */}
-      <View style={styles.header}>
-        <View style={[styles.iconWrap, { backgroundColor: group.iconBg ?? COLORS.sageBg }]}>
-          <Ionicons name={group.icon ?? 'people-outline'} size={22} color={group.iconColor ?? COLORS.sage} />
-        </View>
-        <View style={styles.headerInfo}>
-          <Text style={styles.name}>{group.name}</Text>
+        {/* Center: name, meta row, description */}
+        <View style={styles.contentWrap}>
+          <View style={styles.nameRow}>
+            <Text style={styles.name}>{group.name}</Text>
+            {!isPublic && (
+              <Ionicons
+                name="lock-closed"
+                size={11}
+                color={COLORS.textTertiary}
+                style={styles.lockIcon}
+              />
+            )}
+          </View>
+
+          {/* Meta: members + schedule */}
           <View style={styles.metaRow}>
-            <Ionicons name="people-outline" size={11} color={COLORS.textTertiary} />
+            <Ionicons name="people-outline" size={10} color={COLORS.textTertiary} />
             <Text style={styles.meta}>
               {group.memberCount} {group.memberCount === 1 ? 'member' : 'members'}
             </Text>
@@ -62,41 +93,61 @@ export default function GroupCard({ group, onJoin, onLeave, onPress, busy }) {
               </>
             ) : null}
           </View>
+
+          {/* Description: single line */}
+          {group.description ? (
+            <Text style={styles.description} numberOfLines={1}>
+              {group.description}
+            </Text>
+          ) : null}
         </View>
 
-        {/* Category pill */}
-        {group.category ? (
-          <Pill label={group.category} variant="neutral" />
-        ) : null}
-      </View>
-
-      {/* Description */}
-      {group.description ? (
-        <Text style={styles.description} numberOfLines={2}>{group.description}</Text>
-      ) : null}
-
-      {/* Footer: join state — tap "Joined" to leave */}
-      <View style={styles.footer}>
-        {joined ? (
-          <TouchableOpacity
-            style={styles.joinedBtn}
-            onPress={handleLeave}
-            disabled={busy}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="checkmark-circle" size={15} color={COLORS.sage} />
-            <Text style={styles.joinedText}>Joined</Text>
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity
-            style={styles.joinBtn}
-            onPress={handleJoin}
-            disabled={busy}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.joinBtnText}>Join Group</Text>
-          </TouchableOpacity>
-        )}
+        {/* Right: Owner badge / Join / Pending / Joined button */}
+        <View style={styles.buttonWrap}>
+          {isOwner ? (
+            <View style={styles.ownerBadge}>
+              <Ionicons name="ribbon-outline" size={13} color={COLORS.textSecondary} />
+              <Text style={styles.ownerText}>Owner</Text>
+            </View>
+          ) : joined ? (
+            <TouchableOpacity
+              style={styles.joinedBtn}
+              onPress={handleLeave}
+              disabled={busy}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="checkmark-circle" size={14} color={COLORS.sage} />
+              <Text style={styles.joinedText}>Joined</Text>
+            </TouchableOpacity>
+          ) : hasPendingRequest ? (
+            <TouchableOpacity
+              style={styles.pendingBtn}
+              onPress={handleCancelRequest}
+              disabled={busy}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.pendingText}>Pending</Text>
+            </TouchableOpacity>
+          ) : isPublic ? (
+            <TouchableOpacity
+              style={styles.joinBtn}
+              onPress={handleJoin}
+              disabled={busy}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.joinBtnText}>Join</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={styles.joinBtn}
+              onPress={handleJoin}
+              disabled={busy}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.joinBtnText}>Request</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
     </Pressable>
   );
@@ -105,74 +156,139 @@ export default function GroupCard({ group, onJoin, onLeave, onPress, busy }) {
 const styles = StyleSheet.create({
   card: {
     backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.xl,
-    padding: SPACING.md,
+    borderRadius: RADIUS.lg,
     borderWidth: 1,
     borderColor: COLORS.border,
     ...SHADOW.sm,
-    gap: SPACING.sm,
   },
 
-  cover: {
-    height: 124,
-    marginTop: -SPACING.md,
-    marginHorizontal: -SPACING.md,
-    marginBottom: SPACING.xs,
-    borderTopLeftRadius: RADIUS.xl,
-    borderTopRightRadius: RADIUS.xl,
-    backgroundColor: COLORS.surfaceAlt,
-  },
-
-  header: {
+  row: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: SPACING.sm,
+    alignItems: 'center',
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    gap: SPACING.md,
   },
-  iconWrap: {
-    width: 44,
-    height: 44,
+
+  // Square thumbnail on left
+  thumbnail: {
+    width: 64,
+    height: 64,
     borderRadius: RADIUS.lg,
+    backgroundColor: COLORS.surfaceAlt,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
   },
-  headerInfo: { flex: 1, gap: 3 },
-  name: { fontFamily: FONT.serifItalic, fontSize: 17, color: COLORS.text, letterSpacing: -0.2 },
-  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  metaDot: { fontFamily: FONT.regular, fontSize: 12, color: COLORS.textTertiary },
-  meta:    { fontFamily: FONT.regular, fontSize: 12, color: COLORS.textSecondary },
+
+  // Center content flex column
+  contentWrap: {
+    flex: 1,
+    gap: SPACING.xs,
+  },
+
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  name: {
+    fontFamily: FONT.serifItalic,
+    fontSize: 15,
+    color: COLORS.text,
+    letterSpacing: -0.2,
+  },
+  lockIcon: {
+    marginLeft: 2,
+  },
+
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  metaDot: {
+    fontFamily: FONT.regular,
+    fontSize: 11,
+    color: COLORS.textTertiary,
+  },
+  meta: {
+    fontFamily: FONT.regular,
+    fontSize: 11,
+    color: COLORS.textSecondary,
+  },
 
   description: {
     fontFamily: FONT.regular,
-    fontSize: 14,
+    fontSize: 13,
     color: COLORS.textSecondary,
-    lineHeight: 20,
+    lineHeight: 18,
   },
 
-  footer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 2,
+  // Right button wrap
+  buttonWrap: {
+    flexShrink: 0,
   },
+
   joinedBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 4,
     backgroundColor: COLORS.sageBg,
     borderRadius: RADIUS.full,
     borderWidth: 1,
     borderColor: COLORS.sageLight,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 11,
+    paddingVertical: 5,
   },
-  joinedText: { fontFamily: FONT.semiBold, fontSize: 13, color: COLORS.sage },
-  joinBtn: {
-    backgroundColor: COLORS.bg,
+  joinedText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 12,
+    color: COLORS.sage,
+  },
+
+  ownerBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: COLORS.surfaceAlt,
     borderRadius: RADIUS.full,
     borderWidth: 1,
     borderColor: COLORS.border,
-    paddingHorizontal: 14,
-    paddingVertical: 7,
+    paddingHorizontal: 11,
+    paddingVertical: 5,
   },
-  joinBtnText: { fontFamily: FONT.semiBold, fontSize: 13, color: COLORS.text },
+  ownerText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 12,
+    color: COLORS.textSecondary,
+  },
+
+  pendingBtn: {
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  pendingText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 12,
+    color: COLORS.textTertiary,
+  },
+
+  joinBtn: {
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  joinBtnText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 12,
+    color: COLORS.text,
+  },
 });

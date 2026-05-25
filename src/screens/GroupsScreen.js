@@ -28,7 +28,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS } from '../theme';
 import GroupCard from '../components/GroupCard';
-import { PrimaryButton } from '../components/Atoms';
+import { PrimaryButton, Chip } from '../components/Atoms';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../auth/AuthContext';
 import { geocode } from '../lib/geocode';
@@ -53,6 +53,8 @@ function rowToGroup(row) {
     joined:      !!row.is_member,
     createdBy:   row.created_by,
     coverUrl:    row.cover_path ? publicUrlForGroupPhoto(row.cover_path) : null,
+    isPublic:    !!row.is_public,
+    hasPendingRequest: !!row.has_pending_request,
   };
 }
 
@@ -64,6 +66,8 @@ export default function GroupsScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [busyId, setBusyId]         = useState(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [searchText, setSearchText]  = useState('');
+  const [filterType, setFilterType]  = useState('all'); // 'all' | 'joined' | 'public' | 'private'
 
   const load = useCallback(async ({ isRefresh } = {}) => {
     if (isRefresh) setRefreshing(true); else setLoading(true);
@@ -87,19 +91,38 @@ export default function GroupsScreen({ navigation }) {
     return unsub;
   }, [navigation, load]);
 
-  // Optimistic join
+  // Optimistic join: public groups join instantly, private groups file a request
   const handleJoin = useCallback(async (group) => {
     if (busyId) return;
     setBusyId(group.id);
-    setGroups((prev) => prev.map((g) =>
-      g.id === group.id ? { ...g, joined: true, memberCount: (g.memberCount ?? 0) + 1 } : g));
-    const { error } = await supabase.rpc('join_group', { p_group: group.id });
+
+    // Optimistically update based on group privacy
+    if (group.isPublic) {
+      setGroups((prev) => prev.map((g) =>
+        g.id === group.id ? { ...g, joined: true, memberCount: (g.memberCount ?? 0) + 1 } : g));
+    } else {
+      setGroups((prev) => prev.map((g) =>
+        g.id === group.id ? { ...g, hasPendingRequest: true } : g));
+    }
+
+    const { data: result, error } = await supabase.rpc('join_group', { p_group: group.id });
     setBusyId(null);
+
     if (error) {
       console.warn('[groups] join failed', error.message);
       setGroups((prev) => prev.map((g) =>
-        g.id === group.id ? { ...g, joined: false, memberCount: Math.max(0, (g.memberCount ?? 1) - 1) } : g));
+        g.id === group.id
+          ? { ...g, joined: false, hasPendingRequest: false, memberCount: Math.max(0, (g.memberCount ?? 1) - 1) }
+          : g));
       Alert.alert('Could not join', error.message);
+    } else if (result === 'joined') {
+      // Already confirmed as joined
+      setGroups((prev) => prev.map((g) =>
+        g.id === group.id ? { ...g, joined: true, hasPendingRequest: false, memberCount: (g.memberCount ?? 0) + 1 } : g));
+    } else if (result === 'pending') {
+      // Request was filed for private group
+      setGroups((prev) => prev.map((g) =>
+        g.id === group.id ? { ...g, joined: false, hasPendingRequest: true } : g));
     }
   }, [busyId]);
 
@@ -122,19 +145,76 @@ export default function GroupsScreen({ navigation }) {
       console.warn('[groups] leave failed', error.message);
       setGroups((prev) => prev.map((g) =>
         g.id === group.id ? { ...g, joined: true, memberCount: (g.memberCount ?? 0) + 1 } : g));
-      Alert.alert('Could not leave', error.message);
+      // Surface the error in-app — Alert.alert is unreliable on web.
+      const ownerBlocked = /owner cannot leave/i.test(error.message || '');
+      await confirm({
+        title: ownerBlocked ? 'You own this group' : 'Could not leave',
+        message: ownerBlocked
+          ? 'Owners can’t leave their own group. Open it and use the settings gear to delete it or transfer ownership.'
+          : error.message,
+        confirmLabel: 'OK',
+        cancelLabel: 'OK',
+      });
     }
   }, [busyId, confirm]);
 
-  // Split into sections
+  // Cancel a pending join request
+  const handleCancelRequest = useCallback(async (group) => {
+    if (busyId) return;
+    setBusyId(group.id);
+    setGroups((prev) => prev.map((g) =>
+      g.id === group.id ? { ...g, hasPendingRequest: false } : g));
+    const { error } = await supabase.rpc('cancel_join_request', { p_group: group.id });
+    setBusyId(null);
+    if (error) {
+      console.warn('[groups] cancel request failed', error.message);
+      setGroups((prev) => prev.map((g) =>
+        g.id === group.id ? { ...g, hasPendingRequest: true } : g));
+      Alert.alert('Could not cancel request', error.message);
+    }
+  }, [busyId]);
+
+  // Search and filter groups
+  const filteredGroups = useMemo(() => {
+    let result = groups;
+
+    // Filter by type
+    if (filterType === 'joined') {
+      result = result.filter((g) => g.joined);
+    } else if (filterType === 'public') {
+      result = result.filter((g) => g.isPublic);
+    } else if (filterType === 'private') {
+      result = result.filter((g) => !g.isPublic);
+    }
+
+    // Search by name, description, city (case-insensitive)
+    if (searchText.trim()) {
+      const query = searchText.trim().toLowerCase();
+      result = result.filter((g) => {
+        const name = (g.name ?? '').toLowerCase();
+        const desc = (g.description ?? '').toLowerCase();
+        const city = (g.city ?? '').toLowerCase();
+        return name.includes(query) || desc.includes(query) || city.includes(query);
+      });
+    }
+
+    return result;
+  }, [groups, searchText, filterType]);
+
+  // Split filtered groups into sections
   const sections = useMemo(() => {
-    const joined = groups.filter((g) => g.joined);
-    const suggested = groups.filter((g) => !g.joined);
+    // If "Joined" filter is active, don't split sections
+    if (filterType === 'joined') {
+      return filteredGroups.length > 0 ? [{ title: 'JOINED', data: filteredGroups }] : [];
+    }
+
+    const joined = filteredGroups.filter((g) => g.joined);
+    const suggested = filteredGroups.filter((g) => !g.joined);
     const out = [];
-    if (joined.length)    out.push({ title: 'JOINED',             data: joined });
-    if (suggested.length) out.push({ title: 'SUGGESTED FOR YOU',  data: suggested });
+    if (joined.length) out.push({ title: 'JOINED', data: joined });
+    if (suggested.length) out.push({ title: 'SUGGESTED FOR YOU', data: suggested });
     return out;
-  }, [groups]);
+  }, [filteredGroups, filterType]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -152,8 +232,10 @@ export default function GroupsScreen({ navigation }) {
             <View style={styles.cardWrap}>
               <GroupCard
                 group={item}
+                currentUserId={user?.id}
                 onJoin={() => handleJoin(item)}
                 onLeave={() => handleLeave(item)}
+                onCancelRequest={() => handleCancelRequest(item)}
                 busy={busyId === item.id}
                 onPress={() => navigation.navigate('GroupDetail', { groupId: item.id, group: item })}
               />
@@ -178,6 +260,47 @@ export default function GroupsScreen({ navigation }) {
                 <Ionicons name="add" size={15} color={COLORS.text} />
                 <Text style={styles.createBtnText}>Create a Group</Text>
               </TouchableOpacity>
+
+              {/* Search bar */}
+              <View style={styles.searchWrap}>
+                <Ionicons
+                  name="search"
+                  size={16}
+                  color={COLORS.textTertiary}
+                  style={styles.searchIcon}
+                />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Search groups by name, city..."
+                  placeholderTextColor={COLORS.textTertiary}
+                  value={searchText}
+                  onChangeText={setSearchText}
+                />
+              </View>
+
+              {/* Filter chips */}
+              <View style={styles.filterRow}>
+                <Chip
+                  label="All"
+                  active={filterType === 'all'}
+                  onPress={() => setFilterType('all')}
+                />
+                <Chip
+                  label="Joined"
+                  active={filterType === 'joined'}
+                  onPress={() => setFilterType('joined')}
+                />
+                <Chip
+                  label="Public"
+                  active={filterType === 'public'}
+                  onPress={() => setFilterType('public')}
+                />
+                <Chip
+                  label="Private"
+                  active={filterType === 'private'}
+                  onPress={() => setFilterType('private')}
+                />
+              </View>
             </View>
           }
           ListEmptyComponent={
@@ -218,11 +341,13 @@ function CreateGroupModal({ visible, onClose, onCreated }) {
   const [address, setAddress]   = useState('');
   const [schedule, setSchedule] = useState('');
   const [cover, setCover]       = useState(null);   // { uri, base64 } picked, not yet uploaded
+  const [isPublic, setIsPublic] = useState(true);   // Public by default
   const [busy, setBusy]         = useState(false);
 
   const reset = () => {
     setName(''); setDesc(''); setCity(''); setState('');
     setAddress(''); setSchedule(''); setCover(null);
+    setIsPublic(true);
   };
 
   async function handlePickCover() {
@@ -271,6 +396,19 @@ function CreateGroupModal({ visible, onClose, onCreated }) {
       setBusy(false);
       Alert.alert('Could not create group', error.message);
       return;
+    }
+
+    // If the group is private, set privacy after creation.
+    // create_group always creates public groups, so we need to flip the flag.
+    if (newId && !isPublic) {
+      const { error: privErr } = await supabase.rpc('set_group_privacy', {
+        p_group: newId,
+        p_is_public: false,
+      });
+      if (privErr) {
+        console.warn('[create group] set privacy failed', privErr.message);
+        Alert.alert('Warning', 'Group created but privacy setting failed. You can change it from the group page.');
+      }
     }
 
     // Upload the cover photo now that the group (and its id) exists.
@@ -353,6 +491,36 @@ function CreateGroupModal({ visible, onClose, onCreated }) {
               placeholder="Street address — shown to members only"
             />
             <Field label="Schedule" value={schedule} onChange={setSchedule} placeholder="Tuesdays 7pm" />
+
+            {/* Privacy toggle */}
+            <View style={modalStyles.field}>
+              <Text style={modalStyles.fieldLabel}>Group Privacy</Text>
+              <View style={modalStyles.privacyRow}>
+                <TouchableOpacity
+                  style={[modalStyles.privacyOption, isPublic && modalStyles.privacyOptionActive]}
+                  onPress={() => setIsPublic(true)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[modalStyles.privacyText, isPublic && modalStyles.privacyTextActive]}>
+                    Public
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[modalStyles.privacyOption, !isPublic && modalStyles.privacyOptionActive]}
+                  onPress={() => setIsPublic(false)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[modalStyles.privacyText, !isPublic && modalStyles.privacyTextActive]}>
+                    Private
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={modalStyles.privacyHelper}>
+                {isPublic
+                  ? 'Anyone can join'
+                  : 'You approve join requests'}
+              </Text>
+            </View>
           </ScrollView>
 
           <PrimaryButton
@@ -393,6 +561,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.lg,
     paddingTop: SPACING.sm,
     paddingBottom: SPACING.md,
+    gap: SPACING.md,
   },
   headerMeta: {
     fontFamily: FONT.mono,
@@ -414,7 +583,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: COLORS.textSecondary,
     marginTop: 4,
-    marginBottom: SPACING.md,
+    marginBottom: 0,
   },
   createBtn: {
     flexDirection: 'row',
@@ -434,6 +603,37 @@ const styles = StyleSheet.create({
     color: COLORS.text,
   },
 
+  // Search bar
+  searchWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingHorizontal: SPACING.md,
+    height: 40,
+    gap: 8,
+  },
+  searchIcon: {
+    marginTop: 2,
+  },
+  searchInput: {
+    flex: 1,
+    fontFamily: FONT.regular,
+    fontSize: 14,
+    color: COLORS.text,
+    padding: 0,
+    ...(Platform.OS === 'web' ? { outlineStyle: 'none' } : null),
+  },
+
+  // Filter chips
+  filterRow: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+    flexWrap: 'wrap',
+  },
+
   sectionHeaderWrap: {
     paddingHorizontal: SPACING.lg,
     paddingTop: SPACING.lg,
@@ -449,7 +649,7 @@ const styles = StyleSheet.create({
 
   cardWrap: {
     paddingHorizontal: SPACING.lg,
-    marginBottom: 10,
+    marginBottom: SPACING.sm,
   },
 
   empty: {
@@ -570,5 +770,39 @@ const modalStyles = StyleSheet.create({
     fontFamily: FONT.semiBold,
     fontSize: 12,
     color: COLORS.white,
+  },
+
+  // Privacy toggle
+  privacyRow: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+  },
+  privacyOption: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surface,
+    alignItems: 'center',
+  },
+  privacyOptionActive: {
+    backgroundColor: COLORS.accent,
+    borderColor: COLORS.accent,
+  },
+  privacyText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 14,
+    color: COLORS.text,
+  },
+  privacyTextActive: {
+    color: COLORS.white,
+  },
+  privacyHelper: {
+    fontFamily: FONT.regular,
+    fontSize: 12,
+    color: COLORS.textTertiary,
+    marginTop: 8,
   },
 });

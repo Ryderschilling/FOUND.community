@@ -39,6 +39,7 @@ import { Avatar, PrimaryButton } from '../components/Atoms';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../auth/AuthContext';
 import { useConfirm } from '../components/ConfirmProvider';
+import ReportSheet from '../components/ReportSheet';
 import { geocode } from '../lib/geocode';
 import {
   fetchGroupPhotos,
@@ -124,6 +125,14 @@ export default function GroupDetailScreen({ route, navigation }) {
   const [lightbox, setLightbox]               = useState(null);
   const [membersModalOpen, setMembersModalOpen] = useState(false);
 
+  // Pending requests state
+  const [joinRequests, setJoinRequests] = useState([]);
+  const [loadingRequests, setLoadingRequests] = useState(false);
+  const [requestsOpen, setRequestsOpen] = useState(false);
+
+  // Report sheet state
+  const [reportSheet, setReportSheet] = useState({ visible: false, targetKind: null, targetId: null });
+
   const isOwner  = detail?.my_role === 'owner';
   const isAdmin  = isOwner || detail?.my_role === 'admin';
   const isMember = !!detail?.is_member;
@@ -188,13 +197,23 @@ export default function GroupDetailScreen({ route, navigation }) {
     setPosts(p ?? []);
   }, [groupId]);
 
+  const loadJoinRequests = useCallback(async () => {
+    if (!groupId || !isAdmin) return;
+    setLoadingRequests(true);
+    const { data, error } = await supabase.rpc('list_join_requests', { p_group: groupId });
+    setLoadingRequests(false);
+    if (error) console.warn('[group] join requests failed', error.message);
+    else setJoinRequests(data ?? []);
+  }, [groupId, isAdmin]);
+
   // ── Actions ──────────────────────────────────────────────────────────────
   async function handleJoin() {
     if (busy || !groupId) return;
     setBusy(true);
-    const { error } = await supabase.rpc('join_group', { p_group: groupId });
+    const { data, error } = await supabase.rpc('join_group', { p_group: groupId });
     setBusy(false);
     if (error) { Alert.alert('Could not join', error.message); return; }
+    // data is the result (either 'joined' or 'pending')
     await Promise.all([refreshDetail(), refreshMembers()]);
   }
 
@@ -350,6 +369,51 @@ export default function GroupDetailScreen({ route, navigation }) {
     await Promise.all([refreshMembers(), refreshDetail()]);
   }
 
+  async function handleBlockUser(profileId, profileName) {
+    const ok = await confirm({
+      title: 'Block this person?',
+      message: `You won't see messages or activity from ${profileName || 'this person'} anymore.`,
+      confirmLabel: 'Block',
+      destructive: true,
+    });
+    if (!ok) return;
+    const { error } = await supabase.rpc('block_user', { p_target: profileId });
+    if (error) { Alert.alert('Could not block', error.message); return; }
+    await refreshMembers();
+  }
+
+  async function handleApproveRequest(profileId) {
+    const { error } = await supabase.rpc('approve_join_request', {
+      p_group: groupId, p_profile: profileId,
+    });
+    if (error) {
+      Alert.alert('Could not approve', error.message);
+      return;
+    }
+    setJoinRequests((prev) => prev.filter((r) => r.profile_id !== profileId));
+    await Promise.all([refreshMembers(), refreshDetail()]);
+  }
+
+  async function handleDeclineRequest(profileId) {
+    const { error } = await supabase.rpc('decline_join_request', {
+      p_group: groupId, p_profile: profileId,
+    });
+    if (error) {
+      Alert.alert('Could not decline', error.message);
+      return;
+    }
+    setJoinRequests((prev) => prev.filter((r) => r.profile_id !== profileId));
+  }
+
+  async function handleCancelJoinRequest() {
+    if (busy || !groupId) return;
+    setBusy(true);
+    const { error } = await supabase.rpc('cancel_join_request', { p_group: groupId });
+    setBusy(false);
+    if (error) { Alert.alert('Could not cancel', error.message); return; }
+    await refreshDetail();
+  }
+
   // ── Render ───────────────────────────────────────────────────────────────
   if (loading) {
     return (
@@ -392,11 +456,26 @@ export default function GroupDetailScreen({ route, navigation }) {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} activeOpacity={0.7}>
           <Text style={styles.backArrow}>←</Text>
         </TouchableOpacity>
-        {isAdmin ? (
-          <TouchableOpacity onPress={() => setEditOpen(true)} style={styles.backBtn} activeOpacity={0.7}>
-            <Ionicons name="settings-outline" size={17} color={COLORS.text} />
-          </TouchableOpacity>
-        ) : null}
+        <View style={styles.navRight}>
+          {!detail?.is_public && (
+            <View style={styles.lockBadge}>
+              <Ionicons name="lock-closed" size={13} color={COLORS.textTertiary} />
+            </View>
+          )}
+          {isAdmin ? (
+            <TouchableOpacity onPress={() => setEditOpen(true)} style={styles.backBtn} activeOpacity={0.7}>
+              <Ionicons name="settings-outline" size={17} color={COLORS.text} />
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              onPress={() => setReportSheet({ visible: true, targetKind: 'group', targetId: groupId })}
+              style={styles.backBtn}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="flag-outline" size={16} color={COLORS.text} />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       <ScrollView
@@ -502,6 +581,54 @@ export default function GroupDetailScreen({ route, navigation }) {
             </TouchableOpacity>
           ) : null}
 
+          {/* Pending join requests — owner/admin only, private groups */}
+          {isAdmin && !detail?.is_public && joinRequests.length > 0 ? (
+            <View style={styles.section}>
+              <View style={styles.sectionHeadRow}>
+                <Text style={styles.sectionLabel}>
+                  JOIN REQUESTS · {joinRequests.length}
+                </Text>
+              </View>
+              <View style={styles.joinRequestsList}>
+                {joinRequests.map((req) => (
+                  <View key={req.profile_id} style={styles.joinRequestRow}>
+                    <Avatar
+                      uri={req.avatar_url || undefined}
+                      initials={initialsFor(req.full_name)}
+                      size={36}
+                      gradientColors={gradientFor(req.profile_id)}
+                    />
+                    <View style={styles.joinRequestInfo}>
+                      <Text style={styles.memberName} numberOfLines={1}>
+                        {req.full_name || 'Member'}
+                      </Text>
+                      {req.handle ? (
+                        <Text style={styles.memberHandle} numberOfLines={1}>@{req.handle}</Text>
+                      ) : null}
+                      <Text style={styles.requestedAtText}>
+                        {timeAgo(req.requested_at)}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[styles.requestBtn, styles.requestBtnApprove]}
+                      onPress={() => handleApproveRequest(req.profile_id)}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="checkmark" size={16} color={COLORS.white} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.requestBtn, styles.requestBtnDecline]}
+                      onPress={() => handleDeclineRequest(req.profile_id)}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="close" size={16} color={COLORS.textSecondary} />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            </View>
+          ) : null}
+
           {/* Activity feed */}
           <View style={styles.section}>
             <View style={styles.sectionHeadRow}>
@@ -591,6 +718,8 @@ export default function GroupDetailScreen({ route, navigation }) {
                     post={post}
                     onDelete={handleDeletePost}
                     onViewPhoto={(url) => setLightbox({ url })}
+                    canReport={post.author_id !== user?.id}
+                    onReport={() => setReportSheet({ visible: true, targetKind: 'group_post', targetId: post.id })}
                   />
                 ))}
               </View>
@@ -676,6 +805,7 @@ export default function GroupDetailScreen({ route, navigation }) {
               {members.map((m) => {
                 const canManage =
                   isAdmin && m.profile_id !== user?.id && m.role !== 'owner';
+                const canBlockOrReport = m.profile_id !== user?.id;
                 return (
                   <View key={m.profile_id} style={styles.memberRow}>
                     <Avatar
@@ -706,15 +836,16 @@ export default function GroupDetailScreen({ route, navigation }) {
                         </Text>
                       </View>
                     ) : null}
-                    {canManage ? (
-                      <TouchableOpacity
-                        onPress={() => setManageTarget(m)}
-                        hitSlop={8}
-                        style={styles.manageBtn}
-                        activeOpacity={0.7}
-                      >
-                        <Ionicons name="ellipsis-horizontal" size={16} color={COLORS.textSecondary} />
-                      </TouchableOpacity>
+                    {canManage || canBlockOrReport ? (
+                      <MemberActionsMenu
+                        member={m}
+                        canManage={canManage}
+                        canBlockOrReport={canBlockOrReport}
+                        onSetRole={handleSetRole}
+                        onRemove={handleRemoveMember}
+                        onBlock={handleBlockUser}
+                        onReport={() => setReportSheet({ visible: true, targetKind: 'profile', targetId: m.profile_id })}
+                      />
                     ) : null}
                   </View>
                 );
@@ -727,13 +858,23 @@ export default function GroupDetailScreen({ route, navigation }) {
       {/* Sticky action bar */}
       <View style={styles.ctaBar}>
         {!isMember ? (
-          <PrimaryButton
-            label={busy ? 'Joining…' : 'Join Group'}
-            onPress={handleJoin}
-            disabled={busy}
-            loading={busy}
-            style={{ flex: 1 }}
-          />
+          detail?.has_pending_request ? (
+            <PrimaryButton
+              label={busy ? 'Canceling…' : 'Request Pending'}
+              onPress={handleCancelJoinRequest}
+              disabled={busy}
+              loading={busy}
+              style={{ flex: 1 }}
+            />
+          ) : (
+            <PrimaryButton
+              label={busy ? 'Joining…' : (!detail?.is_public ? 'Request to Join' : 'Join Group')}
+              onPress={handleJoin}
+              disabled={busy}
+              loading={busy}
+              style={{ flex: 1 }}
+            />
+          )
         ) : (
           <>
             {!isOwner ? (
@@ -743,7 +884,8 @@ export default function GroupDetailScreen({ route, navigation }) {
                 disabled={busy}
                 activeOpacity={0.8}
               >
-                <Ionicons name="exit-outline" size={20} color={COLORS.textSecondary} />
+                <Ionicons name="exit-outline" size={18} color={COLORS.textSecondary} />
+                <Text style={styles.leaveBtnText}>Leave</Text>
               </TouchableOpacity>
             ) : null}
             <TouchableOpacity
@@ -757,7 +899,7 @@ export default function GroupDetailScreen({ route, navigation }) {
               ) : (
                 <>
                   <Ionicons name="chatbubble-outline" size={17} color={COLORS.white} />
-                  <Text style={styles.chatBtnText}>Open Group Chat</Text>
+                  <Text style={styles.chatBtnText}>Message Group</Text>
                 </>
               )}
             </TouchableOpacity>
@@ -793,6 +935,18 @@ export default function GroupDetailScreen({ route, navigation }) {
         onClose={() => setEditOpen(false)}
         onSaved={async () => { setEditOpen(false); await refreshDetail(); }}
         onDelete={handleDeleteGroup}
+      />
+
+      {/* Report sheet */}
+      <ReportSheet
+        visible={reportSheet.visible}
+        targetKind={reportSheet.targetKind}
+        targetId={reportSheet.targetId}
+        onClose={() => setReportSheet({ visible: false, targetKind: null, targetId: null })}
+        onReported={() => {
+          setReportSheet({ visible: false, targetKind: null, targetId: null });
+          Alert.alert('Report submitted', 'Thank you for helping keep FOUND safe.');
+        }}
       />
     </SafeAreaView>
   );
@@ -885,7 +1039,7 @@ function PhotoLightbox({ photo, onClose }) {
 }
 
 // ─── Post card ────────────────────────────────────────────────────────────
-function PostCard({ post, onDelete, onViewPhoto }) {
+function PostCard({ post, onDelete, onViewPhoto, canReport, onReport }) {
   const isStaff = post.author_role === 'owner' || post.author_role === 'admin';
   return (
     <View style={styles.postCard}>
@@ -918,15 +1072,8 @@ function PostCard({ post, onDelete, onViewPhoto }) {
           </View>
           <Text style={styles.postTime}>{timeAgo(post.created_at)}</Text>
         </View>
-        {post.can_delete ? (
-          <TouchableOpacity
-            onPress={() => onDelete(post)}
-            hitSlop={8}
-            style={styles.postDeleteBtn}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="trash-outline" size={15} color={COLORS.textTertiary} />
-          </TouchableOpacity>
+        {post.can_delete || canReport ? (
+          <PostActionsMenu post={post} onDelete={onDelete} canReport={canReport} onReport={onReport} />
         ) : null}
       </View>
 
@@ -1000,6 +1147,7 @@ function EditGroupModal({ visible, detail, isOwner, onClose, onSaved, onDelete }
   const [city, setCity]         = useState('');
   const [state, setState]       = useState('');
   const [schedule, setSchedule] = useState('');
+  const [isPublic, setIsPublic] = useState(true);
   const [busy, setBusy]         = useState(false);
 
   // Seed fields whenever the sheet opens.
@@ -1010,6 +1158,7 @@ function EditGroupModal({ visible, detail, isOwner, onClose, onSaved, onDelete }
       setCity(detail.city ?? '');
       setState(detail.state ?? '');
       setSchedule(detail.schedule_text ?? '');
+      setIsPublic(detail.is_public ?? true);
     }
   }, [visible, detail]);
 
@@ -1041,8 +1190,26 @@ function EditGroupModal({ visible, detail, isOwner, onClose, onSaved, onDelete }
       p_lat:           lat,
       p_lng:           lng,
     });
+    if (error) {
+      setBusy(false);
+      Alert.alert('Could not save', error.message);
+      return;
+    }
+
+    // Separately set privacy if owner
+    if (isOwner && detail.is_public !== isPublic) {
+      const privError = await supabase.rpc('set_group_privacy', {
+        p_group: detail.id,
+        p_is_public: isPublic,
+      });
+      if (privError?.error) {
+        setBusy(false);
+        Alert.alert('Could not update privacy', privError.error.message);
+        return;
+      }
+    }
+
     setBusy(false);
-    if (error) { Alert.alert('Could not save', error.message); return; }
     onSaved?.();
   }
 
@@ -1067,6 +1234,61 @@ function EditGroupModal({ visible, detail, isOwner, onClose, onSaved, onDelete }
             <Field label="City"        value={city}     onChange={setCity}     placeholder="Santa Rosa Beach" />
             <Field label="State"       value={state}    onChange={setState}    placeholder="FL" />
             <Field label="Schedule"    value={schedule} onChange={setSchedule} placeholder="Tuesdays 7pm" />
+
+            {isOwner ? (
+              <View style={modalStyles.field}>
+                <Text style={modalStyles.fieldLabel}>GROUP PRIVACY</Text>
+                <View style={modalStyles.privacyRow}>
+                  <TouchableOpacity
+                    style={[
+                      modalStyles.privacyOption,
+                      isPublic && modalStyles.privacyOptionSelected,
+                    ]}
+                    onPress={() => setIsPublic(true)}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons
+                      name="globe-outline"
+                      size={18}
+                      color={isPublic ? COLORS.accent : COLORS.textSecondary}
+                    />
+                    <Text
+                      style={[
+                        modalStyles.privacyOptionText,
+                        isPublic && modalStyles.privacyOptionTextSelected,
+                      ]}
+                    >
+                      Public
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      modalStyles.privacyOption,
+                      !isPublic && modalStyles.privacyOptionSelected,
+                    ]}
+                    onPress={() => setIsPublic(false)}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons
+                      name="lock-closed-outline"
+                      size={18}
+                      color={!isPublic ? COLORS.accent : COLORS.textSecondary}
+                    />
+                    <Text
+                      style={[
+                        modalStyles.privacyOptionText,
+                        !isPublic && modalStyles.privacyOptionTextSelected,
+                      ]}
+                    >
+                      Private
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                <Text style={modalStyles.privacyHelper}>
+                  Private groups require you to approve join requests.
+                </Text>
+              </View>
+            ) : null}
 
             {isOwner ? (
               <TouchableOpacity
@@ -1108,6 +1330,166 @@ function Field({ label, value, onChange, placeholder, multiline }) {
   );
 }
 
+// ─── Member actions menu ──────────────────────────────────────────────────
+function MemberActionsMenu({ member, canManage, canBlockOrReport, onSetRole, onRemove, onBlock, onReport }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const isAdminRole = member.role === 'admin';
+
+  if (!canManage && !canBlockOrReport) return null;
+
+  return (
+    <>
+      <TouchableOpacity
+        onPress={() => setMenuOpen(true)}
+        hitSlop={8}
+        style={styles.manageBtn}
+        activeOpacity={0.7}
+      >
+        <Ionicons name="ellipsis-horizontal" size={16} color={COLORS.textSecondary} />
+      </TouchableOpacity>
+
+      <Modal visible={menuOpen} animationType="slide" transparent onRequestClose={() => setMenuOpen(false)}>
+        <View style={modalStyles.backdrop}>
+          <TouchableOpacity activeOpacity={1} style={StyleSheet.absoluteFill} onPress={() => setMenuOpen(false)} />
+          <View style={modalStyles.sheet}>
+            <View style={modalStyles.handle} />
+            <Text style={modalStyles.title}>{member.full_name || 'Member'}</Text>
+
+            {canManage ? (
+              <TouchableOpacity
+                style={modalStyles.actionRow}
+                activeOpacity={0.7}
+                onPress={() => {
+                  setMenuOpen(false);
+                  onSetRole(member.profile_id, isAdminRole ? 'member' : 'admin');
+                }}
+              >
+                <Ionicons
+                  name={isAdminRole ? 'arrow-down-circle-outline' : 'arrow-up-circle-outline'}
+                  size={20}
+                  color={COLORS.text}
+                />
+                <Text style={modalStyles.actionText}>
+                  {isAdminRole ? 'Demote to member' : 'Make admin'}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+
+            {canManage ? (
+              <TouchableOpacity
+                style={modalStyles.actionRow}
+                activeOpacity={0.7}
+                onPress={() => {
+                  setMenuOpen(false);
+                  onRemove(member);
+                }}
+              >
+                <Ionicons name="person-remove-outline" size={20} color="#D24A4A" />
+                <Text style={[modalStyles.actionText, { color: '#D24A4A' }]}>
+                  Remove from group
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+
+            {canBlockOrReport ? (
+              <TouchableOpacity
+                style={modalStyles.actionRow}
+                activeOpacity={0.7}
+                onPress={() => {
+                  setMenuOpen(false);
+                  onBlock(member.profile_id, member.full_name);
+                }}
+              >
+                <Ionicons name="ban-outline" size={20} color="#D24A4A" />
+                <Text style={[modalStyles.actionText, { color: '#D24A4A' }]}>
+                  Block
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+
+            {canBlockOrReport ? (
+              <TouchableOpacity
+                style={modalStyles.actionRow}
+                activeOpacity={0.7}
+                onPress={() => {
+                  setMenuOpen(false);
+                  onReport();
+                }}
+              >
+                <Ionicons name="flag-outline" size={20} color={COLORS.text} />
+                <Text style={modalStyles.actionText}>Report</Text>
+              </TouchableOpacity>
+            ) : null}
+
+            <TouchableOpacity style={modalStyles.cancelRow} activeOpacity={0.7} onPress={() => setMenuOpen(false)}>
+              <Text style={modalStyles.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </>
+  );
+}
+
+// ─── Post actions menu ─────────────────────────────────────────────────────
+function PostActionsMenu({ post, onDelete, canReport, onReport }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  return (
+    <>
+      <TouchableOpacity
+        onPress={() => setMenuOpen(true)}
+        hitSlop={8}
+        style={styles.postDeleteBtn}
+        activeOpacity={0.7}
+      >
+        <Ionicons name="ellipsis-horizontal" size={16} color={COLORS.textSecondary} />
+      </TouchableOpacity>
+
+      <Modal visible={menuOpen} animationType="slide" transparent onRequestClose={() => setMenuOpen(false)}>
+        <View style={modalStyles.backdrop}>
+          <TouchableOpacity activeOpacity={1} style={StyleSheet.absoluteFill} onPress={() => setMenuOpen(false)} />
+          <View style={modalStyles.sheet}>
+            <View style={modalStyles.handle} />
+
+            {post.can_delete ? (
+              <TouchableOpacity
+                style={modalStyles.actionRow}
+                activeOpacity={0.7}
+                onPress={() => {
+                  setMenuOpen(false);
+                  onDelete(post);
+                }}
+              >
+                <Ionicons name="trash-outline" size={20} color="#D24A4A" />
+                <Text style={[modalStyles.actionText, { color: '#D24A4A' }]}>Delete post</Text>
+              </TouchableOpacity>
+            ) : null}
+
+            {canReport ? (
+              <TouchableOpacity
+                style={modalStyles.actionRow}
+                activeOpacity={0.7}
+                onPress={() => {
+                  setMenuOpen(false);
+                  onReport();
+                }}
+              >
+                <Ionicons name="flag-outline" size={20} color={COLORS.text} />
+                <Text style={modalStyles.actionText}>Report</Text>
+              </TouchableOpacity>
+            ) : null}
+
+            <TouchableOpacity style={modalStyles.cancelRow} activeOpacity={0.7} onPress={() => setMenuOpen(false)}>
+              <Text style={modalStyles.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </>
+  );
+}
+
 // ─── Styles ───────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
@@ -1120,6 +1502,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.lg,
     paddingTop: SPACING.sm,
     paddingBottom: SPACING.sm,
+  },
+  navRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
+  lockBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   backBtn: {
     width: 40,
@@ -1272,6 +1669,46 @@ const styles = StyleSheet.create({
     fontFamily: FONT.bold,
     fontSize: 14,
     color: COLORS.white,
+  },
+
+  // Join requests
+  joinRequestsList: {
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    overflow: 'hidden',
+  },
+  joinRequestRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.borderLight,
+  },
+  joinRequestInfo: { flex: 1 },
+  requestedAtText: {
+    fontFamily: FONT.regular,
+    fontSize: 11,
+    color: COLORS.textTertiary,
+    marginTop: 2,
+  },
+  requestBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: RADIUS.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  requestBtnApprove: {
+    backgroundColor: COLORS.sage,
+  },
+  requestBtnDecline: {
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
 
   // Posts feed
@@ -1517,14 +1954,21 @@ const styles = StyleSheet.create({
     ...SHADOW.lg,
   },
   leaveBtn: {
-    width: 50,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     height: 50,
+    paddingHorizontal: 16,
     borderRadius: RADIUS.lg,
     backgroundColor: COLORS.bg,
     borderWidth: 1,
     borderColor: COLORS.border,
-    alignItems: 'center',
     justifyContent: 'center',
+  },
+  leaveBtnText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 14,
+    color: COLORS.textSecondary,
   },
   chatBtn: {
     flex: 1,
@@ -1645,6 +2089,42 @@ const modalStyles = StyleSheet.create({
     color: COLORS.text,
   },
   textarea: { minHeight: 80, textAlignVertical: 'top' },
+
+  privacyRow: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+  },
+  privacyOption: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.lg,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  privacyOptionSelected: {
+    backgroundColor: COLORS.accent,
+    borderColor: COLORS.accent,
+  },
+  privacyOptionText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 14,
+    color: COLORS.textSecondary,
+  },
+  privacyOptionTextSelected: {
+    color: COLORS.white,
+  },
+  privacyHelper: {
+    fontFamily: FONT.regular,
+    fontSize: 12,
+    color: COLORS.textTertiary,
+    marginTop: SPACING.sm,
+  },
 
   deleteRow: {
     flexDirection: 'row',
