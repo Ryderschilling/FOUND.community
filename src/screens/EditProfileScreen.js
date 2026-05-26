@@ -73,6 +73,7 @@ export default function EditProfileScreen({ navigation }) {
   // Form state — initialized from current profile once loaded.
   const [fullName, setFullName]       = useState('');
   const [bio, setBio]                 = useState('');
+  const [hometown, setHometown]       = useState('');
   const [locationText, setLocationText] = useState('');
   const [lifeStage, setLifeStage]     = useState(null);
   const [activities, setActivities]   = useState([]);    // array of activity ids
@@ -99,7 +100,7 @@ export default function EditProfileScreen({ navigation }) {
         supabase.from('churches').select('id,name,city,state').order('name').limit(200),
         user
           ? supabase.from('profiles')
-              .select('full_name,bio,city,state,life_stage_id,church_id,profile_activities(activity_id),profile_goals(goal_id)')
+              .select('full_name,bio,hometown,city,state,life_stage_id,church_id,profile_activities(activity_id),profile_goals(goal_id)')
               .eq('id', user.id)
               .maybeSingle()
           : Promise.resolve({ data: null, error: null }),
@@ -113,6 +114,7 @@ export default function EditProfileScreen({ navigation }) {
       if (p) {
         setFullName(p.full_name ?? '');
         setBio(p.bio ?? '');
+        setHometown(p.hometown ?? '');
         setLocationText([p.city, p.state].filter(Boolean).join(', '));
         setLifeStage(p.life_stage_id ?? null);
         setChurch(p.church_id ?? null);
@@ -137,6 +139,7 @@ export default function EditProfileScreen({ navigation }) {
     const violation = firstViolation([
       { text: fullName, label: 'name' },
       { text: bio,      label: 'bio' },
+      { text: hometown, label: 'hometown' },
     ]);
     if (!violation.ok) {
       Alert.alert('Check your wording', violation.message);
@@ -150,6 +153,7 @@ export default function EditProfileScreen({ navigation }) {
     const { error } = await supabase.rpc('update_profile', {
       p_full_name:  fullName.trim() || null,
       p_bio:        bio.trim() || null,
+      p_hometown:   hometown.trim() || null,
       p_city:       city || null,
       p_state:      state || null,
       p_life_stage: lifeStage,
@@ -185,7 +189,7 @@ export default function EditProfileScreen({ navigation }) {
     await refreshProfile();
     setSaving(false);
     navigation?.goBack();
-  }, [saving, fullName, bio, locationText, lifeStage, church, activities, goals, refreshProfile, navigation]);
+  }, [saving, fullName, bio, hometown, locationText, lifeStage, church, activities, goals, refreshProfile, navigation]);
 
   if (taxLoading) {
     return (
@@ -238,6 +242,20 @@ export default function EditProfileScreen({ navigation }) {
             maxLength={500}
           />
           <Text style={styles.counter}>{bio.length}/500</Text>
+        </View>
+
+        {/* Where you're from */}
+        <View style={styles.section}>
+          <SectionHeader label="Where you're from" />
+          <TextInput
+            style={styles.input}
+            value={hometown}
+            onChangeText={setHometown}
+            placeholder="e.g. Nashville, TN"
+            placeholderTextColor={COLORS.textTertiary}
+            autoCapitalize="words"
+            maxLength={80}
+          />
         </View>
 
         {/* Location */}

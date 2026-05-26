@@ -65,6 +65,7 @@ export default function MatchDetailScreen({ route, navigation }) {
     name:            initialMatch.name,
     handle:          initialMatch.handle   ?? null,
     bio:             initialMatch.bio      ?? null,
+    hometown:        initialMatch.hometown ?? null,
     initials:        initialMatch.initials,
     avatarUrl:       initialMatch.avatarUrl ?? null,
     avatarColor:     initialMatch.avatarColor,
@@ -104,6 +105,7 @@ export default function MatchDetailScreen({ route, navigation }) {
       setProfile((prev) => ({
         ...prev,
         bio:             d.bio              ?? prev.bio,
+        hometown:        d.hometown         ?? prev.hometown,
         lifeStage:       d.life_stage_label ?? prev.lifeStage,
         distance:        d.city && d.state ? `${d.city}, ${d.state}` : prev.distance,
         church:          d.church_name     ?? prev.church,
@@ -404,6 +406,14 @@ export default function MatchDetailScreen({ route, navigation }) {
             <View style={styles.section}>
               <SectionHeader label="About" />
               <Text style={styles.bioText}>{profile.bio}</Text>
+            </View>
+          ) : null}
+
+          {/* Where from */}
+          {profile.hometown ? (
+            <View style={styles.section}>
+              <SectionHeader label="From" />
+              <Text style={styles.bioText}>{profile.hometown}</Text>
             </View>
           ) : null}
 

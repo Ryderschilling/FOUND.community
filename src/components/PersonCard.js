@@ -141,7 +141,13 @@ export default function PersonCard({ match, onConnect, onSave, onCancel, onPress
 
       {/* Interest tags */}
       <View style={styles.tagsRow}>
-        {match.interests.slice(0, 4).map((interest) => (
+        {match.sameHometown ? (
+          <View style={[styles.tag, styles.tagHometown]}>
+            <Ionicons name="home" size={11} color={COLORS.text} />
+            <Text style={[styles.tagText, styles.tagHometownText]}>Same hometown</Text>
+          </View>
+        ) : null}
+        {match.interests.slice(0, match.sameHometown ? 3 : 4).map((interest) => (
           <View key={interest.id} style={styles.tag}>
             <Ionicons name={interest.icon} size={11} color={interest.iconColor ?? COLORS.textSecondary} />
             <Text style={styles.tagText}>{interest.label}</Text>
@@ -233,6 +239,10 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
   },
   tagText: { fontFamily: FONT.semiBold, fontSize: 12, color: COLORS.textSecondary },
+  // Highlight chip when both profiles share a hometown — same shape as a
+  // standard tag, but dark to draw the eye and signal "this is the reason".
+  tagHometown:     { backgroundColor: COLORS.text, borderColor: COLORS.text },
+  tagHometownText: { color: COLORS.white },
 
   actions: { flexDirection: 'row', gap: 8 },
 

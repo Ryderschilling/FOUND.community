@@ -106,10 +106,11 @@ function rowToMatch(row) {
       icon:      a.icon,
       iconColor: a.icon_color,
     })),
-    connected:   row.my_kind    === 'like',
-    saved:       false, // overwritten from saved_profiles after the feed loads
-    theirKind:   row.their_kind || null,
-    isMatch:     !!row.is_match,
+    connected:    row.my_kind    === 'like',
+    saved:        false, // overwritten from saved_profiles after the feed loads
+    theirKind:    row.their_kind || null,
+    isMatch:      !!row.is_match,
+    sameHometown: !!row.same_hometown,
   };
 }
 
@@ -612,7 +613,7 @@ export default function HomeScreen({ navigation }) {
         <View style={styles.bioModalOverlay}>
           <View style={styles.bioModalCard}>
             <View style={styles.bioModalIcon}>
-              <Ionicons name="person-circle-outline" size={32} color={COLORS.sage} />
+              <Ionicons name="person-circle-outline" size={32} color={COLORS.text} />
             </View>
             <Text style={styles.bioModalTitle}>Account not complete</Text>
             <Text style={styles.bioModalBody}>
@@ -813,10 +814,12 @@ const styles = StyleSheet.create({
   bioModalCard: {
     width: '100%',
     maxWidth: 360,
-    backgroundColor: COLORS.bg,
+    backgroundColor: '#FFFFFF',
     borderRadius: 20,
     padding: SPACING.lg,
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.text,
   },
   bioModalIcon: {
     marginBottom: SPACING.sm,
@@ -838,7 +841,7 @@ const styles = StyleSheet.create({
   },
   bioModalPrimary: {
     width: '100%',
-    backgroundColor: COLORS.sage,
+    backgroundColor: COLORS.text,
     borderRadius: 999,
     paddingVertical: 13,
     alignItems: 'center',
@@ -857,6 +860,6 @@ const styles = StyleSheet.create({
   bioModalSecondaryText: {
     fontFamily: FONT.semiBold,
     fontSize: 14,
-    color: COLORS.textSecondary,
+    color: COLORS.text,
   },
 });

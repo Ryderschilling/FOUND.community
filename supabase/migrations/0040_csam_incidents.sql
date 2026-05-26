@@ -7,6 +7,7 @@
 --   * creates a private quarantine storage bucket
 --   * creates the csam_incidents table (admin-only RLS)
 --
+-- Idempotent — safe to re-run.
 -- Runs after migration 0039.
 -- ─────────────────────────────────────────────────────────────────────────
 
@@ -27,7 +28,7 @@ insert into storage.buckets (id, name, public)
   on conflict (id) do nothing;
 
 -- Deny-all RLS on quarantine bucket — only service role can touch it.
-drop policy if exists "quarantine deny all"   on storage.objects;
+drop policy if exists "quarantine deny all" on storage.objects;
 create policy "quarantine deny all"
   on storage.objects
   as restrictive
@@ -55,20 +56,35 @@ alter table public.csam_incidents enable row level security;
 drop policy if exists "csam_incidents admin read"  on public.csam_incidents;
 drop policy if exists "csam_incidents admin write" on public.csam_incidents;
 
--- Only platform admins can read or write this table from a client.
--- The Edge Function uses the service role and bypasses RLS entirely.
+-- Boolean admin predicate inline — RLS USING/WITH CHECK requires boolean,
+-- whereas public._require_admin() returns void (raises on failure).
 create policy "csam_incidents admin read"
   on public.csam_incidents
   for select
   to authenticated
-  using ( public._require_admin() );
+  using (
+    exists (
+      select 1 from public.profiles p
+      where p.id = auth.uid() and p.is_admin = true
+    )
+  );
 
 create policy "csam_incidents admin write"
   on public.csam_incidents
   for all
   to authenticated
-  using ( public._require_admin() )
-  with check ( public._require_admin() );
+  using (
+    exists (
+      select 1 from public.profiles p
+      where p.id = auth.uid() and p.is_admin = true
+    )
+  )
+  with check (
+    exists (
+      select 1 from public.profiles p
+      where p.id = auth.uid() and p.is_admin = true
+    )
+  );
 
 create index if not exists csam_incidents_profile_idx
   on public.csam_incidents (profile_id);

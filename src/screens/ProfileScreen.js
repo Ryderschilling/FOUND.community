@@ -517,7 +517,7 @@ export default function ProfileScreen({ navigation }) {
       const profileQ = supabase
         .from('profiles')
         .select(`
-          id, full_name, handle, bio, city, state, is_initiator, is_outgoing, avatar_url,
+          id, full_name, handle, bio, hometown, city, state, is_initiator, is_outgoing, avatar_url,
           life_stage:life_stages(id,label,icon,icon_color),
           church:churches(id,name,city,state),
           profile_activities(activity:activities(id,label,icon,icon_color))
@@ -797,6 +797,16 @@ export default function ProfileScreen({ navigation }) {
               <SectionHeader label="About" />
               <View style={styles.bioCard}>
                 <Text style={styles.bioText}>{profile.bio}</Text>
+              </View>
+            </View>
+          ) : null}
+
+          {/* Where from */}
+          {profile.hometown ? (
+            <View style={styles.section}>
+              <SectionHeader label="From" />
+              <View style={styles.bioCard}>
+                <Text style={styles.bioText}>{profile.hometown}</Text>
               </View>
             </View>
           ) : null}

@@ -1,6 +1,6 @@
 import './src/lib/sentry';
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { View, ActivityIndicator, Platform, StyleSheet } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import {
@@ -18,7 +18,59 @@ import AppNavigator from './src/navigation';
 import { AuthProvider } from './src/auth/AuthContext';
 import { ConfirmProvider } from './src/components/ConfirmProvider';
 
+// On web, lock the viewport so pinch-zoom and double-tap-zoom can't kick in.
+// Without this, mobile Safari/Chrome will zoom into inputs on focus and let
+// the user pinch the whole app, which is exactly the "feels like a webpage"
+// behavior Sam flagged. We also block iOS rubber-band/overscroll and
+// double-tap-to-zoom gestures.
+function lockWebViewport() {
+  if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+
+  // 1) Viewport meta — overwrite Expo's default which allows scale.
+  let meta = document.querySelector('meta[name="viewport"]');
+  if (!meta) {
+    meta = document.createElement('meta');
+    meta.setAttribute('name', 'viewport');
+    document.head.appendChild(meta);
+  }
+  meta.setAttribute(
+    'content',
+    'width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover'
+  );
+
+  // 2) CSS — disable overscroll bounce + iOS Safari double-tap zoom +
+  //    text-size auto-adjust. touch-action: manipulation kills the 300ms
+  //    double-tap-to-zoom delay across the whole app.
+  const style = document.createElement('style');
+  style.setAttribute('data-found-web-lock', '');
+  style.textContent = `
+    html, body, #root {
+      overscroll-behavior: none;
+      -webkit-text-size-adjust: 100%;
+      touch-action: manipulation;
+    }
+    body { position: fixed; inset: 0; }
+    input, textarea, select { font-size: 16px; }
+  `;
+  document.head.appendChild(style);
+
+  // 3) Belt-and-suspenders: actively block multi-touch and gesture* events.
+  //    iOS Safari fires `gesturestart` for pinches even when user-scalable=no
+  //    is set if the page was added to the home screen with old metadata.
+  const blockGesture = (e) => e.preventDefault();
+  document.addEventListener('gesturestart',  blockGesture, { passive: false });
+  document.addEventListener('gesturechange', blockGesture, { passive: false });
+  document.addEventListener('gestureend',    blockGesture, { passive: false });
+  document.addEventListener(
+    'touchmove',
+    (e) => { if (e.touches.length > 1) e.preventDefault(); },
+    { passive: false }
+  );
+}
+
 export default function App() {
+  useEffect(() => { lockWebViewport(); }, []);
+
   const [fontsLoaded] = useFonts({
     // Sans
     Inter_400Regular,
