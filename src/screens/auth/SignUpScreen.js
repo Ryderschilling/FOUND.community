@@ -31,6 +31,7 @@ export default function SignUpScreen({ navigation }) {
   const [zip, setZip]           = useState('');
   const [city, setCity]         = useState('');
   const [state, setState]       = useState('');
+  const [hometown, setHometown] = useState('');
   const [password, setPassword] = useState('');
   const [agree, setAgree]       = useState(false);
 
@@ -57,31 +58,25 @@ export default function SignUpScreen({ navigation }) {
     return raw || 'Sign up failed. Try again.';
   }
 
-  // ZIP → City/State auto-fill via Zippopotam.us (free, no API key). Same
-  // source the website signup uses, so app + web behave identically.
+  // ZIP validation only — we no longer auto-fill city/state. Many users live
+  // in named subareas (e.g. "Inlet Beach", "Seacrest", "Rosemary") that don't
+  // match the ZIP's official city. ZIP drives the location/geocoding under
+  // the hood; the city name is the display label others see, so the user
+  // types whatever they actually call home.
   async function lookupZip() {
     const z = zip.trim();
     if (!/^\d{5}$/.test(z)) return;
 
     const token = ++zipTokenRef.current;
-    setZipHint('Looking up your city…');
-    setZipHintError(false);
-
     try {
       const res = await fetch(`https://api.zippopotam.us/us/${z}`);
-      if (token !== zipTokenRef.current) return; // superseded by a newer lookup
+      if (token !== zipTokenRef.current) return;
       if (!res.ok) throw new Error('not found');
-      const data  = await res.json();
-      const place = data.places && data.places[0];
-      if (!place) throw new Error('not found');
-      setCity(place['place name'] || '');
-      setState(place['state abbreviation'] || '');
       setZipHint('We use your ZIP to match you with community nearby.');
       setZipHintError(false);
     } catch {
       if (token !== zipTokenRef.current) return;
-      // Don't block — let them type city/state manually.
-      setZipHint("Couldn't auto-fill that ZIP — enter your city and state below.");
+      setZipHint("That ZIP didn't look right — double-check it.");
       setZipHintError(true);
     }
   }
@@ -105,6 +100,7 @@ export default function SignUpScreen({ navigation }) {
     const zipVal    = zip.trim();
     const cityVal   = city.trim();
     const stateVal  = state.trim().toUpperCase();
+    const homeVal   = hometown.trim();
 
     // Client-side validation — instant feedback, no API roundtrip.
     if (!name) {
@@ -167,6 +163,7 @@ export default function SignUpScreen({ navigation }) {
         zip:      zipVal,
         city:     cityVal,
         state:    stateVal,
+        hometown: homeVal,
         lat,
         lng,
       });
@@ -277,6 +274,17 @@ export default function SignUpScreen({ navigation }) {
               </View>
             </View>
 
+            <Text style={[s.label, { marginTop: SPACING.md }]}>Where you're from <Text style={s.optional}>(optional)</Text></Text>
+            <TextInput
+              value={hometown}
+              onChangeText={setHometown}
+              autoCapitalize="words"
+              placeholder="Hometown — e.g. Nashville, TN"
+              placeholderTextColor={COLORS.textTertiary}
+              style={s.input}
+            />
+            <Text style={s.hint}>We use this to connect you with people from the same place.</Text>
+
             <Text style={[s.label, { marginTop: SPACING.md }]}>Password</Text>
             <TextInput
               value={password}
@@ -360,6 +368,7 @@ const s = StyleSheet.create({
     fontFamily: FONT.regular, fontSize: 15, color: COLORS.text,
   },
   hint:      { ...TYPE.caption, color: COLORS.textTertiary, marginTop: 6 },
+  optional:  { ...TYPE.label, color: COLORS.textTertiary, fontStyle: 'italic' },
   hintError: { color: '#8A2D2D' },
 
   // City / State two-column row

@@ -24,6 +24,8 @@ import {
   Platform,
   Image,
   KeyboardAvoidingView,
+  Share,
+  FlatList,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS } from '../theme';
@@ -67,6 +69,9 @@ export default function GroupsScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [busyId, setBusyId]         = useState(null);
   const [createOpen, setCreateOpen] = useState(false);
+  // After a successful create_group, we stash the new group here so the
+  // post-create congrats modal can present invite/share actions.
+  const [postCreateGroup, setPostCreateGroup] = useState(null); // { id, name } | null
   const [searchText, setSearchText]  = useState('');
   const [filterType, setFilterType]  = useState('all'); // 'all' | 'joined' | 'public' | 'private'
 
@@ -249,18 +254,22 @@ export default function GroupsScreen({ navigation }) {
           )}
           ListHeaderComponent={
             <View style={styles.header}>
-              <Text style={styles.headerMeta}>Local Community</Text>
-              <Text style={styles.title}>Groups</Text>
-              <Text style={styles.sub}>Find your people — in real life</Text>
-
-              <TouchableOpacity
-                style={styles.createBtn}
-                activeOpacity={0.8}
-                onPress={() => setCreateOpen(true)}
-              >
-                <Ionicons name="add" size={15} color={COLORS.text} />
-                <Text style={styles.createBtnText}>Create a Group</Text>
-              </TouchableOpacity>
+              {/* Title + compact create action */}
+              <View style={styles.titleRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.headerMeta}>Local Community</Text>
+                  <Text style={styles.title}>Groups</Text>
+                  <Text style={styles.sub}>Find your people — in real life</Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.createIconBtn}
+                  activeOpacity={0.85}
+                  onPress={() => setCreateOpen(true)}
+                  accessibilityLabel="Create a group"
+                >
+                  <Ionicons name="add" size={22} color={COLORS.white} />
+                </TouchableOpacity>
+              </View>
 
               {/* Search bar */}
               <View style={styles.searchWrap}>
@@ -279,8 +288,12 @@ export default function GroupsScreen({ navigation }) {
                 />
               </View>
 
-              {/* Filter chips */}
-              <View style={styles.filterRow}>
+              {/* Filter chips — single horizontal scroll row */}
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.filterRow}
+              >
                 <Chip
                   label="All"
                   active={filterType === 'all'}
@@ -301,7 +314,7 @@ export default function GroupsScreen({ navigation }) {
                   active={filterType === 'private'}
                   onPress={() => setFilterType('private')}
                 />
-              </View>
+              </ScrollView>
             </View>
           }
           ListEmptyComponent={
@@ -327,7 +340,16 @@ export default function GroupsScreen({ navigation }) {
       <CreateGroupModal
         visible={createOpen}
         onClose={() => setCreateOpen(false)}
-        onCreated={() => { setCreateOpen(false); load({ isRefresh: true }); }}
+        onCreated={(created) => {
+          setCreateOpen(false);
+          load({ isRefresh: true });
+          if (created?.id) setPostCreateGroup(created);
+        }}
+      />
+
+      <PostCreateGroupModal
+        group={postCreateGroup}
+        onClose={() => setPostCreateGroup(null)}
       />
     </SafeAreaView>
   );
@@ -432,7 +454,7 @@ function CreateGroupModal({ visible, onClose, onCreated }) {
 
     setBusy(false);
     reset();
-    onCreated?.();
+    onCreated?.({ id: newId, name });
   }
 
   return (
@@ -570,61 +592,56 @@ const styles = StyleSheet.create({
 
   header: {
     paddingHorizontal: SPACING.lg,
-    paddingTop: SPACING.sm,
+    paddingTop: SPACING.md,
     paddingBottom: SPACING.md,
     gap: SPACING.md,
   },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: SPACING.sm,
+  },
   headerMeta: {
     fontFamily: FONT.mono,
-    fontSize: 9,
-    letterSpacing: 1.6,
+    fontSize: 10,
+    letterSpacing: 1.8,
     textTransform: 'uppercase',
     color: COLORS.textTertiary,
-    marginBottom: 4,
+    marginBottom: 6,
   },
   title: {
     fontFamily: FONT.serifItalic,
-    fontSize: 30,
+    fontSize: 36,
     color: COLORS.text,
-    letterSpacing: -0.3,
-    lineHeight: 36,
+    letterSpacing: -0.5,
+    lineHeight: 40,
   },
   sub: {
     fontFamily: FONT.regular,
     fontSize: 14,
     color: COLORS.textSecondary,
-    marginTop: 4,
-    marginBottom: 0,
+    marginTop: 6,
   },
-  createBtn: {
-    flexDirection: 'row',
+  createIconBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: COLORS.text,
     alignItems: 'center',
-    gap: 6,
-    alignSelf: 'flex-start',
-    backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.full,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-  },
-  createBtnText: {
-    fontFamily: FONT.semiBold,
-    fontSize: 13,
-    color: COLORS.text,
+    justifyContent: 'center',
   },
 
-  // Search bar
+  // Search bar — bigger, more presence
   searchWrap: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.full,
     borderWidth: 1,
     borderColor: COLORS.border,
     paddingHorizontal: SPACING.md,
-    height: 40,
-    gap: 8,
+    height: 46,
+    gap: 10,
   },
   searchIcon: {
     marginTop: 2,
@@ -632,17 +649,17 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     fontFamily: FONT.regular,
-    fontSize: 14,
+    fontSize: 15,
     color: COLORS.text,
     padding: 0,
     ...(Platform.OS === 'web' ? { outlineStyle: 'none' } : null),
   },
 
-  // Filter chips
+  // Filter chips — horizontal scroll, tight gap
   filterRow: {
     flexDirection: 'row',
     gap: SPACING.sm,
-    flexWrap: 'wrap',
+    paddingRight: SPACING.lg, // breathing room at scroll end
   },
 
   sectionHeaderWrap: {
@@ -733,9 +750,10 @@ const modalStyles = StyleSheet.create({
   },
   textarea: { minHeight: 80, textAlignVertical: 'top' },
 
-  // Cover photo picker
+  // Cover photo picker — square, matches the GroupDetail hero
   coverEmpty: {
-    height: 132,
+    width: '100%',
+    aspectRatio: 1,
     borderRadius: RADIUS.lg,
     borderWidth: 1,
     borderColor: COLORS.border,
@@ -751,7 +769,8 @@ const modalStyles = StyleSheet.create({
     color: COLORS.textTertiary,
   },
   coverWrap: {
-    height: 132,
+    width: '100%',
+    aspectRatio: 1,
     borderRadius: RADIUS.lg,
     overflow: 'hidden',
     backgroundColor: COLORS.surfaceAlt,
@@ -815,5 +834,426 @@ const modalStyles = StyleSheet.create({
     fontSize: 12,
     color: COLORS.textTertiary,
     marginTop: 8,
+  },
+});
+
+// ─── Post-create Congrats modal ───────────────────────────────────────────
+// Shows immediately after a successful create_group. Offers two paths:
+//   (1) Invite Connections  — picks from my_connections, fires in-app invites
+//   (2) Share Beyond FOUND  — native share sheet with a deep link
+// "Maybe Later" closes without doing anything.
+function PostCreateGroupModal({ group, onClose }) {
+  const [inviteOpen, setInviteOpen] = useState(false);
+
+  if (!group) return null;
+
+  // Shares the FOUND website. Group-specific landing page is a follow-up.
+  const shareUrl = 'https://found.community';
+
+  async function handleShare() {
+    try {
+      await Share.share({
+        title: `Join "${group.name}" on FOUND`,
+        message: `I just started a group on FOUND — check it out: ${shareUrl}`,
+        url: shareUrl, // iOS uses url, Android uses message
+      });
+    } catch (e) {
+      // User cancelling the share sheet throws — silent.
+    }
+  }
+
+  return (
+    <>
+      <Modal visible={!!group} transparent animationType="fade" onRequestClose={onClose}>
+        <View style={postCreateStyles.backdrop}>
+          <View style={postCreateStyles.sheet}>
+            <View style={postCreateStyles.celebrateIconWrap}>
+              <Ionicons name="checkmark-circle" size={44} color={COLORS.text} />
+            </View>
+
+            <Text style={postCreateStyles.title}>You created a group.</Text>
+            <Text style={postCreateStyles.subtitle}>
+              "{group.name}" is live. Bring people in.
+            </Text>
+
+            <TouchableOpacity
+              style={postCreateStyles.primaryBtn}
+              activeOpacity={0.85}
+              onPress={() => setInviteOpen(true)}
+            >
+              <Ionicons name="people-outline" size={18} color={COLORS.white} />
+              <Text style={postCreateStyles.primaryText}>Invite Connections</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={postCreateStyles.secondaryBtn}
+              activeOpacity={0.85}
+              onPress={handleShare}
+            >
+              <Ionicons name="share-outline" size={18} color={COLORS.text} />
+              <Text style={postCreateStyles.secondaryText}>Share Beyond FOUND</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={postCreateStyles.linkBtn}
+              activeOpacity={0.7}
+              onPress={onClose}
+            >
+              <Text style={postCreateStyles.linkText}>Maybe later</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <InviteConnectionsModal
+        visible={inviteOpen}
+        group={group}
+        onClose={() => setInviteOpen(false)}
+        onSent={() => {
+          setInviteOpen(false);
+          onClose(); // close the post-create flow once invites fire
+        }}
+      />
+    </>
+  );
+}
+
+const postCreateStyles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: SPACING.lg,
+  },
+  sheet: {
+    width: '100%',
+    maxWidth: 420,
+    backgroundColor: COLORS.bg,
+    borderRadius: RADIUS.xl,
+    padding: SPACING.lg,
+    alignItems: 'stretch',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  celebrateIconWrap: {
+    alignSelf: 'center',
+    marginBottom: SPACING.sm,
+  },
+  title: {
+    fontFamily: FONT.serif || FONT.semiBold,
+    fontSize: 24,
+    color: COLORS.text,
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+  subtitle: {
+    fontFamily: FONT.regular,
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    marginBottom: SPACING.lg,
+  },
+  primaryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: COLORS.text,
+    borderRadius: RADIUS.lg,
+    paddingVertical: 14,
+    marginBottom: 10,
+  },
+  primaryText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 15,
+    color: COLORS.white,
+  },
+  secondaryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.lg,
+    paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  secondaryText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 15,
+    color: COLORS.text,
+  },
+  linkBtn: {
+    alignItems: 'center',
+    paddingVertical: 12,
+    marginTop: 4,
+  },
+  linkText: {
+    fontFamily: FONT.medium,
+    fontSize: 13,
+    color: COLORS.textTertiary,
+  },
+});
+
+// ─── Invite Connections picker ────────────────────────────────────────────
+function InviteConnectionsModal({ visible, group, onClose, onSent }) {
+  const [loading, setLoading]   = useState(false);
+  const [busy, setBusy]         = useState(false);
+  const [conns, setConns]       = useState([]);
+  const [selected, setSelected] = useState({}); // { [profile_id]: true }
+  const [search, setSearch]     = useState('');
+
+  useEffect(() => {
+    if (!visible) {
+      setSelected({});
+      setSearch('');
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      const { data, error } = await supabase.rpc('my_connections');
+      if (cancelled) return;
+      if (error) {
+        console.warn('[invite] my_connections failed', error.message);
+        setConns([]);
+      } else {
+        setConns(data ?? []);
+      }
+      setLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [visible]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return conns;
+    return conns.filter((c) =>
+      (c.full_name || '').toLowerCase().includes(q) ||
+      (c.handle    || '').toLowerCase().includes(q)
+    );
+  }, [conns, search]);
+
+  const selectedCount = Object.values(selected).filter(Boolean).length;
+
+  function toggle(id) {
+    setSelected((s) => ({ ...s, [id]: !s[id] }));
+  }
+
+  async function handleSend() {
+    const ids = Object.entries(selected).filter(([, v]) => v).map(([k]) => k);
+    if (!ids.length) {
+      Alert.alert('Pick someone', 'Select at least one connection to invite.');
+      return;
+    }
+    setBusy(true);
+    const { data, error } = await supabase.rpc('invite_to_group', {
+      p_group:    group.id,
+      p_invitees: ids,
+    });
+    setBusy(false);
+    if (error) {
+      Alert.alert('Could not send invites', error.message);
+      return;
+    }
+    Alert.alert(
+      'Invites sent',
+      `${data ?? ids.length} ${(data ?? ids.length) === 1 ? 'invite' : 'invites'} sent.`
+    );
+    onSent?.();
+  }
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        style={inviteStyles.backdrop}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <View style={inviteStyles.sheet}>
+          <View style={inviteStyles.header}>
+            <TouchableOpacity onPress={onClose} hitSlop={12}>
+              <Ionicons name="close" size={22} color={COLORS.text} />
+            </TouchableOpacity>
+            <Text style={inviteStyles.headerTitle}>Invite to {group?.name}</Text>
+            <View style={{ width: 22 }} />
+          </View>
+
+          <TextInput
+            style={inviteStyles.search}
+            placeholder="Search connections"
+            placeholderTextColor={COLORS.textTertiary}
+            value={search}
+            onChangeText={setSearch}
+            autoCapitalize="none"
+          />
+
+          {loading ? (
+            <View style={inviteStyles.center}>
+              <ActivityIndicator color={COLORS.textTertiary} />
+            </View>
+          ) : filtered.length === 0 ? (
+            <View style={inviteStyles.center}>
+              <Text style={inviteStyles.emptyText}>
+                {conns.length === 0
+                  ? "You don't have any connections yet. Use Share Beyond FOUND instead."
+                  : 'No connections match that search.'}
+              </Text>
+            </View>
+          ) : (
+            <FlatList
+              data={filtered}
+              keyExtractor={(item) => item.profile_id}
+              style={{ flex: 1 }}
+              contentContainerStyle={{ paddingBottom: SPACING.lg }}
+              renderItem={({ item }) => {
+                const isOn = !!selected[item.profile_id];
+                return (
+                  <TouchableOpacity
+                    style={inviteStyles.row}
+                    activeOpacity={0.8}
+                    onPress={() => toggle(item.profile_id)}
+                  >
+                    <View style={inviteStyles.avatar}>
+                      {item.avatar_url ? (
+                        <Image source={{ uri: item.avatar_url }} style={inviteStyles.avatarImg} />
+                      ) : (
+                        <Text style={inviteStyles.avatarInit}>
+                          {(item.full_name || item.handle || '?').slice(0, 1).toUpperCase()}
+                        </Text>
+                      )}
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={inviteStyles.name}>{item.full_name || item.handle}</Text>
+                      {item.life_stage_label ? (
+                        <Text style={inviteStyles.sub}>{item.life_stage_label}</Text>
+                      ) : null}
+                    </View>
+                    <View style={[inviteStyles.check, isOn && inviteStyles.checkOn]}>
+                      {isOn ? <Ionicons name="checkmark" size={14} color={COLORS.white} /> : null}
+                    </View>
+                  </TouchableOpacity>
+                );
+              }}
+            />
+          )}
+
+          <PrimaryButton
+            label={busy
+              ? 'Sending…'
+              : selectedCount
+                ? `Send ${selectedCount} ${selectedCount === 1 ? 'invite' : 'invites'}`
+                : 'Send invites'}
+            onPress={handleSend}
+            disabled={busy || selectedCount === 0}
+            loading={busy}
+            style={{ marginTop: SPACING.sm }}
+          />
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+const inviteStyles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'flex-end',
+  },
+  sheet: {
+    backgroundColor: COLORS.bg,
+    borderTopLeftRadius: RADIUS.xl,
+    borderTopRightRadius: RADIUS.xl,
+    padding: SPACING.lg,
+    maxHeight: '85%',
+    minHeight: '60%',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: SPACING.md,
+  },
+  headerTitle: {
+    fontFamily: FONT.semiBold,
+    fontSize: 16,
+    color: COLORS.text,
+    flex: 1,
+    textAlign: 'center',
+  },
+  search: {
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.lg,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    fontFamily: FONT.regular,
+    fontSize: 14,
+    color: COLORS.text,
+    marginBottom: SPACING.sm,
+  },
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: SPACING.xl,
+  },
+  emptyText: {
+    fontFamily: FONT.regular,
+    fontSize: 14,
+    color: COLORS.textTertiary,
+    textAlign: 'center',
+    paddingHorizontal: SPACING.lg,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: COLORS.border,
+  },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLORS.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  avatarImg: { width: '100%', height: '100%' },
+  avatarInit: {
+    fontFamily: FONT.semiBold,
+    fontSize: 14,
+    color: COLORS.text,
+  },
+  name: {
+    fontFamily: FONT.semiBold,
+    fontSize: 14,
+    color: COLORS.text,
+  },
+  sub: {
+    fontFamily: FONT.regular,
+    fontSize: 12,
+    color: COLORS.textTertiary,
+    marginTop: 1,
+  },
+  check: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkOn: {
+    backgroundColor: COLORS.text,
+    borderColor: COLORS.text,
   },
 });

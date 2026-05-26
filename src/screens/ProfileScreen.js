@@ -30,6 +30,7 @@ import {
   deleteProfilePhoto,
   MAX_PHOTOS,
 } from '../lib/profilePhotos';
+import { publicUrlForGroupPhoto } from '../lib/groupPhotos';
 import { useConfirm } from '../components/ConfirmProvider';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -157,9 +158,16 @@ function GroupsModal({ visible, onClose, onOpen }) {
                   activeOpacity={0.85}
                   onPress={() => onOpen?.(g)}
                 >
-                  <View style={styles.groupIconWrap}>
-                    <Ionicons name="people-outline" size={20} color={COLORS.textSecondary} />
-                  </View>
+                  {g.cover_path ? (
+                    <Image
+                      source={{ uri: publicUrlForGroupPhoto(g.cover_path) }}
+                      style={styles.groupCoverThumb}
+                    />
+                  ) : (
+                    <View style={styles.groupIconWrap}>
+                      <Ionicons name="people-outline" size={20} color={COLORS.textSecondary} />
+                    </View>
+                  )}
                   <View style={{ flex: 1, gap: 4 }}>
                     <Text style={styles.connRowName}>{g.name || 'Unnamed Group'}</Text>
                     <Text style={styles.connRowMeta} numberOfLines={1}>
@@ -778,7 +786,6 @@ export default function ProfileScreen({ navigation }) {
 
           {/* Stats — Connected is tappable; opens the network list. */}
           <View style={styles.statsRow}>
-            <StatCard value={stats.matches}     label="FOUND"     />
             <StatCard
               value={stats.connections}
               label="Connected"
@@ -792,14 +799,23 @@ export default function ProfileScreen({ navigation }) {
           </View>
 
           {/* Bio */}
-          {profile.bio ? (
-            <View style={styles.section}>
-              <SectionHeader label="About" />
+          <View style={styles.section}>
+            <SectionHeader label="About" />
+            {profile.bio ? (
               <View style={styles.bioCard}>
                 <Text style={styles.bioText}>{profile.bio}</Text>
               </View>
-            </View>
-          ) : null}
+            ) : (
+              <TouchableOpacity
+                style={styles.addBioCard}
+                onPress={handleEditProfile}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="add-circle-outline" size={18} color={COLORS.text} />
+                <Text style={styles.addBioText}>Add bio</Text>
+              </TouchableOpacity>
+            )}
+          </View>
 
           {/* Where from */}
           {profile.hometown ? (
@@ -1051,6 +1067,25 @@ const styles = StyleSheet.create({
   },
   bioText: { fontFamily: FONT.regular, fontSize: 14, color: COLORS.text, lineHeight: 20 },
 
+  addBioCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.xs,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.lg,
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderStyle: 'dashed',
+  },
+  addBioText: {
+    fontFamily: FONT.medium,
+    fontSize: 14,
+    color: COLORS.text,
+  },
+
   lifeStageCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1250,6 +1285,11 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  groupCoverThumb: {
+    width: 44, height: 44,
+    borderRadius: RADIUS.lg,
+    backgroundColor: COLORS.surfaceAlt,
   },
   connRowName: {
     fontFamily: FONT.semiBold,

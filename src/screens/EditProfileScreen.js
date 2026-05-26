@@ -27,6 +27,8 @@ import {
   Pressable,
   Alert,
   Platform,
+  Modal,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
@@ -78,29 +80,78 @@ export default function EditProfileScreen({ navigation }) {
   const [lifeStage, setLifeStage]     = useState(null);
   const [activities, setActivities]   = useState([]);    // array of activity ids
   const [goals, setGoals]             = useState([]);
-  const [church, setChurch]           = useState(null);
+  // Church is free text for now — curated directory comes later.
+  const [churchName, setChurchName]   = useState('');
 
-  // Taxonomy + churches
+  // Taxonomy
   const [lifeStages, setLifeStages]   = useState([]);
   const [allActivities, setAllActivities] = useState([]);
   const [allGoals, setAllGoals]       = useState([]);
-  const [churches, setChurches]       = useState([]);
   const [taxLoading, setTaxLoading]   = useState(true);
 
   const [saving, setSaving]           = useState(false);
 
-  // Load taxonomies + churches + own profile detail (for activities/goals).
+  // Interests search + request-modal state
+  const [interestsQuery, setInterestsQuery] = useState('');
+  const [requestOpen, setRequestOpen]       = useState(false);
+  const [requestName, setRequestName]       = useState('');
+  const [requestDesc, setRequestDesc]       = useState('');
+  const [requestBusy, setRequestBusy]       = useState(false);
+  const [requestError, setRequestError]     = useState(null);
+  const [requestInfo, setRequestInfo]       = useState(null);
+
+  const filteredActivities = useMemo(() => {
+    const q = interestsQuery.trim().toLowerCase();
+    if (!q) return allActivities;
+    return allActivities.filter((a) => (a.label || '').toLowerCase().includes(q));
+  }, [interestsQuery, allActivities]);
+
+  function closeRequestModal() {
+    if (requestBusy) return;
+    setRequestName('');
+    setRequestDesc('');
+    setRequestError(null);
+    setRequestInfo(null);
+    setRequestOpen(false);
+  }
+
+  async function submitInterestRequest() {
+    setRequestError(null);
+    setRequestInfo(null);
+    const n = requestName.trim();
+    if (!n) { setRequestError('Please enter an interest name.'); return; }
+    if (n.length > 80) { setRequestError('Name too long (max 80).'); return; }
+    if (requestDesc.trim().length > 500) {
+      setRequestError('Description too long (max 500).'); return;
+    }
+    setRequestBusy(true);
+    try {
+      const { error } = await supabase.rpc('request_interest', {
+        p_name: n,
+        p_description: requestDesc.trim() || null,
+      });
+      if (error) throw error;
+      setRequestInfo("Thanks! We'll review your suggestion soon.");
+      setRequestName('');
+      setRequestDesc('');
+    } catch (e) {
+      setRequestError(e?.message ?? 'Could not send. Try again.');
+    } finally {
+      setRequestBusy(false);
+    }
+  }
+
+  // Load taxonomies + own profile detail (for activities/goals/church_name).
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [lsR, actR, goalR, chR, profR] = await Promise.all([
+      const [lsR, actR, goalR, profR] = await Promise.all([
         supabase.from('life_stages').select('id,label,icon,icon_color').order('sort_order'),
         supabase.from('activities').select('id,label,icon,icon_color').order('sort_order'),
         supabase.from('community_goals').select('id,label,icon,icon_color').order('sort_order'),
-        supabase.from('churches').select('id,name,city,state').order('name').limit(200),
         user
           ? supabase.from('profiles')
-              .select('full_name,bio,hometown,city,state,life_stage_id,church_id,profile_activities(activity_id),profile_goals(goal_id)')
+              .select('full_name,bio,hometown,city,state,life_stage_id,church_name,profile_activities(activity_id),profile_goals(goal_id)')
               .eq('id', user.id)
               .maybeSingle()
           : Promise.resolve({ data: null, error: null }),
@@ -109,7 +160,6 @@ export default function EditProfileScreen({ navigation }) {
       setLifeStages(lsR.data ?? []);
       setAllActivities(actR.data ?? []);
       setAllGoals(goalR.data ?? []);
-      setChurches(chR.data ?? []);
       const p = profR.data;
       if (p) {
         setFullName(p.full_name ?? '');
@@ -117,7 +167,7 @@ export default function EditProfileScreen({ navigation }) {
         setHometown(p.hometown ?? '');
         setLocationText([p.city, p.state].filter(Boolean).join(', '));
         setLifeStage(p.life_stage_id ?? null);
-        setChurch(p.church_id ?? null);
+        setChurchName(p.church_name ?? '');
         setActivities((p.profile_activities ?? []).map((r) => r.activity_id));
         setGoals((p.profile_goals ?? []).map((r) => r.goal_id));
       } else if (profile) {
@@ -130,8 +180,6 @@ export default function EditProfileScreen({ navigation }) {
 
   const toggle = (setter) => (id) =>
     setter((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
-
-  const churchList = useMemo(() => churches, [churches]);
 
   const handleSave = useCallback(async () => {
     if (saving) return;
@@ -157,8 +205,8 @@ export default function EditProfileScreen({ navigation }) {
       p_city:       city || null,
       p_state:      state || null,
       p_life_stage: lifeStage,
-      p_church_id:  church,
-      p_activities: activities,   // pass array → REPLACE
+      p_church_id:  null,                  // structured directory not live yet
+      p_activities: activities,            // pass array → REPLACE
       p_goals:      goals,
     });
     if (error) {
@@ -166,6 +214,12 @@ export default function EditProfileScreen({ navigation }) {
       Alert.alert('Could not save', error.message);
       return;
     }
+
+    // 1b) Persist free-text church name via dedicated RPC. Non-fatal.
+    const { error: chErr } = await supabase.rpc('set_church_name', {
+      p_church_name: churchName.trim() || null,
+    });
+    if (chErr) console.warn('[edit-profile] set_church_name failed', chErr.message);
 
     // 2) Geocode City, State → lat/lng → PostGIS point.
     //    Failures here are non-fatal: profile text fields still saved,
@@ -189,7 +243,7 @@ export default function EditProfileScreen({ navigation }) {
     await refreshProfile();
     setSaving(false);
     navigation?.goBack();
-  }, [saving, fullName, bio, hometown, locationText, lifeStage, church, activities, goals, refreshProfile, navigation]);
+  }, [saving, fullName, bio, hometown, locationText, lifeStage, churchName, activities, goals, refreshProfile, navigation]);
 
   if (taxLoading) {
     return (
@@ -289,16 +343,43 @@ export default function EditProfileScreen({ navigation }) {
         {/* Interests / activities */}
         <View style={styles.section}>
           <SectionHeader label={`Interests  ·  ${activities.length} selected`} />
-          <View style={styles.optGrid}>
-            {allActivities.map((item) => (
-              <OptionCard
-                key={item.id}
-                item={item}
-                selected={activities.includes(item.id)}
-                onPress={() => toggle(setActivities)(item.id)}
-              />
-            ))}
-          </View>
+
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search interests..."
+            placeholderTextColor={COLORS.textTertiary}
+            value={interestsQuery}
+            onChangeText={setInterestsQuery}
+            autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="search"
+          />
+
+          {filteredActivities.length === 0 ? (
+            <Text style={styles.emptyNote}>
+              No interests match "{interestsQuery}". Don't see yours? Request it below.
+            </Text>
+          ) : (
+            <View style={styles.optGrid}>
+              {filteredActivities.map((item) => (
+                <OptionCard
+                  key={item.id}
+                  item={item}
+                  selected={activities.includes(item.id)}
+                  onPress={() => toggle(setActivities)(item.id)}
+                />
+              ))}
+            </View>
+          )}
+
+          <TouchableOpacity
+            style={styles.requestBtn}
+            onPress={() => setRequestOpen(true)}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="add-circle-outline" size={18} color={COLORS.text} />
+            <Text style={styles.requestBtnText}>Request an interest</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Community goals */}
@@ -316,35 +397,18 @@ export default function EditProfileScreen({ navigation }) {
           </View>
         </View>
 
-        {/* Church */}
+        {/* Church — free text until we ship a curated directory */}
         <View style={styles.section}>
           <SectionHeader label="Church" />
-          <View style={styles.churchList}>
-            {churchList.map((c) => {
-              const meta = [c.city, c.state].filter(Boolean).join(', ');
-              const selected = church === c.id;
-              return (
-                <Pressable
-                  key={c.id}
-                  style={[styles.churchRow, selected && styles.churchRowSelected]}
-                  onPress={() => setChurch(selected ? null : c.id)}
-                >
-                  <View style={styles.churchIcon}>
-                    <Ionicons name="business-outline" size={18} color={COLORS.sage} />
-                  </View>
-                  <View style={styles.churchInfo}>
-                    <Text style={[styles.churchName, selected && { color: COLORS.text }]}>{c.name}</Text>
-                    {meta ? <Text style={styles.churchMeta}>{meta}</Text> : null}
-                  </View>
-                  {selected ? (
-                    <View style={styles.check}>
-                      <Ionicons name="checkmark" size={14} color={COLORS.white} />
-                    </View>
-                  ) : null}
-                </Pressable>
-              );
-            })}
-          </View>
+          <TextInput
+            value={churchName}
+            onChangeText={setChurchName}
+            placeholder="What church do you attend? (optional)"
+            placeholderTextColor={COLORS.textTertiary}
+            style={styles.searchInput}
+            autoCapitalize="words"
+            maxLength={120}
+          />
         </View>
       </ScrollView>
 
@@ -357,6 +421,63 @@ export default function EditProfileScreen({ navigation }) {
           loading={saving}
         />
       </View>
+
+      {/* Request an interest modal */}
+      <Modal
+        visible={requestOpen}
+        animationType="slide"
+        transparent
+        onRequestClose={closeRequestModal}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalBackdrop}
+        >
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Request an interest</Text>
+              <TouchableOpacity onPress={closeRequestModal} hitSlop={8}>
+                <Ionicons name="close" size={22} color={COLORS.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalLabel}>Interest name</Text>
+            <TextInput
+              value={requestName}
+              onChangeText={setRequestName}
+              placeholder="e.g. Disc Golf"
+              placeholderTextColor={COLORS.textTertiary}
+              style={styles.searchInput}
+              autoCapitalize="words"
+              maxLength={80}
+            />
+
+            <Text style={[styles.modalLabel, { marginTop: SPACING.md }]}>
+              Description <Text style={{ color: COLORS.textTertiary }}>(optional)</Text>
+            </Text>
+            <TextInput
+              value={requestDesc}
+              onChangeText={setRequestDesc}
+              placeholder="Anything that helps us understand the category."
+              placeholderTextColor={COLORS.textTertiary}
+              style={[styles.searchInput, { height: 90, textAlignVertical: 'top' }]}
+              multiline
+              maxLength={500}
+            />
+
+            {requestError ? <Text style={styles.modalError}>{requestError}</Text> : null}
+            {requestInfo  ? <Text style={styles.modalInfo}>{requestInfo}</Text>   : null}
+
+            <View style={{ height: SPACING.md }} />
+            <PrimaryButton
+              label={requestBusy ? 'Sending…' : 'Send request'}
+              onPress={submitInterestRequest}
+              loading={requestBusy}
+              disabled={requestBusy}
+            />
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -471,5 +592,92 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.bg,
     borderTopWidth: 1,
     borderTopColor: COLORS.borderLight,
+  },
+
+  // Interest search input (reused by request modal)
+  searchInput: {
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 12,
+    fontFamily: FONT.regular,
+    fontSize: 15,
+    color: COLORS.text,
+    marginTop: SPACING.sm,
+    marginBottom: SPACING.md,
+  },
+  emptyNote: {
+    fontFamily: FONT.regular,
+    fontSize: 13,
+    color: COLORS.textTertiary,
+    marginBottom: SPACING.md,
+  },
+
+  // Request interest button
+  requestBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: SPACING.md,
+    paddingVertical: SPACING.md,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surface,
+  },
+  requestBtnText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 14,
+    color: COLORS.text,
+    letterSpacing: 0.2,
+  },
+
+  // Modal
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    backgroundColor: COLORS.bg,
+    paddingHorizontal: SPACING.lg,
+    paddingTop: SPACING.lg,
+    paddingBottom: SPACING.xl,
+    borderTopLeftRadius: RADIUS.xl,
+    borderTopRightRadius: RADIUS.xl,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: SPACING.lg,
+  },
+  modalTitle: {
+    fontFamily: FONT.bold,
+    fontSize: 18,
+    color: COLORS.text,
+  },
+  modalLabel: {
+    fontFamily: FONT.semiBold,
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    marginBottom: 6,
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+  },
+  modalError: {
+    marginTop: SPACING.sm,
+    fontFamily: FONT.regular,
+    fontSize: 13,
+    color: '#8A2D2D',
+  },
+  modalInfo: {
+    marginTop: SPACING.sm,
+    fontFamily: FONT.regular,
+    fontSize: 13,
+    color: COLORS.text,
   },
 });

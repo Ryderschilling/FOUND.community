@@ -13,6 +13,7 @@ import {
   TextInput,
   Modal,
   Platform,
+  ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING } from '../theme';
@@ -40,7 +41,7 @@ const FILTERS = [
   { id: 'connections', label: 'Connections'   },
   { id: 'saved',       label: 'Connect Later' },
   { id: 'stage',       label: 'Life Stage'    },
-  { id: 'church',      label: 'Same Church'   },
+  { id: 'interests',   label: 'Interests'     },
   { id: 'new',         label: 'New'           },
 ];
 
@@ -49,15 +50,17 @@ const HEADER_HEIGHT = 88;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 // Fixed gradient palette for avatars (matches existing visual language)
+// Neutral monochrome avatar palette — black/white/charcoal, no green or yellow.
+// Matches Sam's branding direction (less green tint, more black & white).
 const AVATAR_GRADIENTS = [
-  ['#4A6FA5', '#2D4E8A'],
-  ['#5A8A6A', '#3D6B55'],
-  ['#C0795A', '#A0593A'],
-  ['#7A5AA8', '#5A3A88'],
-  ['#A8793A', '#886020'],
-  ['#5A7A4A', '#3D6B3E'],
-  ['#4A8A6A', '#2D6B55'],
-  ['#7A846A', '#5A6450'],
+  ['#1A1A1A', '#3A3A3A'],
+  ['#2A2A2A', '#4A4A4A'],
+  ['#3A3A3A', '#5A5A5A'],
+  ['#1A1A1A', '#2A2A2A'],
+  ['#4A4A4A', '#1A1A1A'],
+  ['#2A2A2A', '#1A1A1A'],
+  ['#3A3A3A', '#1A1A1A'],
+  ['#5A5A5A', '#2A2A2A'],
 ];
 
 // Deterministic hash → palette index, so each profile always picks the same colors
@@ -101,6 +104,7 @@ function rowToMatch(row) {
     lifeStage:   row.life_stage_label || '',
     lifeStageId: row.life_stage_id || null,
     distance:    formatDistance(row.distance_mi) || [row.city, row.state].filter(Boolean).join(', ') || '',
+    cityState:   [row.city, row.state].filter(Boolean).join(', ') || null,
     church:      row.church_name,
     churchId:    row.church_id || null,
     createdAt:   row.created_at || null,
@@ -149,6 +153,10 @@ export default function HomeScreen({ navigation }) {
   const [locFilter, setLocFilter]   = useState(DEFAULT_FILTER);
   const [selfLocation, setSelfLoc]  = useState(null);
   const [locSheetOpen, setLocSheet] = useState(false);
+
+  // My own activity IDs — used by the "Interests" filter to surface profiles
+  // who share at least one interest with me.
+  const [myActivityIds, setMyActivityIds] = useState([]);
 
   // Incomplete-profile nudge: a dismissable modal that fires once, two minutes
   // into the session, if the user still hasn't written a bio.
@@ -227,6 +235,26 @@ export default function HomeScreen({ navigation }) {
   useEffect(() => {
     loadMatches();
   }, [loadMatches]);
+
+  // Load my own activity IDs once for the Interests filter. Cheap, single
+  // round-trip; only refetched if the user changes (sign-out / sign-in).
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    (async () => {
+      const { data, error: actErr } = await supabase
+        .from('profile_activities')
+        .select('activity_id')
+        .eq('profile_id', user.id);
+      if (cancelled) return;
+      if (actErr) {
+        console.warn('[discover] my activities failed', actErr.message);
+        return;
+      }
+      setMyActivityIds((data ?? []).map((r) => r.activity_id).filter(Boolean));
+    })();
+    return () => { cancelled = true; };
+  }, [user]);
 
   // Refetch on focus so returning from Activity/MatchDetail picks up state
   // changes (newly accepted matches, dismissed inbound rows, etc.) without
@@ -378,6 +406,7 @@ export default function HomeScreen({ navigation }) {
       matchScore:  null,
       lifeStage:   row.life_stage_label || '',
       distance:    [row.city, row.state].filter(Boolean).join(', ') || '',
+      cityState:   [row.city, row.state].filter(Boolean).join(', ') || null,
       church:      null,
       interests:   [],
       connected:   row.my_kind   === 'like',
@@ -413,6 +442,9 @@ export default function HomeScreen({ navigation }) {
         list = list.filter((m) => m.lifeStageId === profile.life_stage_id);
       } else if (activeFilter === 'church' && profile?.church_id) {
         list = list.filter((m) => m.churchId === profile.church_id);
+      } else if (activeFilter === 'interests' && myActivityIds.length > 0) {
+        const mine = new Set(myActivityIds);
+        list = list.filter((m) => (m.interests ?? []).some((i) => mine.has(i.id)));
       } else if (activeFilter === 'new') {
         const cutoff = Date.now() - NEW_WINDOW_DAYS * 24 * 60 * 60 * 1000;
         list = list.filter((m) => {
@@ -446,7 +478,7 @@ export default function HomeScreen({ navigation }) {
       });
     }
     return list;
-  }, [matches, query, activeFilter, profile]);
+  }, [matches, query, activeFilter, profile, myActivityIds]);
 
   const searching   = query.trim().length > 0;
   const filtering   = activeFilter !== 'all';
@@ -459,15 +491,6 @@ export default function HomeScreen({ navigation }) {
   // drop keyboard focus).
   const listHeader = (
     <View style={styles.listHeader}>
-      <View style={styles.titleRow}>
-        <Text style={styles.pageTitle}>FOUND People</Text>
-        <Pill
-          label={`${matches.length} nearby`}
-          variant="neutral"
-          style={{ alignSelf: 'flex-end', marginBottom: 4 }}
-        />
-      </View>
-
       {/* Location filter pill — tap to open the bottom sheet */}
       <View style={styles.locationPillRow}>
         <TouchableOpacity
@@ -508,7 +531,11 @@ export default function HomeScreen({ navigation }) {
         onTap={(row) => navigation?.navigate('MatchDetail', { match: inboundToMatch(row) })}
       />
 
-      <View style={styles.filterRow}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.filterRow}
+      >
         {FILTERS.map((f) => (
           <Chip
             key={f.id}
@@ -517,7 +544,7 @@ export default function HomeScreen({ navigation }) {
             onPress={() => setActiveFilter(f.id)}
           />
         ))}
-      </View>
+      </ScrollView>
     </View>
   );
 
@@ -558,9 +585,9 @@ export default function HomeScreen({ navigation }) {
     return (
       <View style={styles.stateBox}>
         <Ionicons name="people-outline" size={28} color={COLORS.textTertiary} />
-        <Text style={styles.stateTitle}>No one FOUND yet</Text>
+        <Text style={styles.stateTitle}>More Christians joining every day</Text>
         <Text style={styles.stateBody}>
-          As more local Christians join, we'll surface the best fits for you here.
+          Check back soon — we'll surface the best fits for you as more people in your area join FOUND.
         </Text>
       </View>
     );
@@ -736,7 +763,6 @@ const styles = StyleSheet.create({
   },
   filterRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     paddingHorizontal: SPACING.lg,
     gap: SPACING.sm,
     marginBottom: SPACING.md,

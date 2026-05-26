@@ -45,12 +45,13 @@ async function ensurePermission(source) {
 
 // ── Picker ─────────────────────────────────────────────────────────────────
 // Returns { uri, base64 } or null if cancelled.
-// 3:2 landscape — group photos read better wide than square.
+// 1:1 square — matches the cover preview and detail hero. Lets the user crop
+// to exactly what will be displayed instead of getting a surprise edge crop.
 async function pickImage(source) {
   const opts = {
     mediaTypes: ImagePicker.MediaTypeOptions.Images,
     allowsEditing: true,
-    aspect: [3, 2],
+    aspect: [1, 1],
     quality: 0.8,
     base64: true,
   };

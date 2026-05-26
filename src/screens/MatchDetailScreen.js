@@ -73,6 +73,7 @@ export default function MatchDetailScreen({ route, navigation }) {
     lifeStage:       initialMatch.lifeStage  ?? '',
     distance:        initialMatch.distance   ?? '',
     church:          initialMatch.church     ?? null,
+    cityState:       initialMatch.cityState  ?? null,
     interests:       initialMatch.interests  ?? [],
     connectionCount: null,
     groupCount:      null,
@@ -108,6 +109,7 @@ export default function MatchDetailScreen({ route, navigation }) {
         hometown:        d.hometown         ?? prev.hometown,
         lifeStage:       d.life_stage_label ?? prev.lifeStage,
         distance:        d.city && d.state ? `${d.city}, ${d.state}` : prev.distance,
+        cityState:       d.city && d.state ? `${d.city}, ${d.state}` : prev.cityState,
         church:          d.church_name     ?? prev.church,
         matchScore:      d.score           ?? prev.matchScore,
         interests:       (d.activities ?? []).map((a) => ({
@@ -353,10 +355,10 @@ export default function MatchDetailScreen({ route, navigation }) {
             {[profile.lifeStage, profile.distance].filter(Boolean).join(' · ')}
           </Text>
 
-          {profile.church ? (
+          {profile.cityState ? (
             <View style={styles.churchRow}>
-              <Ionicons name="business-outline" size={13} color={COLORS.textSecondary} />
-              <Text style={styles.churchText}>{profile.church}</Text>
+              <Ionicons name="location-outline" size={13} color={COLORS.textSecondary} />
+              <Text style={styles.churchText}>{profile.cityState}</Text>
             </View>
           ) : null}
 

@@ -121,16 +121,16 @@ export default function PersonCard({ match, onConnect, onSave, onCancel, onPress
         <Avatar
           initials={match.initials}
           size={52}
-          gradientColors={match.avatarColor ?? [COLORS.sage, COLORS.clay]}
+          gradientColors={match.avatarColor ?? [COLORS.text, '#3A3A3A']}
           uri={match.avatarUrl || undefined}
         />
         <View style={styles.headerInfo}>
           <Text style={styles.name}>{match.name}</Text>
           <Text style={styles.meta}>{match.lifeStage} · {match.distance}</Text>
-          {match.church ? (
+          {match.cityState ? (
             <View style={styles.churchRow}>
-              <Ionicons name="business-outline" size={11} color={COLORS.textTertiary} />
-              <Text style={styles.church}>{match.church}</Text>
+              <Ionicons name="location-outline" size={11} color={COLORS.textTertiary} />
+              <Text style={styles.church}>{match.cityState}</Text>
             </View>
           ) : null}
         </View>

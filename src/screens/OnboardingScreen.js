@@ -11,6 +11,9 @@ import {
   Pressable,
   Alert,
   ActivityIndicator,
+  Modal,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
@@ -21,7 +24,6 @@ import { useConfirm } from '../components/ConfirmProvider';
 import {
   LIFE_STAGES,
   HAS_KIDS_STAGES,
-  ACTIVITIES,
   FAMILY_VALUES,
   SCHOOL_TYPES,
   LOVE_LANGUAGES,
@@ -94,17 +96,155 @@ function StepLifeStage({ selection, onSelect }) {
   );
 }
 
-function StepActivities({ selections, onToggle }) {
+function StepActivities({ selections, onToggle, activities, loading, onOpenRequest }) {
+  const [query, setQuery] = useState('');
+  const q = query.trim().toLowerCase();
+  const filtered = !q
+    ? activities
+    : activities.filter((a) => a.label.toLowerCase().includes(q));
+
   return (
     <>
       <Text style={styles.stepTitle}>What do you enjoy?</Text>
       <Text style={styles.stepSub}>Pick everything that fits — we'll find your people.</Text>
-      <View style={styles.optGrid}>
-        {ACTIVITIES.map((item) => (
-          <OptionCard key={item.id} item={item} selected={selections.includes(item.id)} onPress={() => onToggle(item.id)} />
-        ))}
-      </View>
+
+      <TextInput
+        style={styles.textInput}
+        placeholder="Search interests..."
+        placeholderTextColor={COLORS.textTertiary}
+        value={query}
+        onChangeText={setQuery}
+        autoCapitalize="none"
+        autoCorrect={false}
+        returnKeyType="search"
+      />
+
+      {loading ? (
+        <View style={{ paddingVertical: SPACING.lg, alignItems: 'center' }}>
+          <ActivityIndicator color={COLORS.textTertiary} />
+        </View>
+      ) : filtered.length === 0 ? (
+        <Text style={[styles.optionalNote, { textAlign: 'left' }]}>
+          No interests match "{query}". Don't see yours? Request it below.
+        </Text>
+      ) : (
+        <View style={styles.optGrid}>
+          {filtered.map((item) => (
+            <OptionCard
+              key={item.id}
+              item={item}
+              selected={selections.includes(item.id)}
+              onPress={() => onToggle(item.id)}
+            />
+          ))}
+        </View>
+      )}
+
+      <TouchableOpacity style={styles.requestBtn} onPress={onOpenRequest} activeOpacity={0.8}>
+        <Ionicons name="add-circle-outline" size={18} color={COLORS.text} />
+        <Text style={styles.requestBtnText}>Request an interest</Text>
+      </TouchableOpacity>
     </>
+  );
+}
+
+// ─── Interest Request Modal ──────────────────────────────────────────────────
+// Calls the request_interest RPC. Ryder reviews the queue in Supabase and
+// approves rows into `activities` manually.
+function InterestRequestModal({ visible, onClose }) {
+  const [name, setName]               = useState('');
+  const [description, setDescription] = useState('');
+  const [busy, setBusy]               = useState(false);
+  const [errorMsg, setErrorMsg]       = useState(null);
+  const [sentMsg, setSentMsg]         = useState(null);
+
+  function handleClose() {
+    if (busy) return;
+    setName('');
+    setDescription('');
+    setErrorMsg(null);
+    setSentMsg(null);
+    onClose();
+  }
+
+  async function handleSubmit() {
+    setErrorMsg(null);
+    setSentMsg(null);
+    const n = name.trim();
+    if (!n) { setErrorMsg('Please enter an interest name.'); return; }
+    if (n.length > 80) { setErrorMsg('Name is too long (max 80 characters).'); return; }
+    if (description.trim().length > 500) {
+      setErrorMsg('Description is too long (max 500 characters).'); return;
+    }
+
+    setBusy(true);
+    try {
+      const { error } = await supabase.rpc('request_interest', {
+        p_name: n,
+        p_description: description.trim() || null,
+      });
+      if (error) throw error;
+      setSentMsg("Thanks! We'll review your suggestion and add it soon.");
+      setName('');
+      setDescription('');
+    } catch (e) {
+      setErrorMsg(e?.message ?? 'Could not send. Try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={handleClose}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={styles.modalBackdrop}
+      >
+        <View style={styles.modalSheet}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Request an interest</Text>
+            <TouchableOpacity onPress={handleClose} hitSlop={8}>
+              <Ionicons name="close" size={22} color={COLORS.textSecondary} />
+            </TouchableOpacity>
+          </View>
+
+          <Text style={styles.modalLabel}>Interest name</Text>
+          <TextInput
+            value={name}
+            onChangeText={setName}
+            placeholder="e.g. Disc Golf"
+            placeholderTextColor={COLORS.textTertiary}
+            style={styles.textInput}
+            autoCapitalize="words"
+            maxLength={80}
+          />
+
+          <Text style={[styles.modalLabel, { marginTop: SPACING.md }]}>
+            Description <Text style={{ color: COLORS.textTertiary }}>(optional)</Text>
+          </Text>
+          <TextInput
+            value={description}
+            onChangeText={setDescription}
+            placeholder="Anything that helps us understand the category."
+            placeholderTextColor={COLORS.textTertiary}
+            style={[styles.textInput, { height: 90, textAlignVertical: 'top' }]}
+            multiline
+            maxLength={500}
+          />
+
+          {errorMsg ? <Text style={styles.modalError}>{errorMsg}</Text> : null}
+          {sentMsg  ? <Text style={styles.modalInfo}>{sentMsg}</Text>   : null}
+
+          <View style={{ height: SPACING.md }} />
+          <PrimaryButton
+            label={busy ? 'Sending…' : 'Send request'}
+            onPress={handleSubmit}
+            loading={busy}
+            disabled={busy}
+          />
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
   );
 }
 
@@ -196,65 +336,24 @@ function StepCommunityGoals({ selections, onToggle }) {
   );
 }
 
-function StepChurch({ selection, onSelect, churches, loading }) {
-  const [query, setQuery] = useState('');
-  const filtered = (churches ?? []).filter((c) =>
-    c.name.toLowerCase().includes(query.toLowerCase())
-  );
-
+// Church step: free-text answer until we ship a curated church directory.
+// Stored in profiles.church_name via the set_church_name RPC.
+function StepChurch({ value, onChange }) {
   return (
     <>
-      <Text style={styles.stepTitle}>Where do you worship?</Text>
+      <Text style={styles.stepTitle}>What church do you attend?</Text>
       <Text style={styles.stepSub}>Optional — helps us connect you with your congregation.</Text>
 
       <TextInput
         style={styles.textInput}
-        placeholder="Search for your church..."
+        placeholder="e.g. Bayside Church"
         placeholderTextColor={COLORS.textTertiary}
-        value={query}
-        onChangeText={setQuery}
-        returnKeyType="search"
+        value={value}
+        onChangeText={onChange}
+        autoCapitalize="words"
+        maxLength={120}
+        returnKeyType="done"
       />
-
-      <Text style={styles.nearbyLabel}>Nearby Churches</Text>
-
-      {loading ? (
-        <View style={{ paddingVertical: SPACING.lg, alignItems: 'center' }}>
-          <ActivityIndicator color={COLORS.textTertiary} />
-        </View>
-      ) : filtered.length === 0 ? (
-        <Text style={[styles.optionalNote, { textAlign: 'left' }]}>
-          {query ? 'No churches match that search.' : 'No churches loaded yet.'}
-        </Text>
-      ) : (
-        <View style={styles.churchList}>
-          {filtered.map((church) => {
-            const meta = [church.city, church.state].filter(Boolean).join(', ');
-            return (
-              <Pressable
-                key={church.id}
-                style={[styles.churchRow, selection === church.id && styles.churchRowSelected]}
-                onPress={() => onSelect(church.id === selection ? null : church.id)}
-              >
-                <View style={styles.churchIcon}>
-                  <Ionicons name="business-outline" size={18} color={COLORS.sage} />
-                </View>
-                <View style={styles.churchInfo}>
-                  <Text style={[styles.churchName, selection === church.id && { color: COLORS.text }]}>
-                    {church.name}
-                  </Text>
-                  {meta ? <Text style={styles.churchMeta}>{meta}</Text> : null}
-                </View>
-                {selection === church.id && (
-                  <View style={styles.check}>
-                    <Ionicons name="checkmark" size={14} color={COLORS.white} />
-                  </View>
-                )}
-              </Pressable>
-            );
-          })}
-        </View>
-      )}
 
       <Text style={styles.optionalNote}>Optional — you can skip this step.</Text>
     </>
@@ -264,16 +363,12 @@ function StepChurch({ selection, onSelect, churches, loading }) {
 function StepMatchReveal({ onFinish, busy }) {
   return (
     <View style={styles.revealWrap}>
-      <View style={styles.revealStat}>
-        <Text style={styles.revealNumber}>14</Text>
-        <Text style={styles.revealUnit}>people nearby</Text>
-      </View>
-      <Text style={styles.revealTitle}>You're all set.</Text>
+      <Text style={styles.revealTitle}>Thanks for signing up.</Text>
       <Text style={styles.revealBody}>
-        We found people near you who share your interests and life stage. Go find your community.
+        Your profile's ready. Step into your community and see who you're meant to find.
       </Text>
       <PrimaryButton
-        label={busy ? 'Saving…' : 'See My People'}
+        label={busy ? 'Saving…' : 'See your connections'}
         onPress={onFinish}
         loading={busy}
         disabled={busy}
@@ -316,33 +411,47 @@ export default function OnboardingScreen({ navigation }) {
   const [initiator, setInitiator]           = useState(null);
   const [outgoing, setOutgoing]             = useState(null);
   const [communityGoals, setCommunityGoals] = useState([]);
-  const [church, setChurch]                 = useState(null);
+  // Free-text church name (was a picker; we don't have a curated directory yet).
+  const [churchName, setChurchName]         = useState('');
 
-  // Real churches from Supabase (replaces NEARBY_CHURCHES mock)
-  const [churches, setChurches]             = useState([]);
-  const [churchesLoading, setChurchesLoading] = useState(true);
+  // Real activities from Supabase (replaces ACTIVITIES mock — supports search +
+  // user-requested interests via migration 0045).
+  const [dbActivities, setDbActivities]       = useState([]);
+  const [activitiesLoading, setActivitiesLoading] = useState(true);
+
+  // Interest-request modal
+  const [requestOpen, setRequestOpen]         = useState(false);
 
   // Submit state
   const [busy, setBusy] = useState(false);
 
-  // Fetch churches once on mount. Cheap query — no pagination yet, we have ~4 rows.
-  // When the church list gets large, add a search-as-you-type RPC with PostGIS distance.
+
+  // Fetch activity taxonomy from Supabase. Replaces static ACTIVITIES so search
+  // covers the full ~45-item list and stays in sync with migration 0045 +
+  // future approved interest_requests.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const { data, error } = await supabase
-        .from('churches')
-        .select('id, name, city, state')
-        .order('name', { ascending: true })
-        .limit(200);
+        .from('activities')
+        .select('id, label, icon, icon_color, sort_order')
+        .order('sort_order', { ascending: true })
+        .limit(500);
       if (cancelled) return;
       if (error) {
-        console.warn('[onboarding] churches fetch failed', error.message);
-        setChurches([]);
+        console.warn('[onboarding] activities fetch failed', error.message);
+        setDbActivities([]);
       } else {
-        setChurches(data ?? []);
+        setDbActivities(
+          (data ?? []).map((r) => ({
+            id: r.id,
+            label: r.label,
+            icon: r.icon,
+            iconColor: r.icon_color,
+          }))
+        );
       }
-      setChurchesLoading(false);
+      setActivitiesLoading(false);
     })();
     return () => { cancelled = true; };
   }, []);
@@ -403,7 +512,7 @@ export default function OnboardingScreen({ navigation }) {
         p_life_stage:    lifeStage,
         p_school_type:   schoolType,
         p_love_language: loveLanguage,
-        p_church_id:     church,
+        p_church_id:     null,                    // curated directory not live yet
         p_city:          profile?.city ?? null,
         p_state:         profile?.state ?? null,
         p_is_initiator:  initiator,
@@ -413,6 +522,16 @@ export default function OnboardingScreen({ navigation }) {
         p_values:        familyValues,
       });
       if (error) throw error;
+
+      // Persist the free-text church answer (separate RPC so we don't touch
+      // complete_onboarding's signature). Non-fatal — onboarding succeeds
+      // even if this fails; user can re-enter from Edit Profile.
+      if (churchName.trim()) {
+        const { error: chErr } = await supabase.rpc('set_church_name', {
+          p_church_name: churchName.trim(),
+        });
+        if (chErr) console.warn('[onboarding] set_church_name failed', chErr.message);
+      }
 
       await refreshProfile();
       // AppNavigator swaps from Onboarding → Main when onboarding_complete flips.
@@ -456,7 +575,13 @@ export default function OnboardingScreen({ navigation }) {
           <StepLifeStage selection={lifeStage} onSelect={setLifeStage} />
         )}
         {currentStepId === 'activities' && (
-          <StepActivities selections={activities} onToggle={toggle(setActivities)} />
+          <StepActivities
+            selections={activities}
+            onToggle={toggle(setActivities)}
+            activities={dbActivities}
+            loading={activitiesLoading}
+            onOpenRequest={() => setRequestOpen(true)}
+          />
         )}
         {currentStepId === 'family-values' && (
           <StepFamilyValues selections={familyValues} onToggle={toggle(setFamilyValues)} />
@@ -479,12 +604,7 @@ export default function OnboardingScreen({ navigation }) {
           <StepCommunityGoals selections={communityGoals} onToggle={toggle(setCommunityGoals)} />
         )}
         {currentStepId === 'church' && (
-          <StepChurch
-            selection={church}
-            onSelect={setChurch}
-            churches={churches}
-            loading={churchesLoading}
-          />
+          <StepChurch value={churchName} onChange={setChurchName} />
         )}
         {currentStepId === 'reveal' && (
           <StepMatchReveal onFinish={handleFinish} busy={busy} />
@@ -501,6 +621,11 @@ export default function OnboardingScreen({ navigation }) {
           />
         </View>
       )}
+
+      <InterestRequestModal
+        visible={requestOpen}
+        onClose={() => setRequestOpen(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -759,5 +884,71 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.bg,
     borderTopWidth: 1,
     borderTopColor: COLORS.borderLight,
+  },
+
+  // Request interest button (bottom of activities step)
+  requestBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: SPACING.md,
+    paddingVertical: SPACING.md,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surface,
+  },
+  requestBtnText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 14,
+    color: COLORS.text,
+    letterSpacing: 0.2,
+  },
+
+  // Interest request modal
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    backgroundColor: COLORS.bg,
+    paddingHorizontal: SPACING.lg,
+    paddingTop: SPACING.lg,
+    paddingBottom: SPACING.xl,
+    borderTopLeftRadius: RADIUS.xl,
+    borderTopRightRadius: RADIUS.xl,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: SPACING.lg,
+  },
+  modalTitle: {
+    fontFamily: FONT.bold,
+    fontSize: 18,
+    color: COLORS.text,
+  },
+  modalLabel: {
+    fontFamily: FONT.semiBold,
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    marginBottom: 6,
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+  },
+  modalError: {
+    marginTop: SPACING.sm,
+    fontFamily: FONT.regular,
+    fontSize: 13,
+    color: '#8A2D2D',
+  },
+  modalInfo: {
+    marginTop: SPACING.sm,
+    fontFamily: FONT.regular,
+    fontSize: 13,
+    color: COLORS.text,
   },
 });

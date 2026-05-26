@@ -491,14 +491,16 @@ export default function GroupDetailScreen({ route, navigation }) {
           />
         }
       >
-        {/* Cover / hero */}
-        {coverUrl ? (
-          <Image source={{ uri: coverUrl }} style={styles.cover} />
-        ) : (
-          <View style={[styles.coverFallback, { backgroundColor: iconBg }]}>
-            <Ionicons name={icon} size={52} color={iconColor} />
-          </View>
-        )}
+        {/* Cover / hero — square so any photo fits without bad crops */}
+        <View style={styles.coverWrap}>
+          {coverUrl ? (
+            <Image source={{ uri: coverUrl }} style={styles.cover} resizeMode="cover" />
+          ) : (
+            <View style={[styles.coverFallback, { backgroundColor: iconBg }]}>
+              <Ionicons name={icon} size={52} color={iconColor} />
+            </View>
+          )}
+        </View>
 
         <View style={styles.content}>
           <Text style={styles.name}>{name}</Text>
@@ -1542,14 +1544,18 @@ const styles = StyleSheet.create({
   },
   backArrow: { fontSize: 20, color: COLORS.text },
 
+  coverWrap: {
+    width: '100%',
+    aspectRatio: 1, // square — same aspect as the picker and list thumbnail
+    backgroundColor: COLORS.surfaceAlt,
+  },
   cover: {
     width: '100%',
-    height: 200,
-    backgroundColor: COLORS.surfaceAlt,
+    height: '100%',
   },
   coverFallback: {
     width: '100%',
-    height: 160,
+    height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
   },

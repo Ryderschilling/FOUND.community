@@ -50,7 +50,7 @@ const Tab   = createBottomTabNavigator();
 const TABS = [
   { name: 'Discover', icon: 'compass',       iconActive: 'compass',       label: 'Discover' },
   { name: 'Groups',   icon: 'people',        iconActive: 'people',        label: 'Groups'   },
-  { name: 'Activity', icon: 'notifications', iconActive: 'notifications', label: 'Activity' },
+  { name: 'Activity', icon: 'notifications', iconActive: 'notifications', label: 'Community' },
   { name: 'Messages', icon: 'chatbubble',    iconActive: 'chatbubble',    label: 'Messages' },
   { name: 'Profile',  icon: 'person',        iconActive: 'person',        label: 'Profile'  },
 ];

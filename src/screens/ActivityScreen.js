@@ -35,10 +35,11 @@ import { useAuth } from '../auth/AuthContext';
 import { useConfirm } from '../components/ConfirmProvider';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
+// Neutral monochrome avatar palette — matches HomeScreen.
 const AVATAR_GRADIENTS = [
-  ['#4A6FA5', '#2D4E8A'], ['#5A8A6A', '#3D6B55'], ['#C0795A', '#A0593A'],
-  ['#7A5AA8', '#5A3A88'], ['#A8793A', '#886020'], ['#5A7A4A', '#3D6B3E'],
-  ['#4A8A6A', '#2D6B55'], ['#7A846A', '#5A6450'],
+  ['#1A1A1A', '#3A3A3A'], ['#2A2A2A', '#4A4A4A'], ['#3A3A3A', '#5A5A5A'],
+  ['#1A1A1A', '#2A2A2A'], ['#4A4A4A', '#1A1A1A'], ['#2A2A2A', '#1A1A1A'],
+  ['#3A3A3A', '#1A1A1A'], ['#5A5A5A', '#2A2A2A'],
 ];
 function gradientFor(id) {
   if (!id) return AVATAR_GRADIENTS[0];
@@ -332,7 +333,7 @@ export default function ActivityScreen({ navigation }) {
     <View style={styles.pageHeader}>
       <View>
         <Text style={styles.headerMeta}>Your Inbox</Text>
-        <Text style={styles.pageTitle}>Activity</Text>
+        <Text style={styles.pageTitle}>Community</Text>
       </View>
       {rows.length > 0 ? (
         <TouchableOpacity

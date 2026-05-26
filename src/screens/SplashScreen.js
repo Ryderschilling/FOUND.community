@@ -1,5 +1,7 @@
-import React from 'react';
-import { View, Text, StyleSheet, StatusBar, SafeAreaView, Image } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import {
+  View, Text, StyleSheet, StatusBar, SafeAreaView, Image, Animated, Easing,
+} from 'react-native';
 import { COLORS, FONT, SPACING, RADIUS } from '../theme';
 import { Wordmark, PrimaryButton, GhostButton } from '../components/Atoms';
 
@@ -16,7 +18,41 @@ function FoundLogo({ size = 64 }) {
   );
 }
 
+// ── Subtle entrance animation ────────────────────────────────────────────────
+// Each block fades in + slides up ~24px. Slight stagger (brand → hero → CTA)
+// gives a "welcome" feel without being heavy-handed. Native driver so it stays
+// smooth on lower-end devices.
+function useEntrance(delay = 0) {
+  const opacity   = useRef(new Animated.Value(0)).current;
+  const translate = useRef(new Animated.Value(24)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(opacity, {
+        toValue: 1,
+        duration: 650,
+        delay,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(translate, {
+        toValue: 0,
+        duration: 650,
+        delay,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [opacity, translate, delay]);
+
+  return { opacity, transform: [{ translateY: translate }] };
+}
+
 export default function SplashScreen({ navigation }) {
+  const brandAnim = useEntrance(0);
+  const heroAnim  = useEntrance(180);
+  const ctaAnim   = useEntrance(360);
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
@@ -24,32 +60,32 @@ export default function SplashScreen({ navigation }) {
       <View style={{ flex: 1 }} />
 
       {/* Brand */}
-      <View style={styles.brand}>
+      <Animated.View style={[styles.brand, brandAnim]}>
         <FoundLogo size={84} />
         <Wordmark size="xl" />
         <View style={styles.badge}>
           <View style={styles.badgeDot} />
           <Text style={styles.badgeText}>Real. Christian. Community.</Text>
         </View>
-      </View>
+      </Animated.View>
 
       {/* Hero copy — mirrors the found.community landing page */}
-      <View style={styles.hero}>
+      <Animated.View style={[styles.hero, heroAnim]}>
         <Text style={styles.headline}>Find your people.</Text>
         <Text style={styles.body}>
           FOUND helps Christians discover like-minded people nearby who share
           their faith, life stage, interests, and desire to go deeper.
         </Text>
         <Text style={styles.subtext}>Because we all need people to run with.</Text>
-      </View>
+      </Animated.View>
 
       <View style={{ flex: 1 }} />
 
       {/* CTAs */}
-      <View style={styles.ctaWrap}>
+      <Animated.View style={[styles.ctaWrap, ctaAnim]}>
         <PrimaryButton label="Get Started" onPress={() => navigation.navigate('SignUp')} />
         <GhostButton label="Already have an account? Sign in" onPress={() => navigation.navigate('SignIn')} />
-      </View>
+      </Animated.View>
 
       <View style={{ height: SPACING['2xl'] }} />
     </SafeAreaView>
