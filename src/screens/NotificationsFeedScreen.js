@@ -179,8 +179,33 @@ export default function NotificationsFeedScreen({ navigation }) {
           theirKind:   'like',
         },
       });
+    } else if (n.type === 'connection' && n.actor_id) {
+      // Inbound connection request → open their profile (MatchDetail) where
+      // Accept / Ignore live. Avoids landing on the Activity tab when the
+      // request has already been actioned (which would render an empty page).
+      const name = n.actor_name || 'Someone';
+      const parts = name.trim().split(/\s+/);
+      const initials = ((parts[0]?.[0] ?? '') + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase() || '??';
+      navigation?.navigate('MatchDetail', {
+        match: {
+          id:          n.actor_id,
+          name,
+          initials,
+          avatarUrl:   n.actor_avatar_url || null,
+          avatarColor: null,
+          connected:   false,
+          isMatch:     false,
+          bio:         null,
+          matchScore:  null,
+          lifeStage:   '',
+          distance:    '',
+          church:      null,
+          interests:   [],
+          theirKind:   'like',
+        },
+      });
     } else {
-      // Pending connection request → Activity tab (Accept / Dismiss live there)
+      // No actor info — fall back to Activity tab.
       navigation?.navigate('Main', { screen: 'Activity' });
     }
   }, [navigation]);

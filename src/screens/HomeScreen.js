@@ -263,9 +263,17 @@ export default function HomeScreen({ navigation }) {
 
   // Optimistic Connect. RLS allows insert where from_profile = auth.uid().
   // PK (from, to, kind) → re-tap is a no-op via ignoreDuplicates.
+  // If theirKind === 'like' this is a reciprocal → flip isMatch immediately
+  // so the card jumps from "Accept" straight to "Connected" instead of
+  // bouncing through "Pending" before the next refresh.
   const handleConnect = useCallback(async (toProfileId) => {
     if (!user || !toProfileId) return;
-    patchMatch(toProfileId, { connected: true });
+    let wasReciprocal = false;
+    setMatches((prev) => prev.map((m) => {
+      if (m.id !== toProfileId) return m;
+      wasReciprocal = m.theirKind === 'like';
+      return { ...m, connected: true, isMatch: wasReciprocal ? true : m.isMatch };
+    }));
     const { error: insErr } = await supabase
       .from('connections')
       .upsert(
@@ -273,7 +281,9 @@ export default function HomeScreen({ navigation }) {
         { onConflict: 'from_profile,to_profile,kind', ignoreDuplicates: true }
       );
     if (insErr) {
-      patchMatch(toProfileId, { connected: false });
+      patchMatch(toProfileId, wasReciprocal
+        ? { connected: false, isMatch: false }
+        : { connected: false });
       console.warn('[discover] connect failed', insErr.message);
     }
   }, [user, patchMatch]);
