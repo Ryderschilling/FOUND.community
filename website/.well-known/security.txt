@@ -1,0 +1,32 @@
+Contact: mailto:security@found.community
+Expires: 2027-05-25T23:59:59.000Z
+Preferred-Languages: en
+Canonical: https://found.community/.well-known/security.txt
+Policy: https://found.community/security-policy
+
+# Responsible Disclosure
+# If you discover a security vulnerability in FOUND (the mobile app,
+# the website, or any related infrastructure) please email
+# security@found.community with the following:
+#
+#   - A clear description of the issue
+#   - Steps to reproduce
+#   - The impact / what an attacker could do
+#   - Any proof-of-concept code or screenshots
+#
+# Please do not:
+#   - Disclose the issue publicly until we have patched it
+#   - Access, modify, or destroy user data beyond what is necessary
+#     to demonstrate the vulnerability
+#   - Run brute-force, denial-of-service, or social-engineering attacks
+#
+# We will:
+#   - Acknowledge your report within 3 business days
+#   - Investigate and respond with a timeline within 14 days
+#   - Credit you in our security advisories (if you wish)
+#
+# Out of scope:
+#   - Reports from automated scanners with no proof-of-concept
+#   - Missing security headers on static marketing pages
+#   - Theoretical issues without demonstrable impact
+#   - Social engineering of FOUND staff or contractors

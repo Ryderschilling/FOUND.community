@@ -22,6 +22,7 @@ import * as FileSystem from 'expo-file-system';
 import { decode } from 'base64-arraybuffer';
 import { supabase } from './supabase';
 import { checkText } from './contentFilter';
+import { stripExif } from './imageSanitize';
 
 const BUCKET = 'group-post-photos';
 export const MAX_POST_BODY = 1000;
@@ -61,10 +62,11 @@ async function pickImage(source) {
       ? await ImagePicker.launchCameraAsync(opts)
       : await ImagePicker.launchImageLibraryAsync(opts);
 
-  if (result.canceled) return null;
-  const asset = result.assets?.[0];
-  if (!asset) return null;
-  return { uri: asset.uri, base64: asset.base64 ?? null };
+      if (result.canceled) return null;
+      const asset = result.assets?.[0];
+      if (!asset) return null;
+      const sanitized = await stripExif(asset.uri, { maxWidth: 2048, compress: 0.85 });
+      return { uri: sanitized.uri, base64: sanitized.base64 };
 }
 
 // Derive the storage object key from a stored public URL.

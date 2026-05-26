@@ -19,6 +19,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 import { decode } from 'base64-arraybuffer';
 import { supabase } from './supabase';
+import { stripExif } from './imageSanitize';
 
 const BUCKET = 'avatars';
 const FILE_NAME = 'avatar.jpg';
@@ -51,11 +52,12 @@ async function pickImage(source) {
       ? await ImagePicker.launchCameraAsync(opts)
       : await ImagePicker.launchImageLibraryAsync(opts);
 
-  if (result.canceled) return null;
-  const asset = result.assets?.[0];
-  if (!asset) return null;
-  return { uri: asset.uri, base64: asset.base64 ?? null };
-}
+      if (result.canceled) return null;
+      const asset = result.assets?.[0];
+      if (!asset) return null;
+      const sanitized = await stripExif(asset.uri, { maxWidth: 1024, compress: 0.8 });
+      return { uri: sanitized.uri, base64: sanitized.base64 };
+    }
 
 // Upload picked image to Supabase Storage and update the profile row.
 async function uploadToSupabase(userId, picked) {

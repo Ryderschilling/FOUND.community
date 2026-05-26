@@ -1,3 +1,5 @@
+import './src/lib/sentry';
+
 import React from 'react';
 import { View, ActivityIndicator, Platform, StyleSheet } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';

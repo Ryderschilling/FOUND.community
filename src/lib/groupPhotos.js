@@ -18,6 +18,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 import { decode } from 'base64-arraybuffer';
 import { supabase } from './supabase';
+import { stripExif } from './imageSanitize';
 
 const BUCKET = 'group-photos';
 export const MAX_GROUP_PHOTOS = 12;
@@ -58,10 +59,11 @@ async function pickImage(source) {
       ? await ImagePicker.launchCameraAsync(opts)
       : await ImagePicker.launchImageLibraryAsync(opts);
 
-  if (result.canceled) return null;
-  const asset = result.assets?.[0];
-  if (!asset) return null;
-  return { uri: asset.uri, base64: asset.base64 ?? null };
+      if (result.canceled) return null;
+      const asset = result.assets?.[0];
+      if (!asset) return null;
+      const sanitized = await stripExif(asset.uri, { maxWidth: 2048, compress: 0.85 });
+      return { uri: sanitized.uri, base64: sanitized.base64 };
 }
 
 // Public URL with cache-buster (RN image cache otherwise shows stale images).
