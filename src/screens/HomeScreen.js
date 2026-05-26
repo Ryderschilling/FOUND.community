@@ -32,12 +32,16 @@ import {
 } from '../lib/locationFilter';
 
 // Filter chips (non-location). Location lives in the dedicated pill above.
+// "All" + every discovery filter (saved/stage/church/new) hides existing
+// connections so Discover stays a feed of *new* people to meet. "Connections"
+// is the inverse — only people you're mutually matched with.
 const FILTERS = [
-  { id: 'all',    label: 'All'           },
-  { id: 'saved',  label: 'Connect Later' },
-  { id: 'stage',  label: 'Life Stage'    },
-  { id: 'church', label: 'Same Church'   },
-  { id: 'new',    label: 'New'           },
+  { id: 'all',         label: 'All'           },
+  { id: 'connections', label: 'Connections'   },
+  { id: 'saved',       label: 'Connect Later' },
+  { id: 'stage',       label: 'Life Stage'    },
+  { id: 'church',      label: 'Same Church'   },
+  { id: 'new',         label: 'New'           },
 ];
 
 // Height of the FOUND + bell header block
@@ -376,26 +380,36 @@ export default function HomeScreen({ navigation }) {
   // chip first, then the text search. Cheap (feed is capped at 100 rows) and
   // instant — no extra round-trip. Promote to a server RPC if the feed ever
   // grows past a few hundred rows.
-  //   all    → everything
-  //   saved  → only people in my private Connect Later list
-  //   stage  → same life stage as me   (compares life_stage_id, not the label)
-  //   church → same church as me       (compares church_id)
-  //   new    → joined in the last NEW_WINDOW_DAYS days
+  //   all         → everyone I'm NOT already connected with
+  //   connections → only mutual matches (people I'm connected with)
+  //   saved       → only people in my private Connect Later list
+  //   stage       → same life stage as me   (compares life_stage_id, not the label)
+  //   church      → same church as me       (compares church_id)
+  //   new         → joined in the last NEW_WINDOW_DAYS days
+  // Discovery filters all hide existing connections; the Connections tab is the
+  // one place they appear.
   const visibleMatches = useMemo(() => {
     let list = matches;
 
-    if (activeFilter === 'saved') {
-      list = list.filter((m) => m.saved);
-    } else if (activeFilter === 'stage' && profile?.life_stage_id) {
-      list = list.filter((m) => m.lifeStageId === profile.life_stage_id);
-    } else if (activeFilter === 'church' && profile?.church_id) {
-      list = list.filter((m) => m.churchId === profile.church_id);
-    } else if (activeFilter === 'new') {
-      const cutoff = Date.now() - NEW_WINDOW_DAYS * 24 * 60 * 60 * 1000;
-      list = list.filter((m) => {
-        const t = m.createdAt ? new Date(m.createdAt).getTime() : NaN;
-        return Number.isFinite(t) && t >= cutoff;
-      });
+    if (activeFilter === 'connections') {
+      list = list.filter((m) => m.isMatch);
+    } else {
+      // Every other tab is a discovery view — hide people I'm already connected with.
+      list = list.filter((m) => !m.isMatch);
+
+      if (activeFilter === 'saved') {
+        list = list.filter((m) => m.saved);
+      } else if (activeFilter === 'stage' && profile?.life_stage_id) {
+        list = list.filter((m) => m.lifeStageId === profile.life_stage_id);
+      } else if (activeFilter === 'church' && profile?.church_id) {
+        list = list.filter((m) => m.churchId === profile.church_id);
+      } else if (activeFilter === 'new') {
+        const cutoff = Date.now() - NEW_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+        list = list.filter((m) => {
+          const t = m.createdAt ? new Date(m.createdAt).getTime() : NaN;
+          return Number.isFinite(t) && t >= cutoff;
+        });
+      }
     }
 
     const q = query.trim().toLowerCase();
