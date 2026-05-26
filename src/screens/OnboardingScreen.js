@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,8 @@ import {
   Modal,
   KeyboardAvoidingView,
   Platform,
+  Animated,
+  Easing,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
@@ -361,19 +363,133 @@ function StepChurch({ value, onChange }) {
 }
 
 function StepMatchReveal({ onFinish, busy }) {
+  // Entrance: ring scales in → check pops → title/body/button stagger up.
+  // Background: three nested rings pulse slowly to add ambient motion.
+  const ringScale  = useRef(new Animated.Value(0.2)).current;
+  const ringOpacity = useRef(new Animated.Value(0)).current;
+  const checkScale = useRef(new Animated.Value(0)).current;
+  const titleY     = useRef(new Animated.Value(16)).current;
+  const titleOp    = useRef(new Animated.Value(0)).current;
+  const bodyY      = useRef(new Animated.Value(14)).current;
+  const bodyOp     = useRef(new Animated.Value(0)).current;
+  const btnY       = useRef(new Animated.Value(14)).current;
+  const btnOp      = useRef(new Animated.Value(0)).current;
+
+  // Ambient pulse rings (run on loop)
+  const pulseA = useRef(new Animated.Value(0)).current;
+  const pulseB = useRef(new Animated.Value(0)).current;
+  const pulseC = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.sequence([
+      Animated.parallel([
+        Animated.timing(ringScale, {
+          toValue: 1,
+          duration: 520,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(ringOpacity, {
+          toValue: 1,
+          duration: 420,
+          useNativeDriver: true,
+        }),
+      ]),
+      Animated.spring(checkScale, {
+        toValue: 1,
+        tension: 180,
+        friction: 8,
+        useNativeDriver: true,
+      }),
+      Animated.stagger(110, [
+        Animated.parallel([
+          Animated.timing(titleOp, { toValue: 1, duration: 360, useNativeDriver: true }),
+          Animated.timing(titleY,  { toValue: 0, duration: 360, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+        ]),
+        Animated.parallel([
+          Animated.timing(bodyOp, { toValue: 1, duration: 360, useNativeDriver: true }),
+          Animated.timing(bodyY,  { toValue: 0, duration: 360, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+        ]),
+        Animated.parallel([
+          Animated.timing(btnOp, { toValue: 1, duration: 360, useNativeDriver: true }),
+          Animated.timing(btnY,  { toValue: 0, duration: 360, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+        ]),
+      ]),
+    ]).start();
+
+    const makePulse = (val, delay) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(val, {
+            toValue: 1,
+            duration: 2400,
+            easing: Easing.out(Easing.quad),
+            useNativeDriver: true,
+          }),
+          Animated.timing(val, { toValue: 0, duration: 0, useNativeDriver: true }),
+        ]),
+      );
+
+    const p1 = makePulse(pulseA, 200);
+    const p2 = makePulse(pulseB, 900);
+    const p3 = makePulse(pulseC, 1600);
+    p1.start(); p2.start(); p3.start();
+    return () => { p1.stop(); p2.stop(); p3.stop(); };
+  }, []);
+
+  const pulseStyle = (val) => ({
+    transform: [{
+      scale: val.interpolate({ inputRange: [0, 1], outputRange: [0.6, 2.2] }),
+    }],
+    opacity: val.interpolate({ inputRange: [0, 0.15, 1], outputRange: [0, 0.35, 0] }),
+  });
+
   return (
     <View style={styles.revealWrap}>
-      <Text style={styles.revealTitle}>Thanks for signing up.</Text>
-      <Text style={styles.revealBody}>
+      <View style={styles.revealHero}>
+        <Animated.View style={[styles.pulseRing, pulseStyle(pulseA)]} />
+        <Animated.View style={[styles.pulseRing, pulseStyle(pulseB)]} />
+        <Animated.View style={[styles.pulseRing, pulseStyle(pulseC)]} />
+        <Animated.View
+          style={[
+            styles.revealRing,
+            { opacity: ringOpacity, transform: [{ scale: ringScale }] },
+          ]}
+        >
+          <Animated.View style={{ transform: [{ scale: checkScale }] }}>
+            <Ionicons name="checkmark" size={48} color={COLORS.background} />
+          </Animated.View>
+        </Animated.View>
+      </View>
+
+      <Animated.Text
+        style={[styles.revealTitle, { opacity: titleOp, transform: [{ translateY: titleY }] }]}
+      >
+        You're in.
+      </Animated.Text>
+
+      <Animated.Text
+        style={[styles.revealBody, { opacity: bodyOp, transform: [{ translateY: bodyY }] }]}
+      >
         Your profile's ready. Step into your community and see who you're meant to find.
-      </Text>
-      <PrimaryButton
-        label={busy ? 'Saving…' : 'See your connections'}
-        onPress={onFinish}
-        loading={busy}
-        disabled={busy}
-        style={styles.revealBtn}
-      />
+      </Animated.Text>
+
+      <Animated.View
+        style={{
+          alignSelf: 'stretch',
+          opacity: btnOp,
+          transform: [{ translateY: btnY }],
+        }}
+      >
+        <PrimaryButton
+          label={busy ? 'Saving…' : 'See your connections'}
+          onPress={onFinish}
+          loading={busy}
+          disabled={busy}
+          style={styles.revealBtn}
+        />
+      </Animated.View>
     </View>
   );
 }
@@ -839,7 +955,31 @@ const styles = StyleSheet.create({
   },
 
   // Reveal step
-  revealWrap: { alignItems: 'center', paddingTop: SPACING['2xl'], gap: SPACING.md },
+  revealWrap: { alignItems: 'center', paddingTop: SPACING.xl, gap: SPACING.md },
+  revealHero: {
+    width: 180,
+    height: 180,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: SPACING.md,
+  },
+  revealRing: {
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+    backgroundColor: COLORS.text,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...SHADOW.lg,
+  },
+  pulseRing: {
+    position: 'absolute',
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+    borderWidth: 2,
+    borderColor: COLORS.text,
+  },
   revealStat: { alignItems: 'center', marginBottom: SPACING.sm },
   revealNumber: {
     fontFamily: FONT.serifItalic,
