@@ -119,6 +119,7 @@ function rowToMatch(row) {
     theirKind:    row.their_kind || null,
     isMatch:      !!row.is_match,
     sameHometown: !!row.same_hometown,
+    mutualCount:  row.mutual_count ?? 0,
   };
 }
 

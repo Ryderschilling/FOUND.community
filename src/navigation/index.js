@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform, ActivityIndicator, AppState } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform, ActivityIndicator, AppState, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -37,6 +37,8 @@ import GroupDetailScreen  from '../screens/GroupDetailScreen';
 import NotificationsFeedScreen from '../screens/NotificationsFeedScreen';
 import BlockedUsersScreen from '../screens/BlockedUsersScreen';
 import SuspendedScreen    from '../screens/SuspendedScreen';
+import CreateEventScreen  from '../screens/CreateEventScreen';
+import EventDetailScreen  from '../screens/EventDetailScreen';
 
 import NotificationsScreen    from '../screens/settings/NotificationsScreen';
 import LocationSettingsScreen from '../screens/settings/LocationSettingsScreen';
@@ -98,9 +100,66 @@ function FloatingTabBar({ state, descriptors, navigation }) {
   const { user } = useAuth();
   const { count: notifCount, refresh: refreshNotifs } = useUnreadNotifications(user?.id, 'tab-bar');
 
+  // ── Pill positioning ──────────────────────────────────────────────
+  // Web (CSS): position:absolute origins from the PADDING edge of the parent.
+  // Native (Yoga): position:absolute origins from the CONTENT edge.
+  // Tabs use flex:1 and fill the CONTENT area. To make pill math identical on
+  // both platforms, offset the pill's `left` by paddingHorizontal on web so
+  // it anchors at the content edge just like native.
+  const INNER_PAD  = 4;  // tabBarInner paddingHorizontal — must stay in sync
+  const PILL_INSET = 4;  // breathing room trimmed from each side of a tab slot
+  // On web the pill starts at the padding edge; shift it right by INNER_PAD so
+  // it aligns with the content edge where the flex tabs live.
+  const pillBaseLeft = Platform.OS === 'web' ? INNER_PAD : 0;
+
+  const [barWidth, setBarWidth] = useState(0);
+  const numTabs     = state.routes.length;
+  const pillX       = useRef(new Animated.Value(0)).current;
+  const firstLayout = useRef(true);
+
+  // Content width excludes both borders (1px each) and both paddings.
+  const contentWidth = barWidth > 0 ? barWidth - 2 - 2 * INNER_PAD : 0;
+  const tabWidth     = contentWidth / numTabs;
+  const pillWidth    = tabWidth > 0 ? tabWidth - PILL_INSET * 2 : 0;
+
+  useEffect(() => {
+    if (!barWidth) return;
+    // Tab i occupies [i*tabWidth, (i+1)*tabWidth] within the content area.
+    // Pill left (relative to content edge) = i*tabWidth + PILL_INSET.
+    const targetX = state.index * tabWidth + PILL_INSET;
+
+    if (firstLayout.current) {
+      pillX.setValue(targetX);
+      firstLayout.current = false;
+      return;
+    }
+
+    Animated.spring(pillX, {
+      toValue: targetX,
+      useNativeDriver: true,
+      damping: 18,
+      stiffness: 160,
+      mass: 0.7,
+    }).start();
+  }, [state.index, barWidth]);
+
   return (
     <View style={[styles.tabBarOuter, { paddingBottom: bottom }]}>
-      <View style={styles.tabBarInner}>
+      <View
+        style={styles.tabBarInner}
+        onLayout={(e) => setBarWidth(e.nativeEvent.layout.width)}
+      >
+        {/* Single sliding pill, anchored to content edge on both platforms */}
+        {barWidth > 0 && (
+          <Animated.View
+            style={[
+              styles.tabPill,
+              { left: pillBaseLeft, width: pillWidth, transform: [{ translateX: pillX }] },
+            ]}
+            pointerEvents="none"
+          />
+        )}
+
         {state.routes.map((route, index) => {
           const focused = state.index === index;
           const tab     = TABS.find(t => t.name === route.name) ?? TABS[0];
@@ -134,7 +193,6 @@ function FloatingTabBar({ state, descriptors, navigation }) {
               activeOpacity={0.75}
               style={styles.tabItem}
             >
-              {focused && <View style={styles.tabPill} />}
               <View>
                 <Ionicons
                   name={focused ? tab.iconActive : `${tab.icon}-outline`}
@@ -233,6 +291,8 @@ function AppStack({ needsOnboarding }) {
           <Stack.Screen name="Privacy"          component={PrivacyScreen}          options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="HelpSupport"      component={HelpSupportScreen}      options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="BlockedUsers"     component={BlockedUsersScreen}     options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="CreateEvent"     component={CreateEventScreen}      options={{ animation: 'slide_from_bottom' }} />
+          <Stack.Screen name="EventDetail"     component={EventDetailScreen}      options={{ animation: 'slide_from_right' }} />
         </>
       )}
     </Stack.Navigator>
@@ -337,10 +397,8 @@ const styles = StyleSheet.create({
   },
   tabPill: {
     position: 'absolute',
-    top: 0,
-    left: '10%',
-    right: '10%',
-    bottom: 0,
+    top: 4,
+    bottom: 4,
     borderRadius: 16,
     backgroundColor: COLORS.surfaceAlt,
   },

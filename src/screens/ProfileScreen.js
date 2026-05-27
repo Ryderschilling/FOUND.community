@@ -20,7 +20,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
-import { Avatar, Pill, SectionHeader } from '../components/Atoms';
+import { Avatar, Pill, SectionHeader, Wordmark, IconButton } from '../components/Atoms';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../auth/AuthContext';
 import { pickAndUploadAvatar } from '../lib/uploadAvatar';
@@ -729,6 +729,17 @@ export default function ProfileScreen({ navigation }) {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
 
+      {/* Page header — fixed above scroll, matches Discover pattern */}
+      <View style={styles.pageHeader}>
+        <View>
+          <Text style={styles.headerMeta}>Your Account</Text>
+          <Wordmark size="md" label="Profile" />
+        </View>
+        <IconButton onPress={handleEditProfile}>
+          <Ionicons name="create-outline" size={18} color={COLORS.text} />
+        </IconButton>
+      </View>
+
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 120 }}
@@ -740,12 +751,6 @@ export default function ProfileScreen({ navigation }) {
           />
         }
       >
-
-        {/* Page header */}
-        <View style={styles.pageHeader}>
-          <Text style={styles.headerMeta}>Your Account</Text>
-          <Text style={styles.pageTitle}>Profile</Text>
-        </View>
 
         {/* Hero card */}
         <View style={styles.heroCard}>
@@ -973,9 +978,12 @@ const styles = StyleSheet.create({
   centered: { alignItems: 'center', justifyContent: 'center' },
 
   pageHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: SPACING.lg,
-    paddingTop: SPACING.sm,
-    paddingBottom: SPACING.md,
+    paddingTop: 36,
+    paddingBottom: SPACING.lg,
   },
   headerMeta: {
     fontFamily: FONT.mono,

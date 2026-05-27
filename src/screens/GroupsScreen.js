@@ -30,7 +30,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS } from '../theme';
 import GroupCard from '../components/GroupCard';
-import { PrimaryButton, Chip } from '../components/Atoms';
+import { PrimaryButton, Chip, Wordmark, IconButton } from '../components/Atoms';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../auth/AuthContext';
 import { geocode } from '../lib/geocode';
@@ -226,6 +226,22 @@ export default function GroupsScreen({ navigation }) {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
 
+      {/* Fixed page header — matches all other tab screens */}
+      <View style={styles.pageHeader}>
+        <View>
+          <Text style={styles.headerMeta}>Local Community</Text>
+          <Wordmark size="md" label="Groups" />
+        </View>
+        <TouchableOpacity
+          style={styles.createIconBtn}
+          activeOpacity={0.85}
+          onPress={() => setCreateOpen(true)}
+          accessibilityLabel="Create a group"
+        >
+          <Ionicons name="add" size={20} color={COLORS.white} />
+        </TouchableOpacity>
+      </View>
+
       {loading ? (
         <View style={styles.centered}>
           <ActivityIndicator color={COLORS.textTertiary} />
@@ -253,24 +269,7 @@ export default function GroupsScreen({ navigation }) {
             </View>
           )}
           ListHeaderComponent={
-            <View style={styles.header}>
-              {/* Title + compact create action */}
-              <View style={styles.titleRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.headerMeta}>Local Community</Text>
-                  <Text style={styles.title}>Groups</Text>
-                  <Text style={styles.sub}>Find your people — in real life</Text>
-                </View>
-                <TouchableOpacity
-                  style={styles.createIconBtn}
-                  activeOpacity={0.85}
-                  onPress={() => setCreateOpen(true)}
-                  accessibilityLabel="Create a group"
-                >
-                  <Ionicons name="add" size={22} color={COLORS.white} />
-                </TouchableOpacity>
-              </View>
-
+            <View style={styles.listSubHeader}>
               {/* Search bar */}
               <View style={styles.searchWrap}>
                 <Ionicons
@@ -288,7 +287,7 @@ export default function GroupsScreen({ navigation }) {
                 />
               </View>
 
-              {/* Filter chips — single horizontal scroll row */}
+              {/* Filter chips */}
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
@@ -590,37 +589,27 @@ const styles = StyleSheet.create({
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   listContent: { paddingBottom: 110 },
 
-  header: {
-    paddingHorizontal: SPACING.lg,
-    paddingTop: SPACING.md,
-    paddingBottom: SPACING.md,
-    gap: SPACING.md,
-  },
-  titleRow: {
+  pageHeader: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: SPACING.sm,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: SPACING.lg,
+    paddingTop: SPACING.lg,
+    paddingBottom: SPACING.md,
   },
   headerMeta: {
     fontFamily: FONT.mono,
-    fontSize: 10,
-    letterSpacing: 1.8,
+    fontSize: 9,
+    letterSpacing: 1.6,
     textTransform: 'uppercase',
     color: COLORS.textTertiary,
-    marginBottom: 6,
+    marginBottom: 3,
   },
-  title: {
-    fontFamily: FONT.serifItalic,
-    fontSize: 36,
-    color: COLORS.text,
-    letterSpacing: -0.5,
-    lineHeight: 40,
-  },
-  sub: {
-    fontFamily: FONT.regular,
-    fontSize: 14,
-    color: COLORS.textSecondary,
-    marginTop: 6,
+  listSubHeader: {
+    paddingHorizontal: SPACING.lg,
+    paddingTop: SPACING.sm,
+    paddingBottom: SPACING.sm,
+    gap: SPACING.md,
   },
   createIconBtn: {
     width: 44,

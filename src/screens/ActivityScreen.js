@@ -20,6 +20,7 @@ import {
   Text,
   StyleSheet,
   FlatList,
+  ScrollView,
   TouchableOpacity,
   SafeAreaView,
   StatusBar,
@@ -29,7 +30,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
-import { Avatar } from '../components/Atoms';
+import { Avatar, Wordmark, IconButton } from '../components/Atoms';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../auth/AuthContext';
 import { useConfirm } from '../components/ConfirmProvider';
@@ -156,10 +157,41 @@ function ActivityRow({ row, onAccept, onDismiss, onOpen, onMessage, busy }) {
 }
 
 // ─── Screen ───────────────────────────────────────────────────────────────
+// ─── Event card (horizontal strip) ───────────────────────────────────────
+function formatEventShort(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+    + '\n'
+    + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+}
+
+function EventCard({ ev, onPress }) {
+  const isCreator = ev.my_role === 'creator';
+  return (
+    <TouchableOpacity style={styles.eventCard} activeOpacity={0.8} onPress={() => onPress(ev)}>
+      <View style={[styles.eventRolePill, isCreator ? styles.eventRoleCreator : styles.eventRoleAttendee]}>
+        <Text style={[styles.eventRoleText, isCreator ? styles.eventRoleCreatorText : styles.eventRoleAttendeeText]}>
+          {isCreator ? 'Hosting' : 'Going'}
+        </Text>
+      </View>
+      <Text style={styles.eventCardTitle} numberOfLines={2}>{ev.title}</Text>
+      <Text style={styles.eventCardTime}>{formatEventShort(ev.event_time)}</Text>
+      {ev.location_name ? (
+        <Text style={styles.eventCardLocation} numberOfLines={1}>📍 {ev.location_name}</Text>
+      ) : null}
+      {ev.going_count > 0 && (
+        <Text style={styles.eventCardGoing}>{ev.going_count} going</Text>
+      )}
+    </TouchableOpacity>
+  );
+}
+
 export default function ActivityScreen({ navigation }) {
   const { user } = useAuth();
   const confirm = useConfirm();
   const [rows, setRows]               = useState([]);
+  const [events, setEvents]           = useState([]);
   const [loading, setLoading]         = useState(true);
   const [refreshing, setRefreshing]   = useState(false);
   const [error, setError]             = useState(null);
@@ -175,10 +207,14 @@ export default function ActivityScreen({ navigation }) {
     if (isRefresh) setRefreshing(true); else setLoading(true);
     setError(null);
     try {
-      const { data, error: rpcErr } = await supabase.rpc('inbound_connections');
+      const [connRes, evRes] = await Promise.all([
+        supabase.rpc('inbound_connections'),
+        supabase.rpc('my_upcoming_events'),
+      ]);
       if (!mountedRef.current) return;
-      if (rpcErr) throw rpcErr;
-      setRows(data ?? []);
+      if (connRes.error) throw connRes.error;
+      setRows(connRes.data ?? []);
+      setEvents(evRes.data ?? []);
     } catch (e) {
       if (!mountedRef.current) return;
       console.warn('[activity] load failed', e?.message);
@@ -329,24 +365,61 @@ export default function ActivityScreen({ navigation }) {
     setRows([]);
   }
 
+  const handleEventPress = useCallback((ev) => {
+    navigation.navigate('EventDetail', {
+      eventId:   ev.event_id,
+      isCreator: ev.my_role === 'creator',
+    });
+  }, [navigation]);
+
   const Header = () => (
-    <View style={styles.pageHeader}>
-      <View>
-        <Text style={styles.headerMeta}>Your Inbox</Text>
-        <Text style={styles.pageTitle}>Community</Text>
+    <View>
+      {/* Title row */}
+      <View style={styles.pageHeader}>
+        <View>
+          <Text style={styles.headerMeta}>Your Inbox</Text>
+          <Wordmark size="md" label="Community" />
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          {rows.length > 0 ? (
+            <TouchableOpacity
+              style={styles.markAllBtn}
+              onPress={handleMarkAllRead}
+              disabled={markingAll}
+              activeOpacity={0.7}
+            >
+              {markingAll
+                ? <ActivityIndicator size="small" color={COLORS.textSecondary} />
+                : <Text style={styles.markAllText}>Mark all read</Text>}
+            </TouchableOpacity>
+          ) : null}
+          <TouchableOpacity
+            style={styles.createEventBtn}
+            onPress={() => navigation.navigate('CreateEvent')}
+            activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="calendar-outline" size={16} color={COLORS.white} />
+            <Text style={styles.createEventText}>Invite</Text>
+          </TouchableOpacity>
+        </View>
       </View>
-      {rows.length > 0 ? (
-        <TouchableOpacity
-          style={styles.markAllBtn}
-          onPress={handleMarkAllRead}
-          disabled={markingAll}
-          activeOpacity={0.7}
-        >
-          {markingAll
-            ? <ActivityIndicator size="small" color={COLORS.textSecondary} />
-            : <Text style={styles.markAllText}>Mark all read</Text>}
-        </TouchableOpacity>
-      ) : null}
+
+      {/* Upcoming events — horizontal scroll so main list always scrollable */}
+      {events.length > 0 && (
+        <View style={styles.eventsSection}>
+          <Text style={styles.eventsSectionLabel}>UPCOMING EVENTS</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.eventsScroll}
+          >
+            {events.map((ev) => (
+              <EventCard key={ev.event_id} ev={ev} onPress={handleEventPress} />
+            ))}
+          </ScrollView>
+        </View>
+      )}
     </View>
   );
 
@@ -382,10 +455,10 @@ export default function ActivityScreen({ navigation }) {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
+      <Header />
       <FlatList
         data={rows}
         keyExtractor={(r) => r.profile_id}
-        ListHeaderComponent={<Header />}
         ListEmptyComponent={<Empty />}
         renderItem={({ item }) => (
           <ActivityRow
@@ -417,10 +490,10 @@ const styles = StyleSheet.create({
 
   pageHeader: {
     paddingHorizontal: SPACING.lg,
-    paddingTop: SPACING.sm,
-    paddingBottom: SPACING.md,
+    paddingTop: 36,
+    paddingBottom: SPACING.lg,
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     justifyContent: 'space-between',
   },
   markAllBtn: {
@@ -433,6 +506,93 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: COLORS.textSecondary,
   },
+  createEventBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: COLORS.text,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  createEventText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 13,
+    color: COLORS.white,
+  },
+
+  // Upcoming events strip
+  eventsSection: {
+    paddingBottom: SPACING.md,
+  },
+  eventsSectionLabel: {
+    fontFamily: FONT.mono,
+    fontSize: 9,
+    letterSpacing: 1.4,
+    color: COLORS.textTertiary,
+    paddingHorizontal: SPACING.lg,
+    marginBottom: SPACING.sm,
+  },
+  eventsScroll: {
+    paddingHorizontal: SPACING.lg,
+    gap: SPACING.sm,
+    paddingRight: SPACING.xl,
+  },
+  // Each card is a fixed-width vertical tile
+  eventCard: {
+    width: 160,
+    backgroundColor: COLORS.white,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: SPACING.md,
+    gap: 5,
+    ...SHADOW.sm,
+  },
+  eventCardTitle: {
+    fontFamily: FONT.semiBold,
+    fontSize: 15,
+    color: COLORS.text,
+    lineHeight: 20,
+  },
+  eventCardTime: {
+    fontFamily: FONT.regular,
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    lineHeight: 17,
+  },
+  eventCardLocation: {
+    fontFamily: FONT.regular,
+    fontSize: 12,
+    color: COLORS.textTertiary,
+  },
+  eventCardGoing: {
+    fontFamily: FONT.medium,
+    fontSize: 12,
+    color: COLORS.sage,
+  },
+  eventRolePill: {
+    alignSelf: 'flex-start',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderWidth: 1,
+    marginBottom: 2,
+  },
+  eventRoleCreator: {
+    backgroundColor: COLORS.text,
+    borderColor: COLORS.text,
+  },
+  eventRoleAttendee: {
+    backgroundColor: COLORS.sageBg,
+    borderColor: COLORS.sage,
+  },
+  eventRoleText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 10,
+  },
+  eventRoleCreatorText: { color: COLORS.white },
+  eventRoleAttendeeText: { color: COLORS.sage },
   headerMeta: {
     fontFamily: FONT.mono,
     fontSize: 9,

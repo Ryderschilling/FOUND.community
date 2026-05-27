@@ -458,7 +458,7 @@ function StepMatchReveal({ onFinish, busy }) {
           ]}
         >
           <Animated.View style={{ transform: [{ scale: checkScale }] }}>
-            <Ionicons name="checkmark" size={48} color={COLORS.background} />
+            <Ionicons name="checkmark" size={48} color="#FFFFFF" />
           </Animated.View>
         </Animated.View>
       </View>

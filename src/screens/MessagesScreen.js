@@ -18,7 +18,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
-import { Avatar, IconButton } from '../components/Atoms';
+import { Avatar, IconButton, Wordmark } from '../components/Atoms';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../auth/AuthContext';
 
@@ -173,7 +173,7 @@ export default function MessagesScreen({ navigation }) {
       <View style={styles.header}>
         <View>
           <Text style={styles.headerMeta}>Inbox</Text>
-          <Text style={styles.title}>Messages</Text>
+          <Wordmark size="md" label="Messages" />
         </View>
         <IconButton onPress={() => setComposeOpen(true)}>
           <Ionicons name="create-outline" size={18} color={COLORS.text} />
@@ -479,7 +479,7 @@ const styles = StyleSheet.create({
 
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: SPACING.lg, paddingTop: SPACING.sm, paddingBottom: SPACING.md,
+    paddingHorizontal: SPACING.lg, paddingTop: 36, paddingBottom: SPACING.lg,
   },
   headerMeta: {
     fontFamily: FONT.mono, fontSize: 9, letterSpacing: 1.6,

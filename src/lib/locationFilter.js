@@ -67,10 +67,12 @@ export function filterToRpcArgs(filter, selfLocation = null) {
   switch (filter.mode) {
     case 'self':
       if (!selfLocation?.lat || !selfLocation?.lng) return fallback;
-      return { p_lat: selfLocation.lat, p_lng: selfLocation.lng, p_radius_mi: radius };
+      return { p_lat: selfLocation.lat, p_lng: selfLocation.lng, p_radius_mi: radius, p_anywhere: false };
     case 'anywhere':
     default:
-      return fallback;
+      // p_anywhere: true tells the RPC to bypass all geo filters and sort by
+      // score + mutual connections instead of distance.
+      return { p_lat: null, p_lng: null, p_radius_mi: null, p_anywhere: true };
   }
 }
 

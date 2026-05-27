@@ -56,6 +56,10 @@ function visualsFor(type) {
       return { icon: 'newspaper',       fg: COLORS.clay, bg: COLORS.clayBg };
     case 'match':
       return { icon: 'sparkles',        fg: COLORS.gold, bg: COLORS.goldBg };
+    case 'event_invite':
+      return { icon: 'calendar',        fg: COLORS.clay, bg: COLORS.clayBg };
+    case 'event_rsvp':
+      return { icon: 'checkmark-circle',fg: COLORS.sage, bg: COLORS.sageBg };
     case 'connection':
     default:
       return { icon: 'person-add',      fg: COLORS.warm, bg: COLORS.warmBg };
@@ -204,6 +208,12 @@ export default function NotificationsFeedScreen({ navigation }) {
           theirKind:   'like',
         },
       });
+    } else if (n.type === 'event_invite' && n.entity_id) {
+      // Someone invited me to their event → open the event detail
+      navigation?.navigate('EventDetail', { eventId: n.entity_id, isCreator: false });
+    } else if (n.type === 'event_rsvp' && n.entity_id) {
+      // Someone RSVPed to my event → open my event detail (creator view)
+      navigation?.navigate('EventDetail', { eventId: n.entity_id, isCreator: true });
     } else {
       // No actor info — fall back to Activity tab.
       navigation?.navigate('Main', { screen: 'Activity' });

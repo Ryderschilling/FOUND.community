@@ -28,12 +28,12 @@ import { COLORS, FONT, TYPE, SPACING, RADIUS, SHADOW } from '../theme';
 
 // ─── Wordmark ────────────────────────────────────────────────────
 // Uses Inter Bold to match found.community nav logo
-export function Wordmark({ size = 'md', color = COLORS.text, style }) {
+export function Wordmark({ size = 'md', label, color = COLORS.text, style }) {
   const sizes = { sm: 20, md: 26, lg: 34, xl: 46 };
   const fs = sizes[size] ?? sizes.md;
   return (
     <Text style={[{ fontFamily: FONT.bold, fontSize: fs, color, letterSpacing: -0.5 }, style]}>
-      FOUND
+      {label ?? 'FOUND'}
     </Text>
   );
 }
