@@ -41,6 +41,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../auth/AuthContext';
+import { useConfirm } from '../components/ConfirmProvider';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 const AVATAR_GRADIENTS = [
@@ -113,6 +114,7 @@ function AttendeeRow({ invite }) {
 export default function EventDetailScreen({ navigation, route }) {
   const { eventId } = route.params ?? {};
   const { user } = useAuth();
+  const confirm = useConfirm();
 
   const [event, setEvent]         = useState(null);
   const [creator, setCreator]     = useState(null);
@@ -263,22 +265,20 @@ export default function EventDetailScreen({ navigation, route }) {
     if (!err) { setEditOpen(false); load(); }
   }, [editTitle, editDate, editLocation, editDesc, eventId, load]);
 
-  const handleDelete = useCallback(() => {
-    const doDelete = async () => {
-      setDeleting(true);
-      await supabase.from('events').delete().eq('id', eventId);
-      setDeleting(false);
-      navigation.popToTop();
-    };
-    if (Platform.OS === 'web') {
-      if (window.confirm('Delete this event? This cannot be undone.')) doDelete();
-    } else {
-      Alert.alert('Delete Event', 'This cannot be undone.', [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: doDelete },
-      ]);
-    }
-  }, [eventId, navigation]);
+  const handleDelete = useCallback(async () => {
+    const ok = await confirm({
+      title:        'Delete this event?',
+      message:      'Everyone who was invited will lose access. This cannot be undone.',
+      confirmLabel: 'Delete',
+      cancelLabel:  'Keep it',
+      destructive:  true,
+    });
+    if (!ok) return;
+    setDeleting(true);
+    await supabase.from('events').delete().eq('id', eventId);
+    setDeleting(false);
+    navigation.popToTop();
+  }, [confirm, eventId, navigation]);
 
   const handleSendInvites = useCallback(async () => {
     if (inviteSelected.size === 0 || !event?.id) return;
