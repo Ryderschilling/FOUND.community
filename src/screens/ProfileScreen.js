@@ -9,7 +9,6 @@ import {
   SafeAreaView,
   Image,
   ActivityIndicator,
-  Alert,
   RefreshControl,
   Platform,
   Modal,
@@ -32,6 +31,7 @@ import {
 } from '../lib/profilePhotos';
 import { publicUrlForGroupPhoto } from '../lib/groupPhotos';
 import { useConfirm } from '../components/ConfirmProvider';
+import { useToast } from '../components/ToastProvider';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 const AVATAR_GRADIENTS = [
@@ -504,6 +504,7 @@ function SettingsItem({ iconName, label, onPress, danger }) {
 export default function ProfileScreen({ navigation }) {
   const { user, signOut } = useAuth();
   const confirm = useConfirm();
+  const toast = useToast();
 
   const [profile, setProfile]     = useState(null);
   const [stats, setStats]         = useState({ matches: null, connections: null, groups: null });
@@ -591,7 +592,7 @@ export default function ProfileScreen({ navigation }) {
     const { url, error } = await pickAndUploadAvatar({ userId: user.id, source });
     setUploadingAvatar(false);
     if (error) {
-      Alert.alert('Could not update photo', error.message || 'Try again.');
+      toast({ title: 'Could not update photo', message: error.message || 'Try again.', type: 'error' });
       return;
     }
     if (!url) return; // user cancelled — no-op
@@ -599,7 +600,7 @@ export default function ProfileScreen({ navigation }) {
     setProfile((prev) => (prev ? { ...prev, avatar_url: url } : prev));
   }
 
-  function handleChangeAvatar() {
+  async function handleChangeAvatar() {
     // On web: skip the action sheet (Alert.alert buttons don't fire on web
     // anyway) and go straight to the library — the browser file picker is
     // the same experience either way.
@@ -607,22 +608,23 @@ export default function ProfileScreen({ navigation }) {
       runAvatarUpload('library');
       return;
     }
-    Alert.alert(
-      'Update profile photo',
-      undefined,
-      [
-        { text: 'Take photo',          onPress: () => runAvatarUpload('camera')  },
-        { text: 'Choose from library', onPress: () => runAvatarUpload('library') },
-        { text: 'Cancel', style: 'cancel' },
-      ],
-    );
+    const ok = await confirm({
+      title: 'Update profile photo',
+      confirmLabel: 'Take photo',
+      cancelLabel: 'Choose from library',
+    });
+    if (ok) {
+      runAvatarUpload('camera');
+    } else {
+      runAvatarUpload('library');
+    }
   }
 
   // ── Highlight reel: add ─────────────────────────────────────────────
   async function runPhotoUpload(source) {
     if (!user) return;
     if (photos.length >= MAX_PHOTOS) {
-      Alert.alert('Reel is full', `You can add up to ${MAX_PHOTOS} photos. Delete one to add another.`);
+      toast({ title: 'Reel is full', message: `You can add up to ${MAX_PHOTOS} photos. Delete one to add another.`, type: 'info' });
       return;
     }
     const slotIdx = photos.length;     // first empty slot
@@ -630,27 +632,29 @@ export default function ProfileScreen({ navigation }) {
     const { photo, error } = await pickAndUploadProfilePhoto({ userId: user.id, source });
     setPhotoBusyIdx(-1);
     if (error) {
-      Alert.alert('Could not add photo', error.message || 'Try again.');
+      toast({ title: 'Could not add photo', message: error.message || 'Try again.', type: 'error' });
       return;
     }
     if (!photo) return; // cancelled
     setPhotos((prev) => [...prev, photo]);
   }
 
-  function handleAddPhoto() {
+  async function handleAddPhoto() {
     if (Platform.OS === 'web') {
       runPhotoUpload('library');
       return;
     }
-    Alert.alert(
-      'Add a photo',
-      'Show off something real — a hobby, your people, where you spend time.',
-      [
-        { text: 'Take photo',          onPress: () => runPhotoUpload('camera')  },
-        { text: 'Choose from library', onPress: () => runPhotoUpload('library') },
-        { text: 'Cancel', style: 'cancel' },
-      ],
-    );
+    const ok = await confirm({
+      title: 'Add a photo',
+      message: 'Show off something real — a hobby, your people, where you spend time.',
+      confirmLabel: 'Take photo',
+      cancelLabel: 'Choose from library',
+    });
+    if (ok) {
+      runPhotoUpload('camera');
+    } else {
+      runPhotoUpload('library');
+    }
   }
 
   // ── Highlight reel: delete ──────────────────────────────────────────
@@ -660,7 +664,7 @@ export default function ProfileScreen({ navigation }) {
     const { error } = await deleteProfilePhoto(photo.id, photo.storage_path);
     if (error) {
       setPhotos(prev); // revert
-      Alert.alert('Could not delete', error.message);
+      toast({ title: 'Could not delete', message: error.message, type: 'error' });
     }
   }
 
@@ -688,7 +692,7 @@ export default function ProfileScreen({ navigation }) {
     });
     if (!ok) return;
     try { await signOut(); } catch (e) {
-      Alert.alert('Sign out failed', e?.message ?? 'Try again.');
+      toast({ title: 'Sign out failed', message: e?.message ?? 'Try again.', type: 'error' });
     }
   }
 
@@ -705,7 +709,7 @@ export default function ProfileScreen({ navigation }) {
       await supabase.rpc('delete_account');
       await signOut();
     } catch (e) {
-      Alert.alert('Delete failed', e?.message ?? 'Try again.');
+      toast({ title: 'Delete failed', message: e?.message ?? 'Try again.', type: 'error' });
     }
   }
 
@@ -948,7 +952,7 @@ export default function ProfileScreen({ navigation }) {
             p_kind:  'like',
           });
           if (error) {
-            Alert.alert('Could not remove', error.message);
+            toast({ title: 'Could not remove', message: error.message, type: 'error' });
             return;
           }
           // Remove from local list + refresh stats
@@ -982,7 +986,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: SPACING.lg,
-    paddingTop: 36,
+    paddingTop: SPACING.lg,
     paddingBottom: SPACING.lg,
   },
   headerMeta: {

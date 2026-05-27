@@ -8,13 +8,13 @@ import {
   TextInput,
   ScrollView,
   ActivityIndicator,
-  Alert,
   Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
 import { PrimaryButton, GhostButton } from './Atoms';
 import { supabase } from '../lib/supabase';
+import { useToast } from './ToastProvider';
 
 const REASONS = [
   { id: 'spam', label: 'Spam' },
@@ -26,13 +26,14 @@ const REASONS = [
 ];
 
 export default function ReportSheet({ visible, targetKind, targetId, onClose, onReported }) {
+  const toast = useToast();
   const [selectedReason, setSelectedReason] = useState(null);
   const [details, setDetails] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async () => {
     if (!selectedReason) {
-      Alert.alert('Please select a reason', 'Choose a reason before submitting.');
+      toast({ title: 'Please select a reason', message: 'Choose a reason before submitting.', type: 'info' });
       return;
     }
 
@@ -46,27 +47,21 @@ export default function ReportSheet({ visible, targetKind, targetId, onClose, on
       });
 
       if (error) {
-        Alert.alert('Report failed', error.message || 'Could not submit report. Try again.');
+        toast({ title: 'Report failed', message: error.message || 'Could not submit report. Try again.', type: 'error' });
         setSubmitting(false);
         return;
       }
 
-      // Show confirmation
-      Alert.alert('Report sent', 'Thank you. We take safety seriously.', [
-        {
-          text: 'OK',
-          onPress: () => {
-            setSubmitting(false);
-            setSelectedReason(null);
-            setDetails('');
-            onReported?.();
-            onClose?.();
-          },
-        },
-      ]);
+      // Show confirmation then close
+      toast({ title: 'Report sent', message: 'Thank you. We take safety seriously.', type: 'success' });
+      setSubmitting(false);
+      setSelectedReason(null);
+      setDetails('');
+      onReported?.();
+      onClose?.();
     } catch (e) {
       console.warn('[report] submission failed', e?.message);
-      Alert.alert('Error', e?.message || 'Something went wrong.');
+      toast({ title: 'Error', message: e?.message || 'Something went wrong.', type: 'error' });
       setSubmitting(false);
     }
   };

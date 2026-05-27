@@ -9,7 +9,6 @@ import {
   SafeAreaView,
   TextInput,
   Pressable,
-  Alert,
   ActivityIndicator,
   Modal,
   KeyboardAvoidingView,
@@ -23,6 +22,7 @@ import { PrimaryButton } from '../components/Atoms';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../auth/AuthContext';
 import { useConfirm } from '../components/ConfirmProvider';
+import { useToast } from '../components/ToastProvider';
 import {
   LIFE_STAGES,
   HAS_KIDS_STAGES,
@@ -501,7 +501,7 @@ export default function OnboardingScreen({ navigation }) {
 
   async function doSignOut() {
     try { await signOut(); } catch (e) {
-      Alert.alert('Sign out failed', e?.message ?? 'Try again.');
+      toast({ title: 'Sign out failed', message: e?.message ?? 'Try again.', type: 'error' });
     }
   }
 
@@ -655,7 +655,7 @@ export default function OnboardingScreen({ navigation }) {
       // (e.g. slow network, double-tap, profile cache).
       setBusy(false);
     } catch (e) {
-      Alert.alert('Could not save your profile', e?.message ?? 'Unknown error. Try again.');
+      toast({ title: 'Could not save your profile', message: e?.message ?? 'Unknown error. Try again.', type: 'error' });
       setBusy(false);
     }
   }

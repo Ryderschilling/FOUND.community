@@ -20,7 +20,6 @@ import {
   ScrollView,
   ActivityIndicator,
   RefreshControl,
-  Alert,
   Platform,
   Image,
   KeyboardAvoidingView,
@@ -41,6 +40,7 @@ import {
   uploadGroupPhoto,
 } from '../lib/groupPhotos';
 import { useConfirm } from '../components/ConfirmProvider';
+import { useToast } from '../components/ToastProvider';
 
 // RPC row → GroupCard shape
 function rowToGroup(row) {
@@ -64,6 +64,7 @@ function rowToGroup(row) {
 export default function GroupsScreen({ navigation }) {
   const { user } = useAuth();
   const confirm = useConfirm();
+  const toast = useToast();
   const [groups, setGroups]         = useState([]);
   const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -120,7 +121,7 @@ export default function GroupsScreen({ navigation }) {
         g.id === group.id
           ? { ...g, joined: false, hasPendingRequest: false, memberCount: Math.max(0, (g.memberCount ?? 1) - 1) }
           : g));
-      Alert.alert('Could not join', error.message);
+      toast({ title: 'Could not join', message: error.message, type: 'error' });
       return;
     }
 
@@ -176,7 +177,7 @@ export default function GroupsScreen({ navigation }) {
       console.warn('[groups] cancel request failed', error.message);
       setGroups((prev) => prev.map((g) =>
         g.id === group.id ? { ...g, hasPendingRequest: true } : g));
-      Alert.alert('Could not cancel request', error.message);
+      toast({ title: 'Could not cancel request', message: error.message, type: 'error' });
     }
   }, [busyId]);
 
@@ -375,13 +376,13 @@ function CreateGroupModal({ visible, onClose, onCreated }) {
   async function handlePickCover() {
     if (busy) return;
     const { picked, error } = await pickGroupImage('library');
-    if (error) { Alert.alert('Could not add photo', error.message); return; }
+    if (error) { toast({ title: 'Could not add photo', message: error.message, type: 'error' }); return; }
     if (picked) setCover(picked); // null = user cancelled
   }
 
   async function handleCreate() {
     if (!name.trim()) {
-      Alert.alert('Name required', 'Give your group a name.');
+      toast({ title: 'Name required', message: 'Give your group a name.', type: 'info' });
       return;
     }
 
@@ -390,7 +391,7 @@ function CreateGroupModal({ visible, onClose, onCreated }) {
       { text: desc, label: 'group description' },
     ]);
     if (!violation.ok) {
-      Alert.alert('Check your wording', violation.message);
+      toast({ title: 'Check your wording', message: violation.message, type: 'info' });
       return;
     }
 
@@ -426,7 +427,7 @@ function CreateGroupModal({ visible, onClose, onCreated }) {
     });
     if (error) {
       setBusy(false);
-      Alert.alert('Could not create group', error.message);
+      toast({ title: 'Could not create group', message: error.message, type: 'error' });
       return;
     }
 
@@ -439,7 +440,7 @@ function CreateGroupModal({ visible, onClose, onCreated }) {
       });
       if (privErr) {
         console.warn('[create group] set privacy failed', privErr.message);
-        Alert.alert('Warning', 'Group created but privacy setting failed. You can change it from the group page.');
+        toast({ title: 'Warning', message: 'Group created but privacy setting failed. You can change it from the group page.', type: 'info' });
       }
     }
 
@@ -1034,7 +1035,7 @@ function InviteConnectionsModal({ visible, group, onClose, onSent }) {
   async function handleSend() {
     const ids = Object.entries(selected).filter(([, v]) => v).map(([k]) => k);
     if (!ids.length) {
-      Alert.alert('Pick someone', 'Select at least one connection to invite.');
+      toast({ title: 'Pick someone', message: 'Select at least one connection to invite.', type: 'info' });
       return;
     }
     setBusy(true);
@@ -1044,13 +1045,10 @@ function InviteConnectionsModal({ visible, group, onClose, onSent }) {
     });
     setBusy(false);
     if (error) {
-      Alert.alert('Could not send invites', error.message);
+      toast({ title: 'Could not send invites', message: error.message, type: 'error' });
       return;
     }
-    Alert.alert(
-      'Invites sent',
-      `${data ?? ids.length} ${(data ?? ids.length) === 1 ? 'invite' : 'invites'} sent.`
-    );
+    toast({ title: 'Invites sent', message: `${data ?? ids.length} ${(data ?? ids.length) === 1 ? 'invite' : 'invites'} sent.`, type: 'success' });
     onSent?.();
   }
 

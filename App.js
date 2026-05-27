@@ -17,6 +17,7 @@ import {
 import AppNavigator from './src/navigation';
 import { AuthProvider } from './src/auth/AuthContext';
 import { ConfirmProvider } from './src/components/ConfirmProvider';
+import { ToastProvider }   from './src/components/ToastProvider';
 
 // On web, lock the viewport so pinch-zoom and double-tap-zoom can't kick in.
 // Without this, mobile Safari/Chrome will zoom into inputs on focus and let
@@ -101,7 +102,9 @@ export default function App() {
         <View style={styles.phone}>
           <AuthProvider>
             <ConfirmProvider>
-              <AppNavigator />
+              <ToastProvider>
+                <AppNavigator />
+              </ToastProvider>
             </ConfirmProvider>
           </AuthProvider>
         </View>

@@ -10,7 +10,6 @@ import {
   ActivityIndicator,
   RefreshControl,
   Modal,
-  Alert,
   Platform,
   TextInput,
   Animated,
@@ -21,6 +20,7 @@ import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
 import { Avatar, IconButton, Wordmark } from '../components/Atoms';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../auth/AuthContext';
+import { useToast } from '../components/ToastProvider';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 const AVATAR_GRADIENTS = [
@@ -91,6 +91,7 @@ function MessageRow({ item, onPress }) {
 // ─── Screen ───────────────────────────────────────────────────────────────
 export default function MessagesScreen({ navigation }) {
   const { user } = useAuth();
+  const toast = useToast();
   const [threads,      setThreads]      = useState([]);
   const [loading,      setLoading]      = useState(true);
   const [refreshing,   setRefreshing]   = useState(false);
@@ -151,7 +152,7 @@ export default function MessagesScreen({ navigation }) {
       .rpc('start_direct_thread', { p_other: contact.profile_id });
     setOpening(false);
     if (error) {
-      Alert.alert('Could not open chat', error.message);
+      toast({ title: 'Could not open chat', message: error.message, type: 'error' });
       return;
     }
     setComposeOpen(false);
@@ -479,7 +480,7 @@ const styles = StyleSheet.create({
 
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: SPACING.lg, paddingTop: 36, paddingBottom: SPACING.lg,
+    paddingHorizontal: SPACING.lg, paddingTop: SPACING.lg, paddingBottom: SPACING.lg,
   },
   headerMeta: {
     fontFamily: FONT.mono, fontSize: 9, letterSpacing: 1.6,

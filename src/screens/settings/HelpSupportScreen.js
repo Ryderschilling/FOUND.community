@@ -6,7 +6,8 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Linking, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Linking } from 'react-native';
+import { useToast } from '../../components/ToastProvider';
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import { COLORS, FONT, SPACING } from '../../theme';
@@ -46,13 +47,13 @@ const FAQ = [
   },
 ];
 
-async function openUrl(url, fallbackMsg) {
+async function openUrl(url, fallbackMsg, toast) {
   try {
     const ok = await Linking.canOpenURL(url);
     if (!ok) throw new Error('no handler');
     await Linking.openURL(url);
   } catch {
-    Alert.alert('Could not open', fallbackMsg);
+    toast({ title: 'Could not open', message: fallbackMsg, type: 'error' });
   }
 }
 
@@ -78,6 +79,7 @@ function FaqRow({ q, a, expanded, onToggle, last }) {
 }
 
 export default function HelpSupportScreen({ navigation }) {
+  const toast = useToast();
   const [openIdx, setOpenIdx] = useState(null);
 
   return (
@@ -104,14 +106,15 @@ export default function HelpSupportScreen({ navigation }) {
           onPress={() =>
             openUrl(
               `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent('FOUND app support')}`,
-              `Reach us at ${CONTACT_EMAIL}`
+              `Reach us at ${CONTACT_EMAIL}`,
+              toast
             )
           }
         />
         <LinkRow
           iconName="globe-outline"
           label="Visit found.community"
-          onPress={() => openUrl(WEBSITE_URL, `Visit ${WEBSITE_URL}`)}
+          onPress={() => openUrl(WEBSITE_URL, `Visit ${WEBSITE_URL}`, toast)}
         />
       </SettingsGroup>
 

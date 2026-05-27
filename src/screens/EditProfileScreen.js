@@ -25,7 +25,6 @@ import {
   TextInput,
   ActivityIndicator,
   Pressable,
-  Alert,
   Platform,
   Modal,
   KeyboardAvoidingView,
@@ -35,6 +34,7 @@ import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
 import { PrimaryButton, SectionHeader } from '../components/Atoms';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../auth/AuthContext';
+import { useToast } from '../components/ToastProvider';
 import { geocode } from '../lib/geocode';
 import { firstViolation } from '../lib/contentFilter';
 
@@ -71,6 +71,7 @@ function OptionCard({ item, selected, onPress }) {
 
 export default function EditProfileScreen({ navigation }) {
   const { user, profile, refreshProfile } = useAuth();
+  const toast = useToast();
 
   // Form state — initialized from current profile once loaded.
   const [fullName, setFullName]       = useState('');
@@ -190,7 +191,7 @@ export default function EditProfileScreen({ navigation }) {
       { text: hometown, label: 'hometown' },
     ]);
     if (!violation.ok) {
-      Alert.alert('Check your wording', violation.message);
+      toast({ title: 'Check your wording', message: violation.message, type: 'info' });
       return;
     }
 
@@ -211,7 +212,7 @@ export default function EditProfileScreen({ navigation }) {
     });
     if (error) {
       setSaving(false);
-      Alert.alert('Could not save', error.message);
+      toast({ title: 'Could not save', message: error.message, type: 'error' });
       return;
     }
 

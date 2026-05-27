@@ -26,7 +26,6 @@ import {
   StatusBar,
   ActivityIndicator,
   RefreshControl,
-  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
@@ -34,6 +33,7 @@ import { Avatar, Wordmark, IconButton } from '../components/Atoms';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../auth/AuthContext';
 import { useConfirm } from '../components/ConfirmProvider';
+import { useToast } from '../components/ToastProvider';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 // Neutral monochrome avatar palette — matches HomeScreen.
@@ -190,6 +190,7 @@ function EventCard({ ev, onPress }) {
 export default function ActivityScreen({ navigation }) {
   const { user } = useAuth();
   const confirm = useConfirm();
+  const toast = useToast();
   const [rows, setRows]               = useState([]);
   const [events, setEvents]           = useState([]);
   const [loading, setLoading]         = useState(true);
@@ -263,7 +264,7 @@ export default function ActivityScreen({ navigation }) {
     if (!mountedRef.current) return;
     setBusyProfileId(null);
     if (insErr) {
-      Alert.alert('Could not accept', insErr.message);
+      toast({ title: 'Could not accept', message: insErr.message, type: 'error' });
       return;
     }
 
@@ -298,7 +299,7 @@ export default function ActivityScreen({ navigation }) {
     const { data: threadId, error } = await supabase
       .rpc('start_direct_thread', { p_other: row.profile_id });
     if (error) {
-      Alert.alert('Could not open chat', error.message);
+      toast({ title: 'Could not open chat', message: error.message, type: 'error' });
       return;
     }
     navigation?.navigate('Chat', {
@@ -327,7 +328,7 @@ export default function ActivityScreen({ navigation }) {
     if (!mountedRef.current) return;
     setBusyProfileId(null);
     if (rpcErr) {
-      Alert.alert('Could not dismiss', rpcErr.message);
+      toast({ title: 'Could not dismiss', message: rpcErr.message, type: 'error' });
       return;
     }
     setRows((prev) => prev.filter((r) => r.profile_id !== row.profile_id));
@@ -490,7 +491,7 @@ const styles = StyleSheet.create({
 
   pageHeader: {
     paddingHorizontal: SPACING.lg,
-    paddingTop: 36,
+    paddingTop: SPACING.lg,
     paddingBottom: SPACING.lg,
     flexDirection: 'row',
     alignItems: 'center',

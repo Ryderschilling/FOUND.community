@@ -8,7 +8,6 @@ import {
   TouchableOpacity,
   StatusBar,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -16,6 +15,7 @@ import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
 import { Avatar } from '../components/Atoms';
 import { supabase } from '../lib/supabase';
 import { useConfirm } from '../components/ConfirmProvider';
+import { useToast } from '../components/ToastProvider';
 
 const AVATAR_GRADIENTS = [
   ['#4A6FA5', '#2D4E8A'],
@@ -45,6 +45,7 @@ function initialsFor(name) {
 
 export default function BlockedUsersScreen({ navigation }) {
   const confirm = useConfirm();
+  const toast = useToast();
   const [blockedUsers, setBlockedUsers] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -97,11 +98,11 @@ export default function BlockedUsersScreen({ navigation }) {
       if (error) {
         // Revert on error
         setBlockedUsers((prev) => [...prev, user]);
-        Alert.alert('Could not unblock', error.message || 'Try again.');
+        toast({ title: 'Could not unblock', message: error.message || 'Try again.', type: 'error' });
       }
     } catch (e) {
       setBlockedUsers((prev) => [...prev, user]);
-      Alert.alert('Error', e?.message || 'Something went wrong.');
+      toast({ title: 'Error', message: e?.message || 'Something went wrong.', type: 'error' });
     }
   };
 

@@ -7,7 +7,8 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Linking, Alert } from 'react-native';
+import { View, Text, StyleSheet, Linking } from 'react-native';
+import { useToast } from '../../components/ToastProvider';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS } from '../../theme';
 import { useAuth } from '../../auth/AuthContext';
@@ -23,19 +24,20 @@ import {
 
 const CONTACT_EMAIL = 'hello@found.community';
 
-async function openMailto(subject) {
+async function openMailto(subject, toast) {
   const url = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(subject)}`;
   try {
     const ok = await Linking.canOpenURL(url);
     if (!ok) throw new Error('no handler');
     await Linking.openURL(url);
   } catch {
-    Alert.alert('No email app', `Reach us at ${CONTACT_EMAIL}`);
+    toast({ title: 'No email app', message: `Reach us at ${CONTACT_EMAIL}`, type: 'info' });
   }
 }
 
 export default function ChurchDashboardScreen({ navigation }) {
   const { user } = useAuth();
+  const toast = useToast();
   const [church, setChurch]   = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -109,7 +111,8 @@ export default function ChurchDashboardScreen({ navigation }) {
             openMailto(
               church
                 ? `Church Dashboard access — ${church.name}`
-                : 'Church Dashboard access request'
+                : 'Church Dashboard access request',
+              toast
             )
           }
         />

@@ -9,7 +9,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { Alert } from 'react-native';
+import { useToast } from '../../components/ToastProvider';
 import {
   SettingsScaffold,
   SettingsGroup,
@@ -24,6 +24,7 @@ import {
 } from '../../lib/accountSettings';
 
 export default function PrivacyScreen({ navigation }) {
+  const toast = useToast();
   const [prefs, setPrefs]     = useState(DEFAULT_PRIVACY_PREFS);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving]   = useState(false);
@@ -48,7 +49,7 @@ export default function PrivacyScreen({ navigation }) {
     setSaving(false);
     if (error) {
       setPrefs(prefs);
-      Alert.alert('Could not save', 'Your change was not saved. Please try again.');
+      toast({ title: 'Could not save', message: 'Your change was not saved. Please try again.', type: 'error' });
     }
   }, [prefs]);
 

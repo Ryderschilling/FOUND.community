@@ -27,7 +27,6 @@ import {
   StatusBar,
   SafeAreaView,
   ActivityIndicator,
-  Alert,
   Modal,
   Platform,
 } from 'react-native';
@@ -40,6 +39,7 @@ import { useAuth } from '../auth/AuthContext';
 import { fetchProfilePhotos } from '../lib/profilePhotos';
 import HighlightReelView from '../components/HighlightReelView';
 import { useConfirm } from '../components/ConfirmProvider';
+import { useToast } from '../components/ToastProvider';
 import ReportSheet from '../components/ReportSheet';
 
 export default function MatchDetailScreen({ route, navigation }) {
@@ -57,6 +57,7 @@ export default function MatchDetailScreen({ route, navigation }) {
   const [ignoring,     setIgnoring]     = useState(false);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [reportOpen,   setReportOpen]   = useState(false);
+  const [myInterestIds, setMyInterestIds] = useState(new Set());
 
   // Full profile data — starts from whatever the caller passed, enriched by
   // get_profile_detail() when score / interests are missing.
@@ -83,6 +84,7 @@ export default function MatchDetailScreen({ route, navigation }) {
   const [detailLoading, setDetailLoading] = useState(needsFetch);
 
   const confirm    = useConfirm();
+  const toast = useToast();
   const mountedRef = useRef(true);
   useEffect(() => () => { mountedRef.current = false; }, []);
 
@@ -143,6 +145,21 @@ export default function MatchDetailScreen({ route, navigation }) {
     return () => { cancelled = true; };
   }, [initialMatch.id]);
 
+  // ── Fetch my own interests for In Common comparison ──────────────────────
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from('profile_activities')
+        .select('activity_id')
+        .eq('profile_id', user.id);
+      if (cancelled || error) return;
+      setMyInterestIds(new Set((data ?? []).map((r) => r.activity_id)));
+    })();
+    return () => { cancelled = true; };
+  }, [user]);
+
   // ── Sync saved state ─────────────────────────────────────────────────────
   useEffect(() => {
     if (!user || !initialMatch.id) return;
@@ -178,7 +195,7 @@ export default function MatchDetailScreen({ route, navigation }) {
     if (!mountedRef.current) return;
     if (error) {
       setConnected(false);
-      Alert.alert('Could not connect', error.message);
+      toast({ title: 'Could not connect', message: error.message, type: 'error' });
       return;
     }
     if (theirKind === 'like') {
@@ -237,7 +254,7 @@ export default function MatchDetailScreen({ route, navigation }) {
     if (!mountedRef.current) return;
     if (error) {
       setConnected(true);
-      Alert.alert('Could not undo', error.message);
+      toast({ title: 'Could not undo', message: error.message, type: 'error' });
     }
   }
 
@@ -281,7 +298,7 @@ export default function MatchDetailScreen({ route, navigation }) {
         },
       });
     } catch (e) {
-      Alert.alert('Could not open chat', e?.message ?? 'Try again.');
+      toast({ title: 'Could not open chat', message: e?.message ?? 'Try again.', type: 'error' });
     } finally {
       if (mountedRef.current) setOpeningChat(false);
     }
@@ -301,7 +318,7 @@ export default function MatchDetailScreen({ route, navigation }) {
       setMoreMenuOpen(false);
       navigation.goBack();
     } catch (e) {
-      Alert.alert('Could not block', e?.message ?? 'Try again.');
+      toast({ title: 'Could not block', message: e?.message ?? 'Try again.', type: 'error' });
     }
   }
 
@@ -452,13 +469,18 @@ export default function MatchDetailScreen({ route, navigation }) {
                   <Text style={styles.commonText}>Nearby church</Text>
                 </View>
               ) : null}
-              {profile.interests.slice(0, 2).map((i) => (
-                <View key={i.id} style={styles.commonRow}>
-                  <Ionicons name="checkmark-circle" size={16} color={COLORS.sage} />
-                  <Text style={styles.commonText}>Both into {i.label.toLowerCase()}</Text>
-                </View>
-              ))}
-              {!profile.lifeStage && !profile.church && profile.interests.length === 0 && !detailLoading ? (
+              {profile.interests
+                .filter((i) => myInterestIds.has(i.id))
+                .slice(0, 2)
+                .map((i) => (
+                  <View key={i.id} style={styles.commonRow}>
+                    <Ionicons name="checkmark-circle" size={16} color={COLORS.sage} />
+                    <Text style={styles.commonText}>Both into {i.label.toLowerCase()}</Text>
+                  </View>
+                ))}
+              {!profile.lifeStage && !profile.church &&
+               profile.interests.filter((i) => myInterestIds.has(i.id)).length === 0 &&
+               !detailLoading ? (
                 <View style={styles.commonRow}>
                   <Ionicons name="sparkles-outline" size={16} color={COLORS.textTertiary} />
                   <Text style={[styles.commonText, { color: COLORS.textSecondary }]}>

@@ -12,7 +12,8 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { useToast } from '../../components/ToastProvider';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING } from '../../theme';
 import { useAuth } from '../../auth/AuthContext';
@@ -58,6 +59,7 @@ function RadioRow({ label, selected, onPress, disabled, last }) {
 
 export default function LocationSettingsScreen({ navigation }) {
   const { profile } = useAuth();
+  const toast = useToast();
 
   const [radius, setRadius]   = useState(DEFAULT_RADIUS);
   const [loading, setLoading] = useState(true);
@@ -85,7 +87,7 @@ export default function LocationSettingsScreen({ navigation }) {
     setSaving(false);
     if (error) {
       setRadius(prev);
-      Alert.alert('Could not save', 'Your change was not saved. Please try again.');
+      toast({ title: 'Could not save', message: 'Your change was not saved. Please try again.', type: 'error' });
     }
   }, [radius]);
 

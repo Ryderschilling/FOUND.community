@@ -11,7 +11,6 @@ import {
   StatusBar,
   SafeAreaView,
   ActivityIndicator,
-  Alert,
   Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,6 +20,7 @@ import ReportSheet from '../components/ReportSheet';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../auth/AuthContext';
 import { useConfirm } from '../components/ConfirmProvider';
+import { useToast } from '../components/ToastProvider';
 import { checkText } from '../lib/contentFilter';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -103,6 +103,7 @@ function Bubble({ message, mine, isGroup, sender, showSender }) {
 export default function ChatScreen({ route, navigation }) {
   const { user } = useAuth();
   const confirm = useConfirm();
+  const toast = useToast();
   const params = route?.params ?? {};
 
   // Accept either { thread_id, other: {id, name, ...} } or the older { thread: {...} }
@@ -227,7 +228,7 @@ export default function ChatScreen({ route, navigation }) {
 
     const violation = checkText(body, 'message');
     if (!violation.ok) {
-      Alert.alert('Check your wording', violation.message);
+      toast({ title: 'Check your wording', message: violation.message, type: 'info' });
       return;
     }
 
@@ -252,7 +253,7 @@ export default function ChatScreen({ route, navigation }) {
       // Roll back optimistic + warn
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
       setInput(body);
-      Alert.alert('Could not send', error.message);
+      toast({ title: 'Could not send', message: error.message, type: 'error' });
     }
     setSending(false);
   }
@@ -272,12 +273,12 @@ export default function ChatScreen({ route, navigation }) {
         p_target: otherProfileId,
       });
       if (error) {
-        Alert.alert('Could not block', error.message || 'Try again.');
+        toast({ title: 'Could not block', message: error.message || 'Try again.', type: 'error' });
       } else {
         navigation.goBack();
       }
     } catch (e) {
-      Alert.alert('Error', e?.message || 'Something went wrong.');
+      toast({ title: 'Error', message: e?.message || 'Something went wrong.', type: 'error' });
     }
   };
 

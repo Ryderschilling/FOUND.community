@@ -25,7 +25,6 @@ import {
   SafeAreaView,
   ActivityIndicator,
   RefreshControl,
-  Alert,
   Platform,
   Image,
   Modal,
@@ -39,6 +38,7 @@ import { Avatar, PrimaryButton } from '../components/Atoms';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../auth/AuthContext';
 import { useConfirm } from '../components/ConfirmProvider';
+import { useToast } from '../components/ToastProvider';
 import ReportSheet from '../components/ReportSheet';
 import { geocode } from '../lib/geocode';
 import { firstViolation } from '../lib/contentFilter';
@@ -102,6 +102,7 @@ function timeAgo(iso) {
 export default function GroupDetailScreen({ route, navigation }) {
   const { user } = useAuth();
   const confirm = useConfirm();
+  const toast = useToast();
   const groupId = route?.params?.groupId ?? route?.params?.group?.id ?? null;
   const preview = route?.params?.group ?? null;
 
@@ -213,7 +214,7 @@ export default function GroupDetailScreen({ route, navigation }) {
     setBusy(true);
     const { data, error } = await supabase.rpc('join_group', { p_group: groupId });
     setBusy(false);
-    if (error) { Alert.alert('Could not join', error.message); return; }
+    if (error) { toast({ title: 'Could not join', message: error.message, type: 'error' }); return; }
     // data is the result (either 'joined' or 'pending')
     await Promise.all([refreshDetail(), refreshMembers()]);
   }
@@ -230,7 +231,7 @@ export default function GroupDetailScreen({ route, navigation }) {
     setBusy(true);
     const { error } = await supabase.rpc('leave_group', { p_group: groupId });
     setBusy(false);
-    if (error) { Alert.alert('Could not leave', error.message); return; }
+    if (error) { toast({ title: 'Could not leave', message: error.message, type: 'error' }); return; }
     await Promise.all([refreshDetail(), refreshMembers()]);
   }
 
@@ -239,7 +240,7 @@ export default function GroupDetailScreen({ route, navigation }) {
     setOpeningChat(true);
     const { data: threadId, error } = await supabase.rpc('open_group_thread', { p_group: groupId });
     setOpeningChat(false);
-    if (error) { Alert.alert('Could not open chat', error.message); return; }
+    if (error) { toast({ title: 'Could not open chat', message: error.message, type: 'error' }); return; }
     navigation.navigate('Chat', {
       thread_id: threadId,
       isGroup: true,
@@ -257,13 +258,13 @@ export default function GroupDetailScreen({ route, navigation }) {
   async function handleAddPhoto() {
     if (uploading || !groupId) return;
     if (photos.length >= MAX_GROUP_PHOTOS) {
-      Alert.alert('Photo limit reached', `Groups can have up to ${MAX_GROUP_PHOTOS} photos.`);
+      toast({ title: 'Photo limit reached', message: `Groups can have up to ${MAX_GROUP_PHOTOS} photos.`, type: 'info' });
       return;
     }
     setUploading(true);
     const { photo, error } = await pickAndUploadGroupPhoto({ groupId, source: 'library' });
     setUploading(false);
-    if (error) { Alert.alert('Upload failed', error.message); return; }
+    if (error) { toast({ title: 'Upload failed', message: error.message, type: 'error' }); return; }
     if (photo) await refreshPhotos();
   }
 
@@ -276,7 +277,7 @@ export default function GroupDetailScreen({ route, navigation }) {
     });
     if (!ok) return;
     const { error } = await deleteGroupPhoto(photo.id, photo.storage_path);
-    if (error) { Alert.alert('Could not delete', error.message); return; }
+    if (error) { toast({ title: 'Could not delete', message: error.message, type: 'error' }); return; }
     await refreshPhotos();
   }
 
@@ -284,7 +285,7 @@ export default function GroupDetailScreen({ route, navigation }) {
   async function handlePickPostImage() {
     if (posting) return;
     const { picked, error } = await pickGroupPostImage('library');
-    if (error) { Alert.alert('Could not add photo', error.message); return; }
+    if (error) { toast({ title: 'Could not add photo', message: error.message, type: 'error' }); return; }
     if (picked) setComposerImage(picked);
   }
 
@@ -293,7 +294,7 @@ export default function GroupDetailScreen({ route, navigation }) {
     const body = composerBody.trim();
     if (!body && !composerImage) return; // nothing to post
     if (body.length > MAX_POST_BODY) {
-      Alert.alert('Too long', `Posts are limited to ${MAX_POST_BODY} characters.`);
+      toast({ title: 'Too long', message: `Posts are limited to ${MAX_POST_BODY} characters.`, type: 'info' });
       return;
     }
     setPosting(true);
@@ -301,11 +302,11 @@ export default function GroupDetailScreen({ route, navigation }) {
       let photoUrl = null;
       if (composerImage) {
         const up = await uploadGroupPostPhoto(groupId, composerImage);
-        if (up.error) { Alert.alert('Photo upload failed', up.error.message); return; }
+        if (up.error) { toast({ title: 'Photo upload failed', message: up.error.message, type: 'error' }); return; }
         photoUrl = up.url;
       }
       const { error } = await createGroupPost({ groupId, body, photoUrl });
-      if (error) { Alert.alert('Could not post', error.message); return; }
+      if (error) { toast({ title: 'Could not post', message: error.message, type: 'error' }); return; }
       setComposerBody('');
       setComposerImage(null);
       await refreshPosts();
@@ -323,7 +324,7 @@ export default function GroupDetailScreen({ route, navigation }) {
     });
     if (!ok) return;
     const { error } = await deleteGroupPost(post.id, post.photo_url);
-    if (error) { Alert.alert('Could not delete', error.message); return; }
+    if (error) { toast({ title: 'Could not delete', message: error.message, type: 'error' }); return; }
     await refreshPosts();
   }
 
@@ -339,7 +340,7 @@ export default function GroupDetailScreen({ route, navigation }) {
     await purgeGroupPhotoStorage(groupId);
     await purgeGroupPostPhotoStorage(groupId);
     const { error } = await supabase.rpc('delete_group', { p_group: groupId });
-    if (error) { Alert.alert('Could not delete group', error.message); return; }
+    if (error) { toast({ title: 'Could not delete group', message: error.message, type: 'error' }); return; }
     setEditOpen(false);
     navigation.goBack();
   }
@@ -349,7 +350,7 @@ export default function GroupDetailScreen({ route, navigation }) {
     const { error } = await supabase.rpc('set_group_member_role', {
       p_group: groupId, p_profile: profileId, p_role: nextRole,
     });
-    if (error) { Alert.alert('Could not update role', error.message); return; }
+    if (error) { toast({ title: 'Could not update role', message: error.message, type: 'error' }); return; }
     setManageTarget(null);
     await refreshMembers();
   }
@@ -365,7 +366,7 @@ export default function GroupDetailScreen({ route, navigation }) {
     const { error } = await supabase.rpc('remove_group_member', {
       p_group: groupId, p_profile: member.profile_id,
     });
-    if (error) { Alert.alert('Could not remove', error.message); return; }
+    if (error) { toast({ title: 'Could not remove', message: error.message, type: 'error' }); return; }
     setManageTarget(null);
     await Promise.all([refreshMembers(), refreshDetail()]);
   }
@@ -379,7 +380,7 @@ export default function GroupDetailScreen({ route, navigation }) {
     });
     if (!ok) return;
     const { error } = await supabase.rpc('block_user', { p_target: profileId });
-    if (error) { Alert.alert('Could not block', error.message); return; }
+    if (error) { toast({ title: 'Could not block', message: error.message, type: 'error' }); return; }
     await refreshMembers();
   }
 
@@ -388,7 +389,7 @@ export default function GroupDetailScreen({ route, navigation }) {
       p_group: groupId, p_profile: profileId,
     });
     if (error) {
-      Alert.alert('Could not approve', error.message);
+      toast({ title: 'Could not approve', message: error.message, type: 'error' });
       return;
     }
     setJoinRequests((prev) => prev.filter((r) => r.profile_id !== profileId));
@@ -400,7 +401,7 @@ export default function GroupDetailScreen({ route, navigation }) {
       p_group: groupId, p_profile: profileId,
     });
     if (error) {
-      Alert.alert('Could not decline', error.message);
+      toast({ title: 'Could not decline', message: error.message, type: 'error' });
       return;
     }
     setJoinRequests((prev) => prev.filter((r) => r.profile_id !== profileId));
@@ -411,7 +412,7 @@ export default function GroupDetailScreen({ route, navigation }) {
     setBusy(true);
     const { error } = await supabase.rpc('cancel_join_request', { p_group: groupId });
     setBusy(false);
-    if (error) { Alert.alert('Could not cancel', error.message); return; }
+    if (error) { toast({ title: 'Could not cancel', message: error.message, type: 'error' }); return; }
     await refreshDetail();
   }
 
@@ -948,7 +949,7 @@ export default function GroupDetailScreen({ route, navigation }) {
         onClose={() => setReportSheet({ visible: false, targetKind: null, targetId: null })}
         onReported={() => {
           setReportSheet({ visible: false, targetKind: null, targetId: null });
-          Alert.alert('Report submitted', 'Thank you for helping keep FOUND safe.');
+          toast({ title: 'Report submitted', message: 'Thank you for helping keep FOUND safe.', type: 'success' });
         }}
       />
     </SafeAreaView>
@@ -1167,7 +1168,7 @@ function EditGroupModal({ visible, detail, isOwner, onClose, onSaved, onDelete }
 
   async function handleSave() {
     if (!name.trim()) {
-      Alert.alert('Name required', 'Give your group a name.');
+      toast({ title: 'Name required', message: 'Give your group a name.', type: 'info' });
       return;
     }
 
@@ -1176,7 +1177,7 @@ function EditGroupModal({ visible, detail, isOwner, onClose, onSaved, onDelete }
       { text: desc, label: 'group description' },
     ]);
     if (!violation.ok) {
-      Alert.alert('Check your wording', violation.message);
+      toast({ title: 'Check your wording', message: violation.message, type: 'info' });
       return;
     }
 
@@ -1205,7 +1206,7 @@ function EditGroupModal({ visible, detail, isOwner, onClose, onSaved, onDelete }
     });
     if (error) {
       setBusy(false);
-      Alert.alert('Could not save', error.message);
+      toast({ title: 'Could not save', message: error.message, type: 'error' });
       return;
     }
 
@@ -1217,7 +1218,7 @@ function EditGroupModal({ visible, detail, isOwner, onClose, onSaved, onDelete }
       });
       if (privError?.error) {
         setBusy(false);
-        Alert.alert('Could not update privacy', privError.error.message);
+        toast({ title: 'Could not update privacy', message: privError.error.message, type: 'error' });
         return;
       }
     }

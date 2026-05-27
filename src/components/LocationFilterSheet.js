@@ -21,13 +21,13 @@ import {
   TouchableOpacity,
   StyleSheet,
   Pressable,
-  Alert,
   Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
 import { PrimaryButton } from './Atoms';
 import { DEFAULT_RADIUS, RADIUS_OPTIONS, DEFAULT_FILTER } from '../lib/locationFilter';
+import { useToast } from './ToastProvider';
 
 function ModeRow({ icon, label, subLabel, selected, disabled, onPress }) {
   return (
@@ -61,6 +61,7 @@ export default function LocationFilterSheet({
 }) {
   const start = initialFilter ?? DEFAULT_FILTER;
 
+  const toast = useToast();
   const [mode, setMode]         = useState(start.mode);
   const [radiusMi, setRadiusMi] = useState(start.radiusMi ?? DEFAULT_RADIUS);
 
@@ -93,7 +94,7 @@ export default function LocationFilterSheet({
   function handleApply() {
     if (mode === 'self') {
       if (!selfHasLocation) {
-        Alert.alert('No location set', 'Set your city in Edit Profile to use Near Me.');
+        toast({ title: 'No location set', message: 'Set your city in Edit Profile to use Near Me.', type: 'info' });
         return;
       }
       onApply?.({ mode: 'self', radiusMi });
