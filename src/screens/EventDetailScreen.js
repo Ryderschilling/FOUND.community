@@ -30,7 +30,12 @@ import {
   RefreshControl,
   Modal,
   FlatList,
+  TextInput,
+  Alert,
+  Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
@@ -125,6 +130,19 @@ export default function EventDetailScreen({ navigation, route }) {
   const [inviteSelected, setInviteSelected] = useState(new Set());
   const [sending, setSending]             = useState(false);
 
+  // ── Edit modal state
+  const [editOpen, setEditOpen]           = useState(false);
+  const [editTitle, setEditTitle]         = useState('');
+  const [editDate, setEditDate]           = useState(new Date());
+  const [editLocation, setEditLocation]   = useState('');
+  const [editDesc, setEditDesc]           = useState('');
+  const [editSaving, setEditSaving]       = useState(false);
+  const [showEditDate, setShowEditDate]   = useState(false);
+  const [showEditTime, setShowEditTime]   = useState(false);
+
+  // ── Delete state
+  const [deleting, setDeleting]           = useState(false);
+
   const isCreator = event?.creator_id === user?.id;
 
   const load = useCallback(async (opts = {}) => {
@@ -209,6 +227,58 @@ export default function EventDetailScreen({ navigation, route }) {
       return next;
     });
   }, []);
+
+  // Web date helpers
+  const toDateInputVal = (d) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+  const toTimeInputVal = (d) =>
+    `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+
+  const openEdit = useCallback(() => {
+    if (!event) return;
+    setEditTitle(event.title ?? '');
+    setEditDate(new Date(event.event_time));
+    setEditLocation(event.location_name ?? '');
+    setEditDesc(event.description ?? '');
+    setEditOpen(true);
+  }, [event]);
+
+  const handleSaveEdit = useCallback(async () => {
+    if (!editTitle.trim()) return;
+    setEditSaving(true);
+    const { error: err } = await supabase
+      .from('events')
+      .update({
+        title:         editTitle.trim(),
+        event_time:    editDate.toISOString(),
+        location_name: editLocation.trim() || null,
+        description:   editDesc.trim() || null,
+      })
+      .eq('id', eventId);
+    setEditSaving(false);
+    if (!err) { setEditOpen(false); load(); }
+  }, [editTitle, editDate, editLocation, editDesc, eventId, load]);
+
+  const handleDelete = useCallback(() => {
+    const doDelete = async () => {
+      setDeleting(true);
+      await supabase.from('events').delete().eq('id', eventId);
+      setDeleting(false);
+      navigation.popToTop();
+    };
+    if (Platform.OS === 'web') {
+      if (window.confirm('Delete this event? This cannot be undone.')) doDelete();
+    } else {
+      Alert.alert('Delete Event', 'This cannot be undone.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: doDelete },
+      ]);
+    }
+  }, [eventId, navigation]);
 
   const handleSendInvites = useCallback(async () => {
     if (inviteSelected.size === 0 || !event?.id) return;
@@ -306,6 +376,28 @@ export default function EventDetailScreen({ navigation, route }) {
             <Ionicons name="arrow-back" size={16} color={COLORS.textSecondary} />
             <Text style={styles.backToCommunityText}>Back to Community</Text>
           </TouchableOpacity>
+          <View style={styles.creatorActions}>
+            <TouchableOpacity
+              style={styles.actionIconBtn}
+              onPress={openEdit}
+              activeOpacity={0.7}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="pencil-outline" size={18} color={COLORS.text} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.actionIconBtn, styles.actionIconDelete]}
+              onPress={handleDelete}
+              disabled={deleting}
+              activeOpacity={0.7}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              {deleting
+                ? <ActivityIndicator size="small" color="#D24A4A" />
+                : <Ionicons name="trash-outline" size={18} color="#D24A4A" />
+              }
+            </TouchableOpacity>
+          </View>
         </View>
       ) : (
         <View style={styles.header}>
@@ -506,6 +598,102 @@ export default function EventDetailScreen({ navigation, route }) {
         <View style={{ height: 40 }} />
       </ScrollView>
 
+      {/* ── Edit event modal ──────────────────────────────── */}
+      <Modal
+        visible={editOpen}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setEditOpen(false)}
+      >
+        <SafeAreaView style={styles.modalContainer}>
+          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+            <View style={styles.modalHeader}>
+              <TouchableOpacity onPress={() => setEditOpen(false)} activeOpacity={0.7}>
+                <Text style={styles.modalCancel}>Cancel</Text>
+              </TouchableOpacity>
+              <Text style={styles.modalTitle}>Edit Event</Text>
+              <TouchableOpacity onPress={handleSaveEdit} disabled={editSaving} activeOpacity={0.7}>
+                {editSaving
+                  ? <ActivityIndicator color={COLORS.sage} size="small" />
+                  : <Text style={styles.modalSend}>Save</Text>
+                }
+              </TouchableOpacity>
+            </View>
+            <ScrollView contentContainerStyle={styles.editForm} keyboardShouldPersistTaps="handled">
+              {/* Title */}
+              <TextInput
+                style={styles.editTitleInput}
+                value={editTitle}
+                onChangeText={setEditTitle}
+                placeholder="Event name"
+                placeholderTextColor={COLORS.textTertiary}
+                maxLength={80}
+              />
+              {/* Date */}
+              <View style={styles.editFieldRow}>
+                <Ionicons name="calendar-outline" size={17} color={COLORS.sage} />
+                {Platform.OS === 'web' ? (
+                  <input
+                    type="date"
+                    value={toDateInputVal(editDate)}
+                    onChange={(e) => {
+                      const [y, m, d] = e.target.value.split('-').map(Number);
+                      setEditDate((prev) => { const n = new Date(prev); n.setFullYear(y, m - 1, d); return n; });
+                    }}
+                    style={{ flex: 1, border: 'none', background: 'transparent', fontFamily: 'Inter_500Medium', fontSize: 15, color: '#1A1A1A', outline: 'none', cursor: 'pointer' }}
+                  />
+                ) : (
+                  <TouchableOpacity style={{ flex: 1 }} onPress={() => { setShowEditTime(false); setShowEditDate(true); }}>
+                    <Text style={styles.editFieldValue}>
+                      {editDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              {showEditDate && Platform.OS !== 'web' && (
+                <DateTimePicker value={editDate} mode="date" display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                  onChange={(_, d) => { if (Platform.OS === 'android') setShowEditDate(false); if (d) setEditDate((prev) => { const n = new Date(d); n.setHours(prev.getHours(), prev.getMinutes()); return n; }); }} minimumDate={new Date()} themeVariant="light" />
+              )}
+              {/* Time */}
+              <View style={styles.editFieldRow}>
+                <Ionicons name="time-outline" size={17} color={COLORS.sage} />
+                {Platform.OS === 'web' ? (
+                  <input
+                    type="time"
+                    value={toTimeInputVal(editDate)}
+                    onChange={(e) => {
+                      const [h, m] = e.target.value.split(':').map(Number);
+                      setEditDate((prev) => { const n = new Date(prev); n.setHours(h, m, 0, 0); return n; });
+                    }}
+                    style={{ flex: 1, border: 'none', background: 'transparent', fontFamily: 'Inter_500Medium', fontSize: 15, color: '#1A1A1A', outline: 'none', cursor: 'pointer' }}
+                  />
+                ) : (
+                  <TouchableOpacity style={{ flex: 1 }} onPress={() => { setShowEditDate(false); setShowEditTime(true); }}>
+                    <Text style={styles.editFieldValue}>
+                      {editDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              {showEditTime && Platform.OS !== 'web' && (
+                <DateTimePicker value={editDate} mode="time" display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={(_, d) => { if (Platform.OS === 'android') setShowEditTime(false); if (d) setEditDate((prev) => { const n = new Date(prev); n.setHours(d.getHours(), d.getMinutes()); return n; }); }} themeVariant="light" />
+              )}
+              {/* Location */}
+              <View style={styles.editFieldRow}>
+                <Ionicons name="location-outline" size={17} color={COLORS.sage} />
+                <TextInput style={styles.editInlineInput} value={editLocation} onChangeText={setEditLocation} placeholder="Location (optional)" placeholderTextColor={COLORS.textTertiary} maxLength={100} />
+              </View>
+              {/* Description */}
+              <View style={[styles.editFieldRow, { alignItems: 'flex-start', paddingTop: 14 }]}>
+                <Ionicons name="document-text-outline" size={17} color={COLORS.sage} style={{ marginTop: 1 }} />
+                <TextInput style={[styles.editInlineInput, { minHeight: 72 }]} value={editDesc} onChangeText={setEditDesc} placeholder="About this event (optional)" placeholderTextColor={COLORS.textTertiary} multiline maxLength={500} textAlignVertical="top" />
+              </View>
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      </Modal>
+
       {/* ── Invite more modal ─────────────────────────────── */}
       <Modal
         visible={inviteOpen}
@@ -587,6 +775,9 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
 
   creatorHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: SPACING.md,
     paddingTop: SPACING.sm,
     paddingBottom: SPACING.sm,
@@ -595,7 +786,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    alignSelf: 'flex-start',
     paddingVertical: 6,
     paddingHorizontal: 2,
   },
@@ -603,6 +793,61 @@ const styles = StyleSheet.create({
     fontFamily: FONT.medium,
     fontSize: 14,
     color: COLORS.textSecondary,
+  },
+  creatorActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
+  actionIconBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionIconDelete: {
+    borderColor: '#F5C6C6',
+    backgroundColor: '#FEF2F2',
+  },
+
+  // Edit modal form
+  editForm: {
+    padding: SPACING.md,
+    gap: 2,
+  },
+  editTitleInput: {
+    fontFamily: FONT.bold,
+    fontSize: 22,
+    color: COLORS.text,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: 2,
+    marginBottom: SPACING.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.borderLight,
+  },
+  editFieldRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    paddingVertical: 11,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.borderLight,
+  },
+  editFieldValue: {
+    fontFamily: FONT.medium,
+    fontSize: 15,
+    color: COLORS.text,
+  },
+  editInlineInput: {
+    flex: 1,
+    fontFamily: FONT.regular,
+    fontSize: 15,
+    color: COLORS.text,
+    paddingVertical: 0,
   },
   header: {
     flexDirection: 'row',
