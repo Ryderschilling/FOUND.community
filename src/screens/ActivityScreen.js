@@ -15,6 +15,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   View,
   Text,
@@ -157,6 +158,8 @@ function ActivityRow({ row, onAccept, onDismiss, onOpen, onMessage, busy }) {
 }
 
 // ─── Screen ───────────────────────────────────────────────────────────────
+const EVENT_PROMO_KEY = 'found_event_promo_dismissed';
+
 // ─── Event card (horizontal strip) ───────────────────────────────────────
 function formatEventShort(ts) {
   if (!ts) return '';
@@ -198,6 +201,7 @@ export default function ActivityScreen({ navigation }) {
   const [error, setError]             = useState(null);
   const [busyProfileId, setBusyProfileId] = useState(null);
   const [markingAll,   setMarkingAll]    = useState(false);
+  const [eventPromoDismissed, setEventPromoDismissed] = useState(true);
 
   // Guard against setState after unmount / after blur
   const mountedRef = useRef(true);
@@ -228,6 +232,13 @@ export default function ActivityScreen({ navigation }) {
   }, [user]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Load event promo dismissed state from storage.
+  useEffect(() => {
+    AsyncStorage.getItem(EVENT_PROMO_KEY).then((val) => {
+      setEventPromoDismissed(val === '1');
+    });
+  }, []);
 
   // Refresh + mark-all-seen whenever the user lands on this tab.
   // We track a per-focus abort flag so a load that starts on Activity but
@@ -366,6 +377,11 @@ export default function ActivityScreen({ navigation }) {
     setRows([]);
   }
 
+  const handleDismissEventPromo = useCallback(async () => {
+    setEventPromoDismissed(true);
+    await AsyncStorage.setItem(EVENT_PROMO_KEY, '1');
+  }, []);
+
   const handleEventPress = useCallback((ev) => {
     navigation.navigate('EventDetail', {
       eventId:   ev.event_id,
@@ -419,6 +435,36 @@ export default function ActivityScreen({ navigation }) {
               <EventCard key={ev.event_id} ev={ev} onPress={handleEventPress} />
             ))}
           </ScrollView>
+        </View>
+      )}
+
+      {/* Event promo card — visible until dismissed */}
+      {!eventPromoDismissed && (
+        <View style={styles.eventPromoCard}>
+          <View style={styles.eventPromoIcon}>
+            <Ionicons name="calendar" size={20} color={COLORS.text} />
+          </View>
+          <View style={styles.eventPromoBody}>
+            <Text style={styles.eventPromoTitle}>Host a gathering</Text>
+            <Text style={styles.eventPromoSub}>Create an event and invite your connections.</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.eventPromoCta}
+            activeOpacity={0.8}
+            onPress={() => {
+              handleDismissEventPromo();
+              navigation.navigate('CreateEvent');
+            }}
+          >
+            <Text style={styles.eventPromoCtaText}>Create</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.eventPromoDismiss}
+            hitSlop={10}
+            onPress={handleDismissEventPromo}
+          >
+            <Ionicons name="close" size={14} color={COLORS.textTertiary} />
+          </TouchableOpacity>
         </View>
       )}
     </View>
@@ -520,6 +566,58 @@ const styles = StyleSheet.create({
     fontFamily: FONT.semiBold,
     fontSize: 13,
     color: COLORS.white,
+  },
+
+  // Event discovery promo card
+  eventPromoCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    marginHorizontal: SPACING.lg,
+    marginBottom: SPACING.md,
+    backgroundColor: COLORS.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 12,
+  },
+  eventPromoIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: COLORS.surfaceAlt,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  eventPromoBody: {
+    flex: 1,
+    gap: 2,
+  },
+  eventPromoTitle: {
+    fontFamily: FONT.semiBold,
+    fontSize: 14,
+    color: COLORS.text,
+  },
+  eventPromoSub: {
+    fontFamily: FONT.regular,
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    lineHeight: 16,
+  },
+  eventPromoCta: {
+    backgroundColor: COLORS.text,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+  },
+  eventPromoCtaText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 13,
+    color: COLORS.white,
+  },
+  eventPromoDismiss: {
+    padding: 2,
   },
 
   // Upcoming events strip

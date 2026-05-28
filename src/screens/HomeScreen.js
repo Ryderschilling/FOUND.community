@@ -550,6 +550,7 @@ export default function HomeScreen({ navigation }) {
           />
         ))}
       </ScrollView>
+
     </View>
   );
 
@@ -772,6 +773,7 @@ const styles = StyleSheet.create({
     gap: SPACING.sm,
     marginBottom: SPACING.md,
   },
+
 
   // Location pill — top of header, opens the LocationFilterSheet
   locationPillRow: {
