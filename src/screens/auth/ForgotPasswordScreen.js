@@ -92,9 +92,7 @@ export default function ForgotPasswordScreen({ navigation }) {
             {sent ? (
               <View style={s.infoBox}>
                 <Text style={s.infoText}>
-                  If an account exists for {email.trim().toLowerCase()}, a password
-                  reset link is on its way. Check your inbox — and your spam folder.
-                  The link expires after a short while, so use it soon.
+                  Email sent. Check your inbox — might be in trash.
                 </Text>
               </View>
             ) : null}

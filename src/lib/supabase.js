@@ -51,6 +51,10 @@ export const supabase = createClient(SUPABASE_URL ?? 'http://invalid', SUPABASE_
     persistSession: true,
     // detectSessionInUrl is for web (OAuth redirect). Safe to keep true.
     detectSessionInUrl: Platform.OS === 'web',
+    // PKCE on web: uses ?code= query params instead of #access_token= hash
+    // fragments, which avoids React Navigation's hash router overwriting the
+    // token before supabase-js can read it.
+    flowType: Platform.OS === 'web' ? 'pkce' : 'implicit',
   },
 });
 
