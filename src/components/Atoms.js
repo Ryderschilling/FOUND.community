@@ -88,6 +88,7 @@ export function Avatar({ initials, size = 48, gradientColors, bgColor, uri, styl
             height: size,
             borderRadius: radius,
             backgroundColor: COLORS.surfaceAlt,
+            overflow: 'hidden',
           },
           style,
         ]}

@@ -116,10 +116,11 @@ export default function ChatScreen({ route, navigation }) {
   const groupId   = group?.id ?? params.group_id ?? null;
   const groupName = group?.name || 'Group';
 
-  const otherName     = other?.name || other?.full_name || 'Friend';
-  const otherInitials = other?.initials || initialsFor(otherName);
-  const otherGradient = other?.avatarColor || gradientFor(other?.id || other?.profile_id || otherName);
+  const otherName      = other?.name || other?.full_name || 'Friend';
+  const otherInitials  = other?.initials || initialsFor(otherName);
+  const otherGradient  = other?.avatarColor || gradientFor(other?.id || other?.profile_id || otherName);
   const otherProfileId = other?.id || other?.profile_id || null;
+  const otherAvatarUrl = other?.avatar_url || null;
 
   const [messages, setMessages]   = useState([]);
   const [loading, setLoading]     = useState(true);
@@ -317,6 +318,7 @@ export default function ChatScreen({ route, navigation }) {
               initials={otherInitials}
               size={34}
               gradientColors={otherGradient}
+              uri={otherAvatarUrl || undefined}
             />
             <View>
               <Text style={styles.navName}>{otherName}</Text>
@@ -468,7 +470,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.sm,
+    paddingTop: SPACING.md,
+    paddingBottom: SPACING.sm,
     gap: SPACING.sm,
   },
   backBtn: {
@@ -491,7 +494,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  navName: { fontFamily: FONT.serifItalic, fontSize: 17, color: COLORS.text },
+  navName: { fontFamily: FONT.serifItalic, fontSize: 19, color: COLORS.text },
   navStatus: { fontFamily: FONT.mono, fontSize: 8, letterSpacing: 1.2, textTransform: 'uppercase', color: COLORS.textTertiary },
   moreBtn: {
     width: 36,

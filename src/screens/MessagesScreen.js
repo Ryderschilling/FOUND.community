@@ -141,6 +141,7 @@ export default function MessagesScreen({ navigation }) {
         name:        item.other_full_name,
         initials:    initialsFor(item.other_full_name || item.other_handle),
         avatarColor: gradientFor(item.other_profile_id || item.other_full_name),
+        avatar_url:  item.other_avatar_url || null,
       },
     });
   }
@@ -163,6 +164,7 @@ export default function MessagesScreen({ navigation }) {
         name:        contact.full_name || contact.handle || 'Friend',
         initials:    initialsFor(contact.full_name || contact.handle),
         avatarColor: gradientFor(contact.profile_id),
+        avatar_url:  contact.avatar_url || null,
       },
     });
   }

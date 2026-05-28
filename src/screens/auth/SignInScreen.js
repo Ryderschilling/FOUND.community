@@ -3,6 +3,7 @@ import {
   View, Text, TextInput, StyleSheet, KeyboardAvoidingView, Platform,
   TouchableOpacity, ActivityIndicator, Alert, ScrollView,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { COLORS, FONT, TYPE, SPACING, RADIUS } from '../../theme';
 import { PrimaryButton } from '../../components/Atoms';
@@ -12,6 +13,7 @@ export default function SignInScreen({ navigation }) {
   const { signInWithPassword } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
 
@@ -81,14 +83,19 @@ export default function SignInScreen({ navigation }) {
             />
 
             <Text style={[s.label, { marginTop: SPACING.md }]}>Password</Text>
-            <TextInput
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              placeholder="••••••••"
-              placeholderTextColor={COLORS.textTertiary}
-              style={s.input}
-            />
+            <View style={s.inputWrap}>
+              <TextInput
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
+                placeholder="••••••••"
+                placeholderTextColor={COLORS.textTertiary}
+                style={[s.input, s.inputFlex]}
+              />
+              <TouchableOpacity onPress={() => setShowPassword(v => !v)} style={s.eyeBtn} hitSlop={8}>
+                <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color={COLORS.textTertiary} />
+              </TouchableOpacity>
+            </View>
 
             <TouchableOpacity
               onPress={() => navigation.navigate('ForgotPassword')}
@@ -160,4 +167,9 @@ const s = StyleSheet.create({
   // "Forgot password?" link under the password field
   forgotLink: { alignSelf: 'flex-end', marginTop: SPACING.sm, paddingVertical: 2 },
   forgotText: { ...TYPE.caption, color: COLORS.textSecondary, textDecorationLine: 'underline' },
+
+  // Password show/hide toggle
+  inputWrap: { position: 'relative' },
+  inputFlex: { paddingRight: 44 },
+  eyeBtn:    { position: 'absolute', right: 12, top: 0, bottom: 0, justifyContent: 'center' },
 });

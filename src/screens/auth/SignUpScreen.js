@@ -35,6 +35,7 @@ export default function SignUpScreen({ navigation }) {
   const [password, setPassword] = useState('');
   const [agree, setAgree]       = useState(false);
 
+  const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy]         = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
   const [infoMsg, setInfoMsg]   = useState(null);
@@ -286,16 +287,21 @@ export default function SignUpScreen({ navigation }) {
             <Text style={s.hint}>We use this to connect you with people from the same place.</Text>
 
             <Text style={[s.label, { marginTop: SPACING.md }]}>Password</Text>
-            <TextInput
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              autoComplete="password-new"
-              textContentType="newPassword"
-              placeholder="At least 8 characters"
-              placeholderTextColor={COLORS.textTertiary}
-              style={s.input}
-            />
+            <View style={s.inputWrap}>
+              <TextInput
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
+                autoComplete="password-new"
+                textContentType="newPassword"
+                placeholder="At least 8 characters"
+                placeholderTextColor={COLORS.textTertiary}
+                style={[s.input, s.inputFlex]}
+              />
+              <TouchableOpacity onPress={() => setShowPassword(v => !v)} style={s.eyeBtn} hitSlop={8}>
+                <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color={COLORS.textTertiary} />
+              </TouchableOpacity>
+            </View>
 
             {/* ── Terms & Privacy acknowledgment (mirrors website signup) ── */}
             <View style={s.termsBlock}>
@@ -368,6 +374,9 @@ const s = StyleSheet.create({
     fontFamily: FONT.regular, fontSize: 15, color: COLORS.text,
   },
   hint:      { ...TYPE.caption, color: COLORS.textTertiary, marginTop: 6 },
+  inputWrap: { position: 'relative' },
+  inputFlex: { paddingRight: 44 },
+  eyeBtn:    { position: 'absolute', right: 12, top: 0, bottom: 0, justifyContent: 'center' },
   optional:  { ...TYPE.label, color: COLORS.textTertiary, fontStyle: 'italic' },
   hintError: { color: '#8A2D2D' },
 

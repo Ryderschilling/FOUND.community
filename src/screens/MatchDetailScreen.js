@@ -29,6 +29,8 @@ import {
   ActivityIndicator,
   Modal,
   Platform,
+  Image,
+  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
@@ -53,11 +55,14 @@ export default function MatchDetailScreen({ route, navigation }) {
   const [theirKind,    setTheirKind]    = useState(initialMatch.theirKind ?? null);
   const [photos,       setPhotos]       = useState([]);
   const [photosLoaded, setPhotosLoaded] = useState(false);
-  const [openingChat,  setOpeningChat]  = useState(false);
-  const [ignoring,     setIgnoring]     = useState(false);
-  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
-  const [reportOpen,   setReportOpen]   = useState(false);
-  const [myInterestIds, setMyInterestIds] = useState(new Set());
+  const [openingChat,     setOpeningChat]     = useState(false);
+  const [ignoring,        setIgnoring]        = useState(false);
+  const [moreMenuOpen,    setMoreMenuOpen]    = useState(false);
+  const [reportOpen,      setReportOpen]      = useState(false);
+  const [avatarLightbox,  setAvatarLightbox]  = useState(false);
+  const [myInterestIds,  setMyInterestIds]  = useState(new Set());
+  const [myLifeStage,    setMyLifeStage]    = useState(null);
+  const [myChurchId,     setMyChurchId]     = useState(null);
 
   // Full profile data — starts from whatever the caller passed, enriched by
   // get_profile_detail() when score / interests are missing.
@@ -70,10 +75,12 @@ export default function MatchDetailScreen({ route, navigation }) {
     initials:        initialMatch.initials,
     avatarUrl:       initialMatch.avatarUrl ?? null,
     avatarColor:     initialMatch.avatarColor,
-    matchScore:      initialMatch.matchScore ?? null,
-    lifeStage:       initialMatch.lifeStage  ?? '',
-    distance:        initialMatch.distance   ?? '',
-    church:          initialMatch.church     ?? null,
+    matchScore:      initialMatch.matchScore  ?? null,
+    lifeStage:       initialMatch.lifeStage   ?? '',
+    lifeStageId:     initialMatch.lifeStageId ?? null,
+    distance:        initialMatch.distance    ?? '',
+    church:          initialMatch.church      ?? null,
+    churchId:        initialMatch.churchId    ?? null,
     cityState:       initialMatch.cityState  ?? null,
     interests:       initialMatch.interests  ?? [],
     connectionCount: null,
@@ -110,9 +117,11 @@ export default function MatchDetailScreen({ route, navigation }) {
         bio:             d.bio              ?? prev.bio,
         hometown:        d.hometown         ?? prev.hometown,
         lifeStage:       d.life_stage_label ?? prev.lifeStage,
+        lifeStageId:     d.life_stage_id   ?? prev.lifeStageId,
         distance:        d.city && d.state ? `${d.city}, ${d.state}` : prev.distance,
         cityState:       d.city && d.state ? `${d.city}, ${d.state}` : prev.cityState,
         church:          d.church_name     ?? prev.church,
+        churchId:        d.church_id       ?? prev.churchId,
         matchScore:      d.score           ?? prev.matchScore,
         interests:       (d.activities ?? []).map((a) => ({
                            id: a.id, label: a.label, icon: a.icon,
@@ -145,17 +154,19 @@ export default function MatchDetailScreen({ route, navigation }) {
     return () => { cancelled = true; };
   }, [initialMatch.id]);
 
-  // ── Fetch my own interests for In Common comparison ──────────────────────
+  // ── Fetch my own profile data for In Common comparison ───────────────────
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
     (async () => {
-      const { data, error } = await supabase
-        .from('profile_activities')
-        .select('activity_id')
-        .eq('profile_id', user.id);
-      if (cancelled || error) return;
-      setMyInterestIds(new Set((data ?? []).map((r) => r.activity_id)));
+      const [{ data: acts }, { data: me }] = await Promise.all([
+        supabase.from('profile_activities').select('activity_id').eq('profile_id', user.id),
+        supabase.from('profiles').select('life_stage_id, church_id').eq('id', user.id).maybeSingle(),
+      ]);
+      if (cancelled) return;
+      setMyInterestIds(new Set((acts ?? []).map((r) => r.activity_id)));
+      setMyLifeStage(me?.life_stage_id ?? null);
+      setMyChurchId(me?.church_id ?? null);
     })();
     return () => { cancelled = true; };
   }, [user]);
@@ -185,7 +196,9 @@ export default function MatchDetailScreen({ route, navigation }) {
   // ── Actions ──────────────────────────────────────────────────────────────
   async function handleConnect() {
     if (connected || !user || !profile.id) return;
+    const willMatch = theirKind === 'like';
     setConnected(true);
+    if (willMatch) setIsMatch(true); // optimistic: skip the Pending flash
     const { error } = await supabase
       .from('connections')
       .upsert(
@@ -195,11 +208,11 @@ export default function MatchDetailScreen({ route, navigation }) {
     if (!mountedRef.current) return;
     if (error) {
       setConnected(false);
+      if (willMatch) setIsMatch(false);
       toast({ title: 'Could not connect', message: error.message, type: 'error' });
       return;
     }
     if (theirKind === 'like') {
-      setIsMatch(true);
       const ok = await confirm({
         title: 'FOUND!',
         message: `You and ${profile.name.split(' ')[0]} are now connected. Say hi?`,
@@ -349,13 +362,19 @@ export default function MatchDetailScreen({ route, navigation }) {
 
         {/* Hero */}
         <View style={styles.hero}>
-          <Avatar
-            initials={profile.initials}
-            size={96}
-            gradientColors={profile.avatarColor ?? [COLORS.sage, COLORS.clay]}
-            uri={profile.avatarUrl || undefined}
-            style={styles.avatar}
-          />
+          <TouchableOpacity
+            activeOpacity={profile.avatarUrl ? 0.85 : 1}
+            onPress={() => profile.avatarUrl && setAvatarLightbox(true)}
+            disabled={!profile.avatarUrl}
+          >
+            <Avatar
+              initials={profile.initials}
+              size={96}
+              gradientColors={profile.avatarColor ?? [COLORS.sage, COLORS.clay]}
+              uri={profile.avatarUrl || undefined}
+              style={styles.avatar}
+            />
+          </TouchableOpacity>
 
           <View style={styles.scoreWrap}>
             {detailLoading ? (
@@ -457,16 +476,16 @@ export default function MatchDetailScreen({ route, navigation }) {
           <View style={styles.section}>
             <SectionHeader label="In Common" />
             <View style={styles.commonCard}>
-              {profile.lifeStage ? (
+              {myLifeStage && profile.lifeStageId && myLifeStage === profile.lifeStageId ? (
                 <View style={styles.commonRow}>
                   <Ionicons name="checkmark-circle" size={16} color={COLORS.sage} />
                   <Text style={styles.commonText}>Same life stage</Text>
                 </View>
               ) : null}
-              {profile.church ? (
+              {myChurchId && profile.churchId && myChurchId === profile.churchId ? (
                 <View style={styles.commonRow}>
                   <Ionicons name="checkmark-circle" size={16} color={COLORS.sage} />
-                  <Text style={styles.commonText}>Nearby church</Text>
+                  <Text style={styles.commonText}>Same church</Text>
                 </View>
               ) : null}
               {profile.interests
@@ -478,7 +497,8 @@ export default function MatchDetailScreen({ route, navigation }) {
                     <Text style={styles.commonText}>Both into {i.label.toLowerCase()}</Text>
                   </View>
                 ))}
-              {!profile.lifeStage && !profile.church &&
+              {!(myLifeStage && profile.lifeStageId && myLifeStage === profile.lifeStageId) &&
+               !(myChurchId && profile.churchId && myChurchId === profile.churchId) &&
                profile.interests.filter((i) => myInterestIds.has(i.id)).length === 0 &&
                !detailLoading ? (
                 <View style={styles.commonRow}>
@@ -633,6 +653,40 @@ export default function MatchDetailScreen({ route, navigation }) {
         onClose={() => setReportOpen(false)}
         onReported={() => {}}
       />
+
+      {/* Avatar lightbox — tap profile photo to expand */}
+      <Modal
+        visible={avatarLightbox}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setAvatarLightbox(false)}
+      >
+        <View style={styles.lightboxRoot}>
+          <TouchableOpacity
+            activeOpacity={1}
+            style={StyleSheet.absoluteFill}
+            onPress={() => setAvatarLightbox(false)}
+          />
+          {profile.avatarUrl ? (
+            <Image
+              source={{ uri: profile.avatarUrl }}
+              style={{
+                width:  Dimensions.get('window').width  * 0.88,
+                height: Dimensions.get('window').height * 0.7,
+                borderRadius: 16,
+              }}
+              resizeMode="contain"
+            />
+          ) : null}
+          <TouchableOpacity
+            style={styles.lightboxClose}
+            activeOpacity={0.8}
+            onPress={() => setAvatarLightbox(false)}
+          >
+            <Ionicons name="close" size={22} color="#fff" />
+          </TouchableOpacity>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -803,6 +857,25 @@ const styles = StyleSheet.create({
     width: 50, height: 50, borderRadius: RADIUS.lg,
     backgroundColor: COLORS.bg, borderWidth: 1, borderColor: COLORS.border,
     alignItems: 'center', justifyContent: 'center',
+  },
+
+  // Avatar lightbox
+  lightboxRoot: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.92)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lightboxClose: {
+    position: 'absolute',
+    top: 40,
+    right: 20,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   // Action menu

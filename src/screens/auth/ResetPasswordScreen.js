@@ -3,6 +3,7 @@ import {
   View, Text, TextInput, StyleSheet, KeyboardAvoidingView, Platform,
   TouchableOpacity, ActivityIndicator, ScrollView,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { COLORS, FONT, TYPE, SPACING, RADIUS } from '../../theme';
 import { PrimaryButton } from '../../components/Atoms';
@@ -14,9 +15,11 @@ import { useAuth } from '../../auth/AuthContext';
 // never has to navigate itself.
 export default function ResetPasswordScreen() {
   const { updatePassword, cancelRecovery } = useAuth();
-  const [password, setPassword] = useState('');
-  const [confirm, setConfirm]   = useState('');
-  const [busy, setBusy]         = useState(false);
+  const [password, setPassword]         = useState('');
+  const [confirm, setConfirm]           = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirm, setShowConfirm]   = useState(false);
+  const [busy, setBusy]                 = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
 
   function friendlyError(raw) {
@@ -80,28 +83,38 @@ export default function ResetPasswordScreen() {
 
           <View style={s.form}>
             <Text style={s.label}>New password</Text>
-            <TextInput
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              autoComplete="password-new"
-              textContentType="newPassword"
-              placeholder="At least 8 characters"
-              placeholderTextColor={COLORS.textTertiary}
-              style={s.input}
-            />
+            <View style={s.inputWrap}>
+              <TextInput
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
+                autoComplete="password-new"
+                textContentType="newPassword"
+                placeholder="At least 8 characters"
+                placeholderTextColor={COLORS.textTertiary}
+                style={[s.input, s.inputFlex]}
+              />
+              <TouchableOpacity onPress={() => setShowPassword(v => !v)} style={s.eyeBtn} hitSlop={8}>
+                <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color={COLORS.textTertiary} />
+              </TouchableOpacity>
+            </View>
 
             <Text style={[s.label, { marginTop: SPACING.md }]}>Confirm new password</Text>
-            <TextInput
-              value={confirm}
-              onChangeText={setConfirm}
-              secureTextEntry
-              autoComplete="password-new"
-              textContentType="newPassword"
-              placeholder="Re-enter your password"
-              placeholderTextColor={COLORS.textTertiary}
-              style={s.input}
-            />
+            <View style={s.inputWrap}>
+              <TextInput
+                value={confirm}
+                onChangeText={setConfirm}
+                secureTextEntry={!showConfirm}
+                autoComplete="password-new"
+                textContentType="newPassword"
+                placeholder="Re-enter your password"
+                placeholderTextColor={COLORS.textTertiary}
+                style={[s.input, s.inputFlex]}
+              />
+              <TouchableOpacity onPress={() => setShowConfirm(v => !v)} style={s.eyeBtn} hitSlop={8}>
+                <Ionicons name={showConfirm ? 'eye-off-outline' : 'eye-outline'} size={20} color={COLORS.textTertiary} />
+              </TouchableOpacity>
+            </View>
 
             {errorMsg ? (
               <View style={s.errorBox}>
@@ -143,6 +156,10 @@ const s = StyleSheet.create({
     borderColor: COLORS.border, paddingHorizontal: SPACING.md, paddingVertical: 14,
     fontFamily: FONT.regular, fontSize: 15, color: COLORS.text,
   },
+
+  inputWrap: { position: 'relative' },
+  inputFlex: { paddingRight: 44 },
+  eyeBtn:    { position: 'absolute', right: 12, top: 0, bottom: 0, justifyContent: 'center' },
 
   cancelBtn:  { alignSelf: 'center', paddingVertical: SPACING.md, marginTop: SPACING.xs },
   cancelText: { ...TYPE.body, fontSize: 14, color: COLORS.textSecondary, textDecorationLine: 'underline' },

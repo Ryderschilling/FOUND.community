@@ -181,19 +181,21 @@ export default function PersonCard({ match, onConnect, onSave, onCancel, onPress
           </View>
         </TouchableOpacity>
 
-        {/* Connect Later — private bookmark. Tap to toggle. */}
-        <TouchableOpacity
-          style={[styles.btnSave, match.saved && styles.btnSaveDone]}
-          onPress={() => onSave?.()}
-          activeOpacity={0.8}
-          accessibilityLabel={match.saved ? 'Remove from Connect Later' : 'Save to Connect Later'}
-        >
-          <Ionicons
-            name={match.saved ? 'bookmark' : 'bookmark-outline'}
-            size={18}
-            color={match.saved ? COLORS.sage : COLORS.textSecondary}
-          />
-        </TouchableOpacity>
+        {/* Connect Later — hide once connected (no point saving someone you're already connected to) */}
+        {state !== 'connected' ? (
+          <TouchableOpacity
+            style={[styles.btnSave, match.saved && styles.btnSaveDone]}
+            onPress={() => onSave?.()}
+            activeOpacity={0.8}
+            accessibilityLabel={match.saved ? 'Remove from Connect Later' : 'Save to Connect Later'}
+          >
+            <Ionicons
+              name={match.saved ? 'bookmark' : 'bookmark-outline'}
+              size={18}
+              color={match.saved ? COLORS.sage : COLORS.textSecondary}
+            />
+          </TouchableOpacity>
+        ) : null}
       </View>
     </Pressable>
   );
