@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform, ActivityIndicator, AppState, Animated } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform, ActivityIndicator, AppState, Animated, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -320,6 +320,38 @@ function AppStack({ needsOnboarding }) {
 // ── Root: gate on auth ─────────────────────────────────────────────
 export default function AppNavigator() {
   const { session, profile, loading, profileLoading, recoveryMode } = useAuth();
+
+  // ── Deep link replay after auth resolves ────────────────────────────
+  // Problem: when the app cold-starts from a deep link (e.g. found://edit-profile),
+  // the auth spinner mounts WITHOUT a NavigationContainer, so React Navigation
+  // can't process the URL. We capture it early, then navigate once the navigator
+  // is ready and the user is fully logged in.
+  const pendingDeepLink = useRef(null);
+
+  useEffect(() => {
+    Linking.getInitialURL().then(url => {
+      if (url) pendingDeepLink.current = url;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!session || !profile?.onboarding_complete) return;
+    if (!pendingDeepLink.current) return;
+    const url = pendingDeepLink.current;
+    pendingDeepLink.current = null;
+
+    const tryNavigate = () => {
+      if (!navigationRef.isReady()) return false;
+      if (url.includes('edit-profile')) navigationRef.navigate('EditProfile');
+      // Add additional routes here as the app grows.
+      return true;
+    };
+
+    if (!tryNavigate()) {
+      const id = setInterval(() => { if (tryNavigate()) clearInterval(id); }, 50);
+      return () => clearInterval(id);
+    }
+  }, [session, profile?.onboarding_complete]);
 
   // ── Push notifications ──────────────────────────────────────────────
   // Register the device once per signed-in user (keyed on the stable user
