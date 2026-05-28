@@ -147,7 +147,10 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#F7F4EF"
       },
-      "package": "com.found.community"
+      "package": "com.found.community",
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -165,6 +168,12 @@
       "expo-secure-store",
       "@sentry/react-native",
       "@react-native-community/datetimepicker"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "aeafb9df-b756-440f-a01e-3cebd4655953"
+      }
+    },
+    "owner": "ryderschilling"
   }
 }

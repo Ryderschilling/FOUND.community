@@ -744,7 +744,8 @@ const styles = StyleSheet.create({
   // Hero
   hero: {
     alignItems: 'center',
-    paddingVertical: SPACING.xl,
+    paddingTop: SPACING.xs,
+    paddingBottom: SPACING.xl,
     paddingHorizontal: SPACING.lg,
     position: 'relative',
   },
