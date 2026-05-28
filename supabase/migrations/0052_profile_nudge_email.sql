@@ -114,7 +114,7 @@ as $func$
             <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
               <tr>
                 <td align="center" bgcolor="#111111" style="border-radius:9999px;">
-                  <a href="https://found.community/open.html?to=edit-profile"
+                  <a href="https://found-community.vercel.app/edit-profile"
                      style="display:block;padding:15px 28px;font:600 15px Arial,sans-serif;color:#ffffff;text-decoration:none;border-radius:9999px;">
                     Finish my profile
                   </a>

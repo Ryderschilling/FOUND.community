@@ -24,7 +24,7 @@ export const navigationRef = createNavigationContainerRef();
 // found://edit-profile  → EditProfileScreen  (used in nudge emails)
 // found://profile       → Profile tab
 const linking = {
-  prefixes: ['found://', 'https://found.community'],
+  prefixes: ['found://', 'https://found.community', 'https://found-community.vercel.app'],
   config: {
     screens: {
       EditProfile: 'edit-profile',
