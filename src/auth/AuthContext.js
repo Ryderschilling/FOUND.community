@@ -57,19 +57,43 @@ export function AuthProvider({ children }) {
   // Bootstrap: read any existing session from AsyncStorage
   useEffect(() => {
     let mounted = true;
+
+    // On web, if the URL hash contains a recovery token, do NOT clear loading
+    // until PASSWORD_RECOVERY fires. Without this, getSession() returns null
+    // while Supabase is still processing the hash async, loading flips false,
+    // and the navigator briefly flashes the Splash/Auth screen before the
+    // recovery session lands. Holding the spinner prevents that race.
+    const hasWebRecoveryHash =
+      Platform.OS === 'web' &&
+      typeof window !== 'undefined' &&
+      window.location.hash.includes('type=recovery');
+
     (async () => {
       const { data } = await supabase.auth.getSession();
       if (!mounted) return;
       setSession(data.session ?? null);
-      setLoading(false);
+      if (!hasWebRecoveryHash) {
+        setLoading(false);
+      } else {
+        // Failsafe: if PASSWORD_RECOVERY never fires (bad token, etc.),
+        // unblock the UI after 4s so the user isn't stuck on a spinner.
+        setTimeout(() => { if (mounted) setLoading(false); }, 4000);
+      }
     })();
+
     const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
       setSession(s ?? null);
       // Fired by supabase-js on web when it parses a recovery token out of the
       // URL hash (detectSessionInUrl). On native we set this flag ourselves in
       // the deep-link effect below, since detectSessionInUrl is web-only.
-      if (event === 'PASSWORD_RECOVERY') setRecoveryMode(true);
+      if (event === 'PASSWORD_RECOVERY') {
+        setRecoveryMode(true);
+        // Clear loading now that we know it's a recovery flow — the navigator
+        // will immediately render RecoveryStack instead of Splash/Auth.
+        if (mounted) setLoading(false);
+      }
     });
+
     return () => {
       mounted = false;
       sub.subscription.unsubscribe();
