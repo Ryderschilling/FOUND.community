@@ -25,7 +25,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
-import { View, Text, Modal, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
 
 const ConfirmContext = createContext(null);
@@ -76,67 +76,68 @@ export function ConfirmProvider({ children }) {
     <ConfirmContext.Provider value={{ confirm }}>
       {children}
 
-      <Modal
-        visible={!!options}
-        transparent
-        animationType="fade"
-        onRequestClose={() => close(false)}
-      >
-        <View style={styles.backdrop}>
-          {/* Tap outside the dialog = cancel */}
+      {/* Rendered after {children} so it always sits on top of every screen,
+          sheet, and modal — including the group-settings panel that triggers it.
+          Using a plain absolutely-positioned View (not <Modal>) avoids the
+          React Native Web portal stacking problem where two <Modal>s compete
+          for z-order and the first one wins. */}
+      {!!options && (
+        <View style={styles.overlay} pointerEvents="box-none">
+          {/* Full-screen tap-outside-to-cancel */}
           <TouchableOpacity
             style={StyleSheet.absoluteFill}
             activeOpacity={1}
             onPress={() => close(false)}
           />
 
-          {options ? (
-            <View style={styles.dialog}>
-              <Text style={styles.title}>{options.title}</Text>
-              {options.message ? (
-                <Text style={styles.message}>{options.message}</Text>
-              ) : null}
+          <View style={styles.dialog}>
+            <Text style={styles.title}>{options.title}</Text>
+            {options.message ? (
+              <Text style={styles.message}>{options.message}</Text>
+            ) : null}
 
-              <View style={styles.actions}>
-                <TouchableOpacity
-                  style={[styles.btn, styles.btnCancel]}
-                  onPress={() => close(false)}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.btnCancelText}>{options.cancelLabel}</Text>
-                </TouchableOpacity>
+            <View style={styles.actions}>
+              <TouchableOpacity
+                style={[styles.btn, styles.btnCancel]}
+                onPress={() => close(false)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.btnCancelText}>{options.cancelLabel}</Text>
+              </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={[
-                    styles.btn,
-                    options.destructive ? styles.btnDestructive : styles.btnConfirm,
-                  ]}
-                  onPress={() => close(true)}
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.btnConfirmText}>{options.confirmLabel}</Text>
-                </TouchableOpacity>
-              </View>
+              <TouchableOpacity
+                style={[
+                  styles.btn,
+                  options.destructive ? styles.btnDestructive : styles.btnConfirm,
+                ]}
+                onPress={() => close(true)}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.btnConfirmText}>{options.confirmLabel}</Text>
+              </TouchableOpacity>
             </View>
-          ) : null}
+          </View>
         </View>
-      </Modal>
+      )}
     </ConfirmContext.Provider>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.45)',
     alignItems: 'center',
     justifyContent: 'center',
     padding: SPACING.lg,
+    // Must beat every other z-index in the app so confirm dialogs
+    // are never obscured by sheets, settings panels, or other modals.
+    zIndex: 9999,
+    elevation: 99, // Android stacking
   },
   dialog: {
     width: '100%',
-    // On web the Modal portals to the document root, outside the phone-width
-    // frame in App.js — cap it so it doesn't stretch the whole browser.
+    // Cap width on web so it doesn't stretch the full browser viewport.
     maxWidth: Platform.OS === 'web' ? 360 : 400,
     backgroundColor: COLORS.surface,
     borderRadius: RADIUS.xl,
