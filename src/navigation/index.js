@@ -342,8 +342,11 @@ export default function AppNavigator() {
 
     const tryNavigate = () => {
       if (!navigationRef.isReady()) return false;
-      if (url.includes('edit-profile')) navigationRef.navigate('EditProfile');
-      // Add additional routes here as the app grows.
+      if (url.includes('edit-profile')) {
+        navigationRef.navigate('EditProfile');
+      } else if (url.includes('profile')) {
+        navigationRef.navigate('Main', { screen: 'Profile' });
+      }
       return true;
     };
 
