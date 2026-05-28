@@ -362,28 +362,31 @@ export default function MatchDetailScreen({ route, navigation }) {
 
         {/* Hero */}
         <View style={styles.hero}>
-          <TouchableOpacity
-            activeOpacity={profile.avatarUrl ? 0.85 : 1}
-            onPress={() => profile.avatarUrl && setAvatarLightbox(true)}
-            disabled={!profile.avatarUrl}
-          >
-            <Avatar
-              initials={profile.initials}
-              size={96}
-              gradientColors={profile.avatarColor ?? [COLORS.sage, COLORS.clay]}
-              uri={profile.avatarUrl || undefined}
-              style={styles.avatar}
-            />
-          </TouchableOpacity>
+          {/* Avatar + score ring in a contained relative wrapper */}
+          <View style={styles.avatarContainer}>
+            <TouchableOpacity
+              activeOpacity={profile.avatarUrl ? 0.85 : 1}
+              onPress={() => profile.avatarUrl && setAvatarLightbox(true)}
+              disabled={!profile.avatarUrl}
+            >
+              <Avatar
+                initials={profile.initials}
+                size={96}
+                gradientColors={profile.avatarColor ?? [COLORS.sage, COLORS.clay]}
+                uri={profile.avatarUrl || undefined}
+                style={styles.avatar}
+              />
+            </TouchableOpacity>
 
-          <View style={styles.scoreWrap}>
-            {detailLoading ? (
-              <View style={styles.scoreLoadingWrap}>
-                <ActivityIndicator size="small" color={COLORS.textTertiary} />
-              </View>
-            ) : (
-              <ScoreRing score={profile.matchScore} size={64} stroke={5} />
-            )}
+            <View style={styles.scoreWrap}>
+              {detailLoading ? (
+                <View style={styles.scoreLoadingWrap}>
+                  <ActivityIndicator size="small" color={COLORS.textTertiary} />
+                </View>
+              ) : (
+                <ScoreRing score={profile.matchScore} size={64} stroke={5} />
+              )}
+            </View>
           </View>
 
           <Text style={styles.heroName}>{profile.name}</Text>
@@ -750,10 +753,16 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   avatar: { ...SHADOW.md },
+  avatarContainer: {
+    position: 'relative',
+    width: 96,
+    height: 96,
+    marginBottom: SPACING.lg,
+  },
   scoreWrap: {
     position: 'absolute',
-    top: SPACING.xl + 60,
-    right: '28%',
+    bottom: -26,
+    right: -42,
   },
   scoreLoadingWrap: {
     width: 64, height: 64,
@@ -769,7 +778,6 @@ const styles = StyleSheet.create({
     fontSize: 30,
     color: COLORS.text,
     letterSpacing: -0.3,
-    marginTop: SPACING.md,
     marginBottom: 4,
   },
   heroMeta: { fontFamily: FONT.regular, fontSize: 14, color: COLORS.textSecondary },
