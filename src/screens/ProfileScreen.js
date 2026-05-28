@@ -25,6 +25,7 @@ import { useAuth } from '../auth/AuthContext';
 import { pickAndUploadAvatar } from '../lib/uploadAvatar';
 import {
   pickAndUploadProfilePhoto,
+  pickAndUploadMultipleProfilePhotos,
   fetchProfilePhotos,
   deleteProfilePhoto,
   MAX_PHOTOS,
@@ -627,16 +628,42 @@ export default function ProfileScreen({ navigation }) {
       toast({ title: 'Reel is full', message: `You can add up to ${MAX_PHOTOS} photos. Delete one to add another.`, type: 'info' });
       return;
     }
-    const slotIdx = photos.length;     // first empty slot
-    setPhotoBusyIdx(slotIdx);
-    const { photo, error } = await pickAndUploadProfilePhoto({ userId: user.id, source });
-    setPhotoBusyIdx(-1);
-    if (error) {
-      toast({ title: 'Could not add photo', message: error.message || 'Try again.', type: 'error' });
-      return;
+
+    const slotsLeft = MAX_PHOTOS - photos.length;
+
+    if (source === 'camera') {
+      // Camera is always single + crop editor
+      const slotIdx = photos.length;
+      setPhotoBusyIdx(slotIdx);
+      const { photo, error } = await pickAndUploadProfilePhoto({ userId: user.id, source: 'camera' });
+      setPhotoBusyIdx(-1);
+      if (error) {
+        toast({ title: 'Could not add photo', message: error.message || 'Try again.', type: 'error' });
+        return;
+      }
+      if (!photo) return; // cancelled
+      setPhotos((prev) => [...prev, photo]);
+    } else {
+      // Library: multi-select up to remaining slots
+      const slotIdx = photos.length;
+      setPhotoBusyIdx(slotIdx);
+      const { photos: added, errors, cancelled } = await pickAndUploadMultipleProfilePhotos({
+        userId: user.id,
+        maxCount: slotsLeft,
+      });
+      setPhotoBusyIdx(-1);
+      if (cancelled) return;
+      if (added.length > 0) {
+        setPhotos((prev) => [...prev, ...added]);
+      }
+      if (errors.length > 0) {
+        toast({
+          title: added.length > 0 ? 'Some photos failed' : 'Could not add photos',
+          message: errors[0].message || 'Try again.',
+          type: 'error',
+        });
+      }
     }
-    if (!photo) return; // cancelled
-    setPhotos((prev) => [...prev, photo]);
   }
 
   async function handleAddPhoto() {

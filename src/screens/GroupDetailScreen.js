@@ -45,6 +45,7 @@ import { firstViolation } from '../lib/contentFilter';
 import {
   fetchGroupPhotos,
   pickAndUploadGroupPhoto,
+  pickAndUploadMultipleGroupPhotos,
   deleteGroupPhoto,
   purgeGroupPhotoStorage,
   publicUrlForGroupPhoto,
@@ -261,11 +262,22 @@ export default function GroupDetailScreen({ route, navigation }) {
       toast({ title: 'Photo limit reached', message: `Groups can have up to ${MAX_GROUP_PHOTOS} photos.`, type: 'info' });
       return;
     }
+    const slotsLeft = MAX_GROUP_PHOTOS - photos.length;
     setUploading(true);
-    const { photo, error } = await pickAndUploadGroupPhoto({ groupId, source: 'library' });
+    const { photos: added, errors, cancelled } = await pickAndUploadMultipleGroupPhotos({
+      groupId,
+      maxCount: slotsLeft,
+    });
     setUploading(false);
-    if (error) { toast({ title: 'Upload failed', message: error.message, type: 'error' }); return; }
-    if (photo) await refreshPhotos();
+    if (cancelled) return;
+    if (added.length > 0) await refreshPhotos();
+    if (errors.length > 0) {
+      toast({
+        title: added.length > 0 ? 'Some photos failed' : 'Upload failed',
+        message: errors[0].message,
+        type: 'error',
+      });
+    }
   }
 
   async function handleDeletePhoto(photo) {

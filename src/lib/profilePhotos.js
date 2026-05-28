@@ -2,10 +2,11 @@
 // profilePhotos.js
 //
 // Multi-photo "Highlight Reel" management:
-//   - pickAndUploadProfilePhoto({ userId, source })  → upload one photo
-//   - fetchProfilePhotos(profileId)                  → list a profile's photos
-//   - deleteProfilePhoto(photoId, storagePath)       → remove one
-//   - reorderProfilePhotos(ids[])                    → persist a new order
+//   - pickAndUploadProfilePhoto({ userId, source })           → upload one photo (camera)
+//   - pickAndUploadMultipleProfilePhotos({ userId, maxCount }) → pick many, upload all
+//   - fetchProfilePhotos(profileId)                           → list a profile's photos
+//   - deleteProfilePhoto(photoId, storagePath)                → remove one
+//   - reorderProfilePhotos(ids[])                             → persist a new order
 //
 // Storage layout: bucket `profile-photos`, key `{user_id}/{uuid}.jpg`
 // DB: rows in public.photos with owner_kind='profile', owner_id=user_id.
@@ -48,8 +49,8 @@ async function ensurePermission(source) {
 }
 
 // ── Picker ─────────────────────────────────────────────────────────────────
+// Single image (camera, or library fallback). Has crop editor.
 // Returns { uri, base64 } or null if cancelled.
-// 4:5 aspect (portrait) for highlight reel feels better than square.
 async function pickImage(source) {
   const opts = {
     mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -69,6 +70,26 @@ async function pickImage(source) {
       const sanitized = await stripExif(asset.uri, { maxWidth: 2048, compress: 0.85 });
       return { uri: sanitized.uri, base64: sanitized.base64 };
     }
+
+// Multi-image library picker. allowsEditing is incompatible with
+// allowsMultipleSelection, so no crop editor — user selects and we take as-is.
+// Returns array of { uri, base64 }, or null if cancelled.
+async function pickMultipleImages(maxCount) {
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ImagePicker.MediaTypeOptions.Images,
+    allowsMultipleSelection: true,
+    selectionLimit: maxCount,
+    quality: 0.8,
+    base64: true,
+  });
+  if (result.canceled || !result.assets?.length) return null;
+  const picked = [];
+  for (const asset of result.assets) {
+    const sanitized = await stripExif(asset.uri, { maxWidth: 2048, compress: 0.85 });
+    picked.push({ uri: sanitized.uri, base64: sanitized.base64 });
+  }
+  return picked;
+}
 
 // ── Upload + insert ────────────────────────────────────────────────────────
 async function uploadOne(userId, picked) {
@@ -154,6 +175,46 @@ export async function pickAndUploadProfilePhoto({ userId, source = 'library' }) 
     return { photo, error: null };
   } catch (e) {
     return { photo: null, error: e instanceof Error ? e : new Error(String(e)) };
+  }
+}
+
+/**
+ * Pick multiple photos from the library and upload them all to the highlight reel.
+ * maxCount caps how many the OS picker will allow the user to select.
+ * Uploads sequentially to keep sort_order consistent.
+ *
+ * @returns {Promise<{ photos: object[], errors: Error[], cancelled: boolean }>}
+ *   photos  — successfully uploaded photo rows
+ *   errors  — per-photo upload errors (non-fatal; others still upload)
+ *   cancelled — true if the user dismissed the picker without selecting
+ */
+export async function pickAndUploadMultipleProfilePhotos({ userId, maxCount }) {
+  if (!userId) return { photos: [], errors: [new Error('Not signed in')], cancelled: false };
+  try {
+    const granted = await ensurePermission('library');
+    if (!granted) {
+      return {
+        photos: [],
+        errors: [new Error('Photo library permission denied. Enable it in Settings.')],
+        cancelled: false,
+      };
+    }
+    const pickedList = await pickMultipleImages(maxCount);
+    if (!pickedList) return { photos: [], errors: [], cancelled: true };
+
+    const photos = [];
+    const errors = [];
+    for (const picked of pickedList) {
+      try {
+        const photo = await uploadOne(userId, picked);
+        photos.push(photo);
+      } catch (e) {
+        errors.push(e instanceof Error ? e : new Error(String(e)));
+      }
+    }
+    return { photos, errors, cancelled: false };
+  } catch (e) {
+    return { photos: [], errors: [e instanceof Error ? e : new Error(String(e))], cancelled: false };
   }
 }
 
