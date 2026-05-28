@@ -19,6 +19,24 @@ import { useUnreadNotifications } from '../lib/notifications';
 // Shared ref so a tapped push notification can navigate from outside React.
 export const navigationRef = createNavigationContainerRef();
 
+// Deep-link / universal-link config.
+// Scheme "found" is registered in app.json.
+// found://edit-profile  → EditProfileScreen  (used in nudge emails)
+// found://profile       → Profile tab
+const linking = {
+  prefixes: ['found://', 'https://found.community'],
+  config: {
+    screens: {
+      EditProfile: 'edit-profile',
+      Main: {
+        screens: {
+          Profile: 'profile',
+        },
+      },
+    },
+  },
+};
+
 import SplashScreen       from '../screens/SplashScreen';
 import OnboardingScreen   from '../screens/OnboardingScreen';
 import HomeScreen         from '../screens/HomeScreen';
@@ -342,7 +360,7 @@ export default function AppNavigator() {
   // this gate the user would land in the app and never set a new password.
   if (recoveryMode) {
     return (
-      <NavigationContainer ref={navigationRef}>
+      <NavigationContainer ref={navigationRef} linking={linking}>
         <RecoveryStack />
       </NavigationContainer>
     );

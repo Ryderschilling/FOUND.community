@@ -107,6 +107,17 @@ export default function NotificationsFeedScreen({ navigation }) {
     setError(err ? 'Could not load notifications.' : null);
     setLoading(false);
     setRefresh(false);
+
+    // Auto-mark all unread as read when the feed is opened.
+    // Covers notifications actioned outside this screen (e.g. connection
+    // requests accepted via the Activity tab) that never got cleared.
+    const hasUnread = notifications.some((n) => !n.read_at);
+    if (hasUnread) {
+      setItems((prev) =>
+        prev.map((n) => ({ ...n, read_at: n.read_at || new Date().toISOString() })),
+      );
+      markNotificationsRead(null);
+    }
   }, []);
 
   // Initial load + live updates.

@@ -152,14 +152,21 @@ export default function ChatScreen({ route, navigation }) {
     return () => { cancelled = true; };
   }, [isGroup, groupId]);
 
-  // Mark current thread as read for me
+  // Mark current thread as read for me:
+  //   1. update last_read_at → clears the Messages tab badge
+  //   2. mark_thread_notifications_read → clears the Discover bell badge
+  //      (new-message DB triggers insert a notifications row; without this
+  //      the bell stays lit even after you've viewed the conversation)
   const markRead = useCallback(async () => {
     if (!user || !threadId) return;
-    await supabase
-      .from('thread_participants')
-      .update({ last_read_at: new Date().toISOString() })
-      .eq('thread_id', threadId)
-      .eq('profile_id', user.id);
+    await Promise.all([
+      supabase
+        .from('thread_participants')
+        .update({ last_read_at: new Date().toISOString() })
+        .eq('thread_id', threadId)
+        .eq('profile_id', user.id),
+      supabase.rpc('mark_thread_notifications_read', { p_thread_id: threadId }),
+    ]);
   }, [user, threadId]);
 
   // Initial fetch
