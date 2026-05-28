@@ -20,9 +20,9 @@ export const RADIUS_OPTIONS = [5, 10, 25, 50, 100, 250];
 
 export const DEFAULT_FILTER = { mode: 'anywhere', radiusMi: DEFAULT_RADIUS };
 
-// The only two modes the sheet supports. Anything else (e.g. a legacy 'city'
-// filter from an older build) is migrated back to 'anywhere' on load.
-const VALID_MODES = ['anywhere', 'self'];
+// Supported modes. Anything else (e.g. a legacy mode from an older build)
+// is migrated back to 'anywhere' on load.
+const VALID_MODES = ['anywhere', 'self', 'custom'];
 
 export async function loadFilter() {
   try {
@@ -36,6 +36,17 @@ export async function loadFilter() {
     }
     if (!RADIUS_OPTIONS.includes(parsed.radiusMi)) {
       parsed.radiusMi = DEFAULT_RADIUS;
+    }
+    if (parsed.mode === 'custom') {
+      // Custom requires geocoded coords — fall back if they're missing.
+      if (!parsed.lat || !parsed.lng) return DEFAULT_FILTER;
+      return {
+        mode: 'custom',
+        radiusMi: parsed.radiusMi,
+        lat: parsed.lat,
+        lng: parsed.lng,
+        displayName: parsed.displayName || '',
+      };
     }
     return { mode: parsed.mode, radiusMi: parsed.radiusMi };
   } catch {
@@ -68,6 +79,9 @@ export function filterToRpcArgs(filter, selfLocation = null) {
     case 'self':
       if (!selfLocation?.lat || !selfLocation?.lng) return fallback;
       return { p_lat: selfLocation.lat, p_lng: selfLocation.lng, p_radius_mi: radius, p_anywhere: false };
+    case 'custom':
+      if (!filter.lat || !filter.lng) return fallback;
+      return { p_lat: filter.lat, p_lng: filter.lng, p_radius_mi: radius, p_anywhere: false };
     case 'anywhere':
     default:
       // p_anywhere: true tells the RPC to bypass all geo filters and sort by
@@ -83,8 +97,9 @@ export function filterLabel(filter) {
   if (!filter) return 'Anywhere';
   const r = filter.radiusMi ?? DEFAULT_RADIUS;
   switch (filter.mode) {
-    case 'self': return `Near Me · ${r} mi`;
+    case 'self':   return `Near Me · ${r} mi`;
+    case 'custom': return filter.displayName ? `${filter.displayName} · ${r} mi` : `Custom · ${r} mi`;
     case 'anywhere':
-    default:     return 'Anywhere';
+    default:       return 'Anywhere';
   }
 }

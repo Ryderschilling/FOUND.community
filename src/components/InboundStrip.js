@@ -35,7 +35,7 @@ function initialsFor(name) {
 
 function badgeFor(row) {
   if (row.is_match)              return { icon: 'sparkles',  label: 'Match',     color: COLORS.sage };
-  if (row.their_kind === 'like') return { icon: 'heart',     label: 'Likes you', color: COLORS.clay };
+  if (row.their_kind === 'like') return { icon: 'heart',     label: 'Wants to connect', color: COLORS.clay };
   if (row.their_kind === 'wave') return { icon: 'hand-left', label: 'Wave',      color: COLORS.gold };
   return null;
 }

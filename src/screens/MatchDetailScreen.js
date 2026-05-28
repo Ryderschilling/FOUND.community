@@ -497,7 +497,7 @@ export default function MatchDetailScreen({ route, navigation }) {
       {/* ── Sticky bottom dock ───────────────────────────────────────────── */}
       <View style={styles.bottomDock}>
         <RuleLabel
-          label={isInbound ? 'accept · ignore · message' : 'connect · save · message'}
+          label={isInbound ? 'accept · ignore · message' : 'save · connect · message'}
           style={styles.rule}
         />
         <View style={styles.ctaBar}>
@@ -540,19 +540,6 @@ export default function MatchDetailScreen({ route, navigation }) {
             </>
           ) : (
             <>
-              {/* Save */}
-              <TouchableOpacity
-                style={[styles.btnSave, saved && styles.btnSaveDone]}
-                onPress={() => saved ? handleUnsave() : handleSave()}
-                activeOpacity={0.8}
-              >
-                <Ionicons
-                  name={saved ? 'bookmark' : 'bookmark-outline'}
-                  size={20}
-                  color={saved ? COLORS.sage : COLORS.textSecondary}
-                />
-              </TouchableOpacity>
-
               {/* Connect */}
               <TouchableOpacity
                 style={[
@@ -573,6 +560,19 @@ export default function MatchDetailScreen({ route, navigation }) {
                    : isInbound ? 'Accept'
                    : 'Connect'}
                 </Text>
+              </TouchableOpacity>
+
+              {/* Save */}
+              <TouchableOpacity
+                style={[styles.btnSave, saved && styles.btnSaveDone]}
+                onPress={() => saved ? handleUnsave() : handleSave()}
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name={saved ? 'bookmark' : 'bookmark-outline'}
+                  size={20}
+                  color={saved ? COLORS.sage : COLORS.textSecondary}
+                />
               </TouchableOpacity>
 
               {/* Message */}

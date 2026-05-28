@@ -22,12 +22,16 @@ import {
   StyleSheet,
   Pressable,
   Animated,
+  TextInput,
+  ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
 import { PrimaryButton } from './Atoms';
 import { DEFAULT_RADIUS, RADIUS_OPTIONS, DEFAULT_FILTER } from '../lib/locationFilter';
 import { useToast } from './ToastProvider';
+import { geocode } from '../lib/geocode';
 
 function ModeRow({ icon, label, subLabel, selected, disabled, onPress }) {
   return (
@@ -62,8 +66,10 @@ export default function LocationFilterSheet({
   const start = initialFilter ?? DEFAULT_FILTER;
 
   const toast = useToast();
-  const [mode, setMode]         = useState(start.mode);
-  const [radiusMi, setRadiusMi] = useState(start.radiusMi ?? DEFAULT_RADIUS);
+  const [mode, setMode]               = useState(start.mode);
+  const [radiusMi, setRadiusMi]       = useState(start.radiusMi ?? DEFAULT_RADIUS);
+  const [locationQuery, setLocQuery]  = useState(start.displayName ?? '');
+  const [geocoding, setGeocoding]     = useState(false);
 
   const fadeAnim  = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.95)).current;
@@ -74,6 +80,8 @@ export default function LocationFilterSheet({
     const s = initialFilter ?? DEFAULT_FILTER;
     setMode(s.mode);
     setRadiusMi(s.radiusMi ?? DEFAULT_RADIUS);
+    setLocQuery(s.displayName ?? '');
+    setGeocoding(false);
   }, [visible, initialFilter]);
 
   // Fade + scale animation
@@ -91,7 +99,7 @@ export default function LocationFilterSheet({
     }
   }, [visible]);
 
-  function handleApply() {
+  async function handleApply() {
     if (mode === 'self') {
       if (!selfHasLocation) {
         toast({ title: 'No location set', message: 'Set your city in Edit Profile to use Near Me.', type: 'info' });
@@ -100,6 +108,28 @@ export default function LocationFilterSheet({
       onApply?.({ mode: 'self', radiusMi });
       return;
     }
+
+    if (mode === 'custom') {
+      const q = locationQuery.trim();
+      if (!q) {
+        toast({ title: 'Enter a location', message: 'Type a city, state, or ZIP code.', type: 'info' });
+        return;
+      }
+      setGeocoding(true);
+      const result = await geocode(q);
+      setGeocoding(false);
+      if (result.error || !result.lat || !result.lng) {
+        toast({ title: 'Location not found', message: `Couldn't find "${q}". Try "Nashville, TN" or a ZIP code.`, type: 'error' });
+        return;
+      }
+      // Build a short display name from the geocoder result or fall back to the raw query.
+      const displayName = result.displayName
+        ? result.displayName.split(',').slice(0, 2).join(',').trim()
+        : q;
+      onApply?.({ mode: 'custom', radiusMi, lat: result.lat, lng: result.lng, displayName });
+      return;
+    }
+
     // anywhere
     onApply?.({ mode: 'anywhere', radiusMi });
   }
@@ -147,7 +177,37 @@ export default function LocationFilterSheet({
               disabled={!selfHasLocation}
               onPress={() => setMode('self')}
             />
+            <ModeRow
+              icon="search-outline"
+              label="Search Location"
+              subLabel="Find people near any city or ZIP"
+              selected={mode === 'custom'}
+              onPress={() => setMode('custom')}
+            />
           </View>
+
+          {/* Inline location search — shown only when "Search Location" is selected */}
+          {mode === 'custom' ? (
+            <View style={styles.locationInputWrap}>
+              <Ionicons name="search" size={15} color={COLORS.textTertiary} />
+              <TextInput
+                style={styles.locationInput}
+                placeholder="City, State or ZIP…"
+                placeholderTextColor={COLORS.textTertiary}
+                value={locationQuery}
+                onChangeText={setLocQuery}
+                returnKeyType="search"
+                autoCapitalize="words"
+                autoCorrect={false}
+                autoFocus
+              />
+              {locationQuery.length > 0 ? (
+                <TouchableOpacity onPress={() => setLocQuery('')} hitSlop={8}>
+                  <Ionicons name="close-circle" size={16} color={COLORS.textTertiary} />
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          ) : null}
 
           {/* Radius picker — applies to Near Me only */}
           <View style={styles.radiusBlock}>
@@ -180,9 +240,9 @@ export default function LocationFilterSheet({
           </View>
 
           <PrimaryButton
-            label="Apply"
-            onPress={handleApply}
-            style={{ marginTop: SPACING.md }}
+            label={geocoding ? 'Searching…' : 'Apply'}
+            onPress={geocoding ? undefined : handleApply}
+            style={{ marginTop: SPACING.md, opacity: geocoding ? 0.7 : 1 }}
           />
         </Animated.View>
       </Animated.View>
@@ -244,6 +304,27 @@ const styles = StyleSheet.create({
     borderRadius: 11,
     backgroundColor: COLORS.sage,
     alignItems: 'center', justifyContent: 'center',
+  },
+
+  locationInputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: SPACING.sm,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingHorizontal: 14,
+    paddingVertical: Platform.OS === 'web' ? 9 : 11,
+  },
+  locationInput: {
+    flex: 1,
+    fontFamily: FONT.regular,
+    fontSize: 14,
+    color: COLORS.text,
+    padding: 0,
+    ...(Platform.OS === 'web' ? { outlineStyle: 'none' } : null),
   },
 
   radiusBlock: { marginTop: SPACING.lg },
