@@ -39,6 +39,7 @@ import {
 const FILTERS = [
   { id: 'all',         label: 'All'           },
   { id: 'connections', label: 'Connections'   },
+  { id: 'pending',     label: 'Pending'       },
   { id: 'saved',       label: 'Connect Later' },
   { id: 'stage',       label: 'Life Stage'    },
   { id: 'interests',   label: 'Interests'     },
@@ -433,9 +434,12 @@ export default function HomeScreen({ navigation }) {
 
     if (activeFilter === 'connections') {
       list = list.filter((m) => m.isMatch);
+    } else if (activeFilter === 'pending') {
+      // Sent a request but not yet mutual.
+      list = list.filter((m) => m.connected && !m.isMatch);
     } else {
-      // Every other tab is a discovery view — hide people I'm already connected with.
-      list = list.filter((m) => !m.isMatch);
+      // Discovery views — hide matches AND people I've already sent a request to.
+      list = list.filter((m) => !m.isMatch && !m.connected);
 
       if (activeFilter === 'saved') {
         list = list.filter((m) => m.saved);
