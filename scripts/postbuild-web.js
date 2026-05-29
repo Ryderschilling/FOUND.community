@@ -44,7 +44,20 @@ const pwaTags = `
     <meta name="theme-color" content="#111111" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="FOUND" />`;
+    <meta name="apple-mobile-web-app-title" content="FOUND" />
+    <!-- Open Graph / iMessage / social link previews -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="FOUND" />
+    <meta property="og:title" content="FOUND — Find Your People" />
+    <meta property="og:description" content="Connect with Christians in your city. Discover community, join groups, and build real friendships." />
+    <meta property="og:image" content="https://found-community.vercel.app/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:url" content="https://found-community.vercel.app" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="FOUND — Find Your People" />
+    <meta name="twitter:description" content="Connect with Christians in your city. Discover community, join groups, and build real friendships." />
+    <meta name="twitter:image" content="https://found-community.vercel.app/og-image.png" />`;
 
 // Insert just before </head>
 if (html.includes('<!-- PWA / home-screen icons -->')) {
@@ -52,7 +65,7 @@ if (html.includes('<!-- PWA / home-screen icons -->')) {
 } else {
   html = html.replace('</head>', pwaTags + '\n  </head>');
   fs.writeFileSync(htmlPath, html, 'utf8');
-  console.log('Injected PWA meta tags into dist/index.html');
+  console.log('Injected PWA + OG meta tags into dist/index.html');
 }
 
 console.log('Postbuild complete.');

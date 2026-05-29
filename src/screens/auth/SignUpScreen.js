@@ -21,6 +21,12 @@ function isValidEmail(value) {
 function digitsOnly(value) {
   return (value || '').replace(/\D/g, '');
 }
+function formatPhone(value) {
+  const digits = digitsOnly(value).slice(0, 10);
+  if (digits.length < 4)  return digits;
+  if (digits.length < 7)  return `(${digits.slice(0,3)}) ${digits.slice(3)}`;
+  return `(${digits.slice(0,3)}) ${digits.slice(3,6)}-${digits.slice(6)}`;
+}
 
 export default function SignUpScreen({ navigation }) {
   const { signUpWithPassword } = useAuth();
@@ -225,7 +231,7 @@ export default function SignUpScreen({ navigation }) {
             <Text style={[s.label, { marginTop: SPACING.md }]}>Phone number</Text>
             <TextInput
               value={phone}
-              onChangeText={setPhone}
+              onChangeText={v => setPhone(formatPhone(v))}
               keyboardType="phone-pad"
               autoComplete="tel"
               textContentType="telephoneNumber"

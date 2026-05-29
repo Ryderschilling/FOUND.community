@@ -71,12 +71,12 @@ function toTimeInputVal(d) {
 // ─── Connection chip ──────────────────────────────────────────────────────
 function ConnectionRow({ conn, selected, onToggle }) {
   const initials = initialsFor(conn.full_name);
-  const grad = gradientFor(conn.id);
+  const grad = gradientFor(conn.profile_id);
   return (
     <TouchableOpacity
       style={[styles.connRow, selected && styles.connRowSelected]}
       activeOpacity={0.7}
-      onPress={() => onToggle(conn.id)}
+      onPress={() => onToggle(conn.profile_id)}
     >
       <View style={styles.connAvatar}>
         {conn.avatar_url ? (
@@ -118,7 +118,9 @@ export default function CreateEventScreen({ navigation }) {
 
   const [connections, setConnections]   = useState([]);
   const [connLoading, setConnLoading]   = useState(true);
-  const [selectedIds, setSelectedIds]   = useState(new Set());
+  // Plain object { [profileId]: true } instead of Set — avoids React Native Web
+  // quirks where Set state updates don't always trigger reliable re-renders.
+  const [selectedIds, setSelectedIds]   = useState({});
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError]           = useState(null);
@@ -134,9 +136,12 @@ export default function CreateEventScreen({ navigation }) {
 
   const toggleConnection = useCallback((id) => {
     setSelectedIds((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
+      if (prev[id]) {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      }
+      return { ...prev, [id]: true };
     });
   }, []);
 
@@ -175,7 +180,7 @@ export default function CreateEventScreen({ navigation }) {
       p_location_lat:  null,
       p_location_lng:  null,
       p_description:   description.trim() || null,
-      p_invitee_ids:   selectedIds.size > 0 ? [...selectedIds] : null,
+      p_invitee_ids:   Object.keys(selectedIds).length > 0 ? Object.keys(selectedIds) : null,
     });
 
     setSubmitting(null);
@@ -369,9 +374,9 @@ export default function CreateEventScreen({ navigation }) {
           <View style={styles.card}>
             <View style={styles.sectionRow}>
               <Text style={styles.sectionLabel}>INVITE YOUR CONNECTIONS</Text>
-              {selectedIds.size > 0 && (
+              {Object.keys(selectedIds).length > 0 && (
                 <View style={styles.countBadge}>
-                  <Text style={styles.countBadgeText}>{selectedIds.size}</Text>
+                  <Text style={styles.countBadgeText}>{Object.keys(selectedIds).length}</Text>
                 </View>
               )}
             </View>
@@ -385,9 +390,9 @@ export default function CreateEventScreen({ navigation }) {
             ) : (
               connections.map((conn) => (
                 <ConnectionRow
-                  key={conn.id}
+                  key={conn.profile_id}
                   conn={conn}
-                  selected={selectedIds.has(conn.id)}
+                  selected={!!selectedIds[conn.profile_id]}
                   onToggle={toggleConnection}
                 />
               ))

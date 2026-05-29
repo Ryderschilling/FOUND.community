@@ -13,7 +13,7 @@
 // we intentionally don't share that one to keep edit logic out of read paths.
 // ─────────────────────────────────────────────────────────────────────────
 
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import {
   View,
   Image,
@@ -57,7 +57,7 @@ function findScrollableAncestor(node) {
 export default function HighlightReelView({ photos = [], sideInset = SPACING.lg }) {
   const scrollRef = useRef(null);
   const offsetRef = useRef(0);
-  const [lightboxPhoto, setLightboxPhoto] = useState(null);
+  const [lightboxIndex, setLightboxIndex] = useState(null);
 
   const { width: winW } = useWindowDimensions();
   const tileSize = computeTileSize(winW);
@@ -104,12 +104,12 @@ export default function HighlightReelView({ photos = [], sideInset = SPACING.lg 
           { paddingLeft: sideInset },
         ]}
       >
-        {photos.map((photo) => (
+        {photos.map((photo, idx) => (
           <TouchableOpacity
             key={photo.id}
             style={[styles.slot, tileStyle]}
             activeOpacity={0.85}
-            onPress={() => setLightboxPhoto(photo)}
+            onPress={() => setLightboxIndex(idx)}
           >
             <Image source={{ uri: photo.url }} style={styles.image} />
           </TouchableOpacity>
@@ -137,17 +137,41 @@ export default function HighlightReelView({ photos = [], sideInset = SPACING.lg 
         </>
       ) : null}
 
-      <PhotoLightbox photo={lightboxPhoto} onClose={() => setLightboxPhoto(null)} />
+      <PhotoLightbox
+        photos={photos}
+        index={lightboxIndex}
+        onClose={() => setLightboxIndex(null)}
+        onNav={(i) => setLightboxIndex(i)}
+      />
     </View>
   );
 }
 
-function PhotoLightbox({ photo, onClose }) {
+function PhotoLightbox({ photos, index, onClose, onNav }) {
   const { width, height } = Dimensions.get('window');
+  const visible = index !== null && index !== undefined;
+  const photo = visible ? photos[index] : null;
+  const hasPrev = visible && index > 0;
+  const hasNext = visible && index < photos.length - 1;
+
+  // Keyboard arrow navigation on web
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !visible) return;
+    const handleKey = (e) => {
+      if (e.key === 'ArrowLeft'  && hasPrev) onNav(index - 1);
+      if (e.key === 'ArrowRight' && hasNext) onNav(index + 1);
+      if (e.key === 'Escape')               onClose();
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [visible, index, hasPrev, hasNext]);
+
   return (
-    <Modal visible={!!photo} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.lightboxRoot}>
+        {/* Tap backdrop to close */}
         <TouchableOpacity activeOpacity={1} style={StyleSheet.absoluteFill} onPress={onClose} />
+
         {photo ? (
           <Image
             source={{ uri: photo.url }}
@@ -155,6 +179,30 @@ function PhotoLightbox({ photo, onClose }) {
             resizeMode="contain"
           />
         ) : null}
+
+        {/* Prev arrow */}
+        {hasPrev && (
+          <TouchableOpacity
+            style={[styles.lightboxArrow, styles.lightboxArrowLeft]}
+            activeOpacity={0.8}
+            onPress={() => onNav(index - 1)}
+          >
+            <Ionicons name="chevron-back" size={26} color="#fff" />
+          </TouchableOpacity>
+        )}
+
+        {/* Next arrow */}
+        {hasNext && (
+          <TouchableOpacity
+            style={[styles.lightboxArrow, styles.lightboxArrowRight]}
+            activeOpacity={0.8}
+            onPress={() => onNav(index + 1)}
+          >
+            <Ionicons name="chevron-forward" size={26} color="#fff" />
+          </TouchableOpacity>
+        )}
+
+        {/* Close */}
         <TouchableOpacity style={styles.lightboxClose} activeOpacity={0.8} onPress={onClose}>
           <Ionicons name="close" size={22} color="#fff" />
         </TouchableOpacity>
@@ -214,4 +262,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  lightboxArrow: {
+    position: 'absolute',
+    top: '50%',
+    marginTop: -28,
+    width: 56, height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lightboxArrowLeft:  { left:  16 },
+  lightboxArrowRight: { right: 16 },
 });

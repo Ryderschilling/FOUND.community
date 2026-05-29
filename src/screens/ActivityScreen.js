@@ -15,7 +15,6 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   View,
   Text,
@@ -158,8 +157,6 @@ function ActivityRow({ row, onAccept, onDismiss, onOpen, onMessage, busy }) {
 }
 
 // ─── Screen ───────────────────────────────────────────────────────────────
-const EVENT_PROMO_KEY = 'found_event_promo_dismissed';
-
 // ─── Event card (horizontal strip) ───────────────────────────────────────
 function formatEventShort(ts) {
   if (!ts) return '';
@@ -201,7 +198,6 @@ export default function ActivityScreen({ navigation }) {
   const [error, setError]             = useState(null);
   const [busyProfileId, setBusyProfileId] = useState(null);
   const [markingAll,   setMarkingAll]    = useState(false);
-  const [eventPromoDismissed, setEventPromoDismissed] = useState(true);
 
   // Guard against setState after unmount / after blur
   const mountedRef = useRef(true);
@@ -232,13 +228,6 @@ export default function ActivityScreen({ navigation }) {
   }, [user]);
 
   useEffect(() => { load(); }, [load]);
-
-  // Load event promo dismissed state from storage.
-  useEffect(() => {
-    AsyncStorage.getItem(EVENT_PROMO_KEY).then((val) => {
-      setEventPromoDismissed(val === '1');
-    });
-  }, []);
 
   // Refresh + mark-all-seen whenever the user lands on this tab.
   // We track a per-focus abort flag so a load that starts on Activity but
@@ -377,11 +366,6 @@ export default function ActivityScreen({ navigation }) {
     setRows([]);
   }
 
-  const handleDismissEventPromo = useCallback(async () => {
-    setEventPromoDismissed(true);
-    await AsyncStorage.setItem(EVENT_PROMO_KEY, '1');
-  }, []);
-
   const handleEventPress = useCallback((ev) => {
     navigation.navigate('EventDetail', {
       eventId:   ev.event_id,
@@ -410,15 +394,6 @@ export default function ActivityScreen({ navigation }) {
                 : <Text style={styles.markAllText}>Mark all read</Text>}
             </TouchableOpacity>
           ) : null}
-          <TouchableOpacity
-            style={styles.createEventBtn}
-            onPress={() => navigation.navigate('CreateEvent')}
-            activeOpacity={0.7}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Ionicons name="calendar-outline" size={16} color={COLORS.white} />
-            <Text style={styles.createEventText}>Invite</Text>
-          </TouchableOpacity>
         </View>
       </View>
 
@@ -438,35 +413,23 @@ export default function ActivityScreen({ navigation }) {
         </View>
       )}
 
-      {/* Event promo card — visible until dismissed */}
-      {!eventPromoDismissed && (
-        <View style={styles.eventPromoCard}>
-          <View style={styles.eventPromoIcon}>
-            <Ionicons name="calendar" size={20} color={COLORS.text} />
-          </View>
-          <View style={styles.eventPromoBody}>
-            <Text style={styles.eventPromoTitle}>Host a gathering</Text>
-            <Text style={styles.eventPromoSub}>Create an event and invite your connections.</Text>
-          </View>
-          <TouchableOpacity
-            style={styles.eventPromoCta}
-            activeOpacity={0.8}
-            onPress={() => {
-              handleDismissEventPromo();
-              navigation.navigate('CreateEvent');
-            }}
-          >
-            <Text style={styles.eventPromoCtaText}>Create</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.eventPromoDismiss}
-            hitSlop={10}
-            onPress={handleDismissEventPromo}
-          >
-            <Ionicons name="close" size={14} color={COLORS.textTertiary} />
-          </TouchableOpacity>
+      {/* Event promo card — always visible */}
+      <View style={styles.eventPromoCard}>
+        <View style={styles.eventPromoIcon}>
+          <Ionicons name="calendar" size={20} color={COLORS.text} />
         </View>
-      )}
+        <View style={styles.eventPromoBody}>
+          <Text style={styles.eventPromoTitle}>Host a gathering</Text>
+          <Text style={styles.eventPromoSub}>Create an event and invite your connections.</Text>
+        </View>
+        <TouchableOpacity
+          style={styles.eventPromoCta}
+          activeOpacity={0.8}
+          onPress={() => navigation.navigate('CreateEvent')}
+        >
+          <Text style={styles.eventPromoCtaText}>Create</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 
@@ -553,21 +516,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: COLORS.textSecondary,
   },
-  createEventBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    backgroundColor: COLORS.text,
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-  },
-  createEventText: {
-    fontFamily: FONT.semiBold,
-    fontSize: 13,
-    color: COLORS.white,
-  },
-
   // Event discovery promo card
   eventPromoCard: {
     flexDirection: 'row',
@@ -616,10 +564,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: COLORS.white,
   },
-  eventPromoDismiss: {
-    padding: 2,
-  },
-
   // Upcoming events strip
   eventsSection: {
     paddingBottom: SPACING.md,

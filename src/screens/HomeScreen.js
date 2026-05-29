@@ -31,6 +31,8 @@ import {
   filterLabel,
   DEFAULT_FILTER,
 } from '../lib/locationFilter';
+import TutorialOverlay from '../components/TutorialOverlay';
+import { checkAndClearTutorial } from '../lib/tutorial';
 
 // Filter chips (non-location). Location lives in the dedicated pill above.
 // "All" + every discovery filter (saved/stage/church/new) hides existing
@@ -170,6 +172,22 @@ export default function HomeScreen({ navigation }) {
   const lastScrollY     = useRef(0);
   const headerVisible   = useRef(true);
 
+  // ── First-time tutorial ─────────────────────────────────────────────────
+  const [showTutorial, setShowTutorial] = useState(false);
+  // Refs for the elements the tutorial spotlight will highlight.
+  // Each must be a native View with collapsable={false} so .measure() works.
+  const tutorialRefs = useRef({
+    locPill:     React.createRef(),
+    search:      React.createRef(),
+    filterChips: React.createRef(),
+    firstCard:   React.createRef(),
+  }).current;
+  // Measures the SafeAreaView so TutorialOverlay knows the real app frame
+  // position on the page — critical on web where the phone renders inside a
+  // centered browser frame (Dimensions.get('window') returns browser width).
+  const appViewRef   = useRef(null);
+  const [appMetrics, setAppMetrics] = useState(null);
+
   const loadMatches = useCallback(async ({ isRefresh } = {}) => {
     if (isRefresh) setRefreshing(true); else setLoading(true);
     setError(null);
@@ -271,6 +289,20 @@ export default function HomeScreen({ navigation }) {
   useEffect(() => {
     profileRef.current = profile;
   }, [profile]);
+
+  // Check whether the tutorial should fire on this session.
+  // checkAndClearTutorial() returns true exactly once (right after onboarding).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const shouldShow = await checkAndClearTutorial();
+      if (!cancelled && shouldShow) {
+        // Small delay so the screen is fully laid out before measuring
+        setTimeout(() => setShowTutorial(true), 600);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // Two minutes in, nudge the user to add a bio — once per session, and only
   // if they still don't have one. Dismissable; not a hard requirement.
@@ -498,20 +530,22 @@ export default function HomeScreen({ navigation }) {
     <View style={styles.listHeader}>
       {/* Location filter pill — tap to open the bottom sheet */}
       <View style={styles.locationPillRow}>
-        <TouchableOpacity
-          style={styles.locationPill}
-          activeOpacity={0.8}
-          onPress={() => setLocSheet(true)}
-        >
-          <Ionicons name="location-outline" size={14} color={COLORS.text} />
-          <Text style={styles.locationPillText}>{filterLabel(locFilter)}</Text>
-          <Ionicons name="chevron-down" size={14} color={COLORS.textSecondary} />
-        </TouchableOpacity>
+        <View ref={tutorialRefs.locPill} collapsable={false} style={{ alignSelf: 'flex-start' }}>
+          <TouchableOpacity
+            style={styles.locationPill}
+            activeOpacity={0.8}
+            onPress={() => setLocSheet(true)}
+          >
+            <Ionicons name="location-outline" size={14} color={COLORS.text} />
+            <Text style={styles.locationPillText}>{filterLabel(locFilter)}</Text>
+            <Ionicons name="chevron-down" size={14} color={COLORS.textSecondary} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Search */}
       <View style={styles.searchRow}>
-        <View style={styles.searchBox}>
+        <View ref={tutorialRefs.search} collapsable={false} style={styles.searchBox}>
           <Ionicons name="search" size={16} color={COLORS.textTertiary} />
           <TextInput
             style={styles.searchInput}
@@ -536,20 +570,22 @@ export default function HomeScreen({ navigation }) {
         onTap={(row) => navigation?.navigate('MatchDetail', { match: inboundToMatch(row) })}
       />
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.filterRow}
-      >
-        {FILTERS.map((f) => (
-          <Chip
-            key={f.id}
-            label={f.label}
-            active={activeFilter === f.id}
-            onPress={() => setActiveFilter(f.id)}
-          />
-        ))}
-      </ScrollView>
+      <View ref={tutorialRefs.filterChips} collapsable={false}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterRow}
+        >
+          {FILTERS.map((f) => (
+            <Chip
+              key={f.id}
+              label={f.label}
+              active={activeFilter === f.id}
+              onPress={() => setActiveFilter(f.id)}
+            />
+          ))}
+        </ScrollView>
+      </View>
 
     </View>
   );
@@ -600,7 +636,16 @@ export default function HomeScreen({ navigation }) {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView
+      ref={appViewRef}
+      collapsable={false}
+      style={styles.container}
+      onLayout={() => {
+        appViewRef.current?.measure((fx, fy, w, h, px, py) => {
+          if (w && h) setAppMetrics({ x: px, y: py, width: w, height: h });
+        });
+      }}
+    >
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
 
       {/* ── Sticky header — absolutely positioned so it floats above the list ── */}
@@ -629,14 +674,29 @@ export default function HomeScreen({ navigation }) {
         keyExtractor={(item) => item.id}
         ListHeaderComponent={listHeader}
         ListEmptyComponent={EmptyState}
-        renderItem={({ item }) => (
-          <PersonCard
-            match={item}
-            onConnect={() => handleConnect(item.id)}
-            onSave={() => handleSave(item.id, item.saved)}
-            onCancel={() => handleCancel(item.id)}
-            onPress={() => navigation?.navigate('MatchDetail', { match: item })}
-          />
+        renderItem={({ item, index }) => (
+          // Wrap the first card so the tutorial can measure + spotlight it
+          index === 0 ? (
+            <View ref={tutorialRefs.firstCard} collapsable={false}>
+              <PersonCard
+                match={item}
+                index={index}
+                onConnect={() => handleConnect(item.id)}
+                onSave={() => handleSave(item.id, item.saved)}
+                onCancel={() => handleCancel(item.id)}
+                onPress={() => navigation?.navigate('MatchDetail', { match: item })}
+              />
+            </View>
+          ) : (
+            <PersonCard
+              match={item}
+              index={index}
+              onConnect={() => handleConnect(item.id)}
+              onSave={() => handleSave(item.id, item.saved)}
+              onCancel={() => handleCancel(item.id)}
+              onPress={() => navigation?.navigate('MatchDetail', { match: item })}
+            />
+          )
         )}
         contentContainerStyle={styles.list}
         ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
@@ -658,6 +718,14 @@ export default function HomeScreen({ navigation }) {
         onApply={handleApplyLocation}
         initialFilter={locFilter}
         selfHasLocation={!!selfLocation}
+      />
+
+      {/* ── First-time onboarding tutorial ─────────────────────────── */}
+      <TutorialOverlay
+        visible={showTutorial}
+        onDone={() => setShowTutorial(false)}
+        refs={tutorialRefs}
+        appMetrics={appMetrics}
       />
 
       {/* Incomplete-profile nudge — dismissable, fires once per session */}

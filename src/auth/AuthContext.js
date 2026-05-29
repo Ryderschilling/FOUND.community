@@ -245,6 +245,7 @@ export function AuthProvider({ children }) {
               hometown:  hometown ?? '',
               lat:       lat != null ? String(lat) : '',
               lng:       lng != null ? String(lng) : '',
+              source:    'app',   // distinguishes app vs website signup for email routing
             },
           },
         });

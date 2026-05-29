@@ -15,6 +15,7 @@ import {
   attachNotificationResponseListener,
 } from '../lib/push';
 import { useUnreadNotifications } from '../lib/notifications';
+import { useIconBounce, usePulse } from '../lib/animations';
 
 // Shared ref so a tapped push notification can navigate from outside React.
 export const navigationRef = createNavigationContainerRef();
@@ -105,6 +106,39 @@ function useUnreadCounts() {
   }, [fetchCounts]);
 
   return { counts, refresh: fetchCounts };
+}
+
+// ── Animated tab icon + badge ─────────────────────────────────────
+// Isolated component so each tab manages its own animation state.
+function TabItem({ tab, focused, badgeCount, onPress }) {
+  const iconBounce = useIconBounce(focused);
+  const badgePulse = usePulse(badgeCount > 0, { min: 0.88, max: 1.14, duration: 900 });
+
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.75}
+      style={styles.tabItem}
+    >
+      <Animated.View style={iconBounce}>
+        <Ionicons
+          name={focused ? tab.iconActive : `${tab.icon}-outline`}
+          size={21}
+          color={focused ? COLORS.tabActive : COLORS.tabInactive}
+        />
+        {badgeCount > 0 ? (
+          <Animated.View style={[styles.tabBadge, badgePulse]}>
+            <Text style={styles.tabBadgeText}>
+              {badgeCount > 9 ? '9+' : String(badgeCount)}
+            </Text>
+          </Animated.View>
+        ) : null}
+      </Animated.View>
+      <Text style={[styles.tabLabel, focused ? styles.tabLabelActive : styles.tabLabelInactive]}>
+        {tab.label}
+      </Text>
+    </TouchableOpacity>
+  );
 }
 
 // ── Custom floating tab bar ────────────────────────────────────────
@@ -202,33 +236,15 @@ function FloatingTabBar({ state, descriptors, navigation }) {
             route.name === 'Activity' ? counts.activity
           : route.name === 'Messages' ? counts.messages
           : 0;
-          const showBadge = badgeCount > 0;
 
           return (
-            <TouchableOpacity
+            <TabItem
               key={route.key}
+              tab={tab}
+              focused={focused}
+              badgeCount={badgeCount}
               onPress={onPress}
-              activeOpacity={0.75}
-              style={styles.tabItem}
-            >
-              <View>
-                <Ionicons
-                  name={focused ? tab.iconActive : `${tab.icon}-outline`}
-                  size={21}
-                  color={focused ? COLORS.tabActive : COLORS.tabInactive}
-                />
-                {showBadge ? (
-                  <View style={styles.tabBadge}>
-                    <Text style={styles.tabBadgeText}>
-                      {badgeCount > 9 ? '9+' : String(badgeCount)}
-                    </Text>
-                  </View>
-                ) : null}
-              </View>
-              <Text style={[styles.tabLabel, focused ? styles.tabLabelActive : styles.tabLabelInactive]}>
-                {tab.label}
-              </Text>
-            </TouchableOpacity>
+            />
           );
         })}
       </View>

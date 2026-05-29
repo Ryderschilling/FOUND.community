@@ -23,6 +23,8 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../auth/AuthContext';
 import { useConfirm } from '../components/ConfirmProvider';
 import { useToast } from '../components/ToastProvider';
+import { markTutorialPending } from '../lib/tutorial';
+import ChurchPicker from '../components/ChurchPicker';
 import {
   LIFE_STAGES,
   HAS_KIDS_STAGES,
@@ -338,25 +340,17 @@ function StepCommunityGoals({ selections, onToggle }) {
   );
 }
 
-// Church step: free-text answer until we ship a curated church directory.
-// Stored in profiles.church_name via the set_church_name RPC.
-function StepChurch({ value, onChange }) {
+// Church step — ChurchPicker handles search, home-church, and requests.
+// Commits to DB immediately; onboarding just passes p_church_id: null to
+// complete_onboarding (coalesce preserves whatever ChurchPicker already set).
+function StepChurch() {
   return (
     <>
-      <Text style={styles.stepTitle}>What church do you attend?</Text>
+      <Text style={styles.stepTitle}>Your church community</Text>
       <Text style={styles.stepSub}>Optional — helps us connect you with your congregation.</Text>
-
-      <TextInput
-        style={styles.textInput}
-        placeholder="e.g. Bayside Church"
-        placeholderTextColor={COLORS.textTertiary}
-        value={value}
-        onChangeText={onChange}
-        autoCapitalize="words"
-        maxLength={120}
-        returnKeyType="done"
-      />
-
+      <View style={{ marginTop: SPACING.md }}>
+        <ChurchPicker />
+      </View>
       <Text style={styles.optionalNote}>Optional — you can skip this step.</Text>
     </>
   );
@@ -528,7 +522,7 @@ export default function OnboardingScreen({ navigation }) {
   const [outgoing, setOutgoing]             = useState(null);
   const [communityGoals, setCommunityGoals] = useState([]);
   // Free-text church name (was a picker; we don't have a curated directory yet).
-  const [churchName, setChurchName]         = useState('');
+  // Church is committed to DB immediately by ChurchPicker — no local state needed.
 
   // Real activities from Supabase (replaces ACTIVITIES mock — supports search +
   // user-requested interests via migration 0045).
@@ -639,16 +633,10 @@ export default function OnboardingScreen({ navigation }) {
       });
       if (error) throw error;
 
-      // Persist the free-text church answer (separate RPC so we don't touch
-      // complete_onboarding's signature). Non-fatal — onboarding succeeds
-      // even if this fails; user can re-enter from Edit Profile.
-      if (churchName.trim()) {
-        const { error: chErr } = await supabase.rpc('set_church_name', {
-          p_church_name: churchName.trim(),
-        });
-        if (chErr) console.warn('[onboarding] set_church_name failed', chErr.message);
-      }
+      // Church was committed immediately by ChurchPicker — nothing to do here.
 
+      // Arm the first-time tutorial — HomeScreen reads this on mount.
+      await markTutorialPending();
       await refreshProfile();
       // AppNavigator swaps from Onboarding → Main when onboarding_complete flips.
       // Reset busy defensively so the button isn't stuck if the swap is delayed

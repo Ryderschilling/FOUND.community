@@ -5,12 +5,14 @@ import {
   StyleSheet,
   TouchableOpacity,
   Pressable,
+  Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
 import { Avatar } from './Atoms';
 import ScoreRing from './ScoreRing';
 import { useConfirm } from './ConfirmProvider';
+import { useFadeUpEntrance, useSpringPress } from '../lib/animations';
 
 // ─── State derivation ───────────────────────────────────────────────────────
 // Visual state is a pure function of the match props. We don't keep local
@@ -32,14 +34,19 @@ function connectState(match) {
  * PersonCard — match card in the Discover feed
  * Props:
  *   match { id, name, ..., connected, saved, theirKind, isMatch }
+ *   index             — FlatList index for staggered entrance (pass from renderItem)
  *   onConnect()       — fires "like" insert
  *   onSave()          — toggles this person in your private Connect Later list
  *   onCancel(kind?)   — fires remove_connection(kind). kind=null = all kinds.
  *   onPress()         — opens MatchDetail
  */
-export default function PersonCard({ match, onConnect, onSave, onCancel, onPress }) {
-  const state = connectState(match);
+export default function PersonCard({ match, index = 0, onConnect, onSave, onCancel, onPress }) {
+  const state   = connectState(match);
   const confirm = useConfirm();
+
+  // Animations
+  const entranceStyle = useFadeUpEntrance(Math.min(index, 4) * 55);
+  const press         = useSpringPress(0.965);
 
   const inboundBadge = (() => {
     if (match.isMatch)              return { label: 'FOUND!',            icon: 'sparkles',  color: COLORS.text,  bg: COLORS.surface };
@@ -102,9 +109,12 @@ export default function PersonCard({ match, onConnect, onSave, onCancel, onPress
   : COLORS.white;
 
   return (
+    <Animated.View style={[entranceStyle, press.animStyle]}>
     <Pressable
-      style={({ pressed }) => [styles.card, pressed && { opacity: 0.97, transform: [{ scale: 0.99 }] }]}
+      style={styles.card}
       onPress={onPress}
+      onPressIn={press.onPressIn}
+      onPressOut={press.onPressOut}
     >
       {/* Inbound signal badge */}
       {inboundBadge ? (
@@ -198,6 +208,7 @@ export default function PersonCard({ match, onConnect, onSave, onCancel, onPress
         ) : null}
       </View>
     </Pressable>
+    </Animated.View>
   );
 }
 
