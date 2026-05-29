@@ -25,7 +25,10 @@ import {
   TouchableOpacity,
   TextInput,
   ActivityIndicator,
+  Modal,
+  KeyboardAvoidingView,
   Platform,
+  ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS } from '../theme';
@@ -46,12 +49,19 @@ export default function ChurchPicker({
   );
   const [homeSelected, setHomeSelected]   = useState(isHomeChurch);
 
-  const [query, setQuery]       = useState('');
-  const [results, setResults]   = useState([]);
+  const [query, setQuery]         = useState('');
+  const [results, setResults]     = useState([]);
   const [searching, setSearching] = useState(false);
-  const [saving, setSaving]     = useState(false);
-  const [requesting, setRequesting] = useState(false);
+  const [saving, setSaving]       = useState(false);
   const [requestSent, setRequestSent] = useState(false);
+
+  // Request modal state
+  const [modalOpen, setModalOpen]       = useState(false);
+  const [reqName, setReqName]           = useState('');
+  const [reqCity, setReqCity]           = useState('');
+  const [reqState, setReqState]         = useState('');
+  const [reqYears, setReqYears]         = useState('');
+  const [submitting, setSubmitting]     = useState(false);
 
   const debounceRef = useRef(null);
   const inputRef    = useRef(null);
@@ -98,11 +108,25 @@ export default function ChurchPicker({
     onSaved?.({ churchId: church.id, isHomeChurch: false });
   }
 
-  async function handleRequest() {
-    if (!query.trim()) return;
-    setRequesting(true);
-    await supabase.rpc('submit_church_request', { p_name: query.trim() });
-    setRequesting(false);
+  function openRequestModal() {
+    setReqName(query.trim());
+    setReqCity('');
+    setReqState('');
+    setReqYears('');
+    setModalOpen(true);
+  }
+
+  async function handleSubmitRequest() {
+    if (!reqName.trim()) return;
+    setSubmitting(true);
+    await supabase.rpc('submit_church_request', {
+      p_name:           reqName.trim(),
+      p_city:           reqCity.trim() || null,
+      p_state:          reqState.trim() || null,
+      p_years_attended: reqYears.trim() ? parseInt(reqYears.trim(), 10) : null,
+    });
+    setSubmitting(false);
+    setModalOpen(false);
     setRequestSent(true);
   }
 
@@ -153,7 +177,7 @@ export default function ChurchPicker({
 
   // ── render: search ─────────────────────────────────────────────────────────
   if (mode === 'search') {
-    const showRequest = !searching && !requestSent && query.trim().length >= 3 && results.length === 0;
+    const showRequest = !searching && !requestSent && query.trim().length >= 2 && results.length === 0;
 
     return (
       <View>

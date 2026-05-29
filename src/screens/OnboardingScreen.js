@@ -708,7 +708,7 @@ export default function OnboardingScreen({ navigation }) {
           <StepCommunityGoals selections={communityGoals} onToggle={toggle(setCommunityGoals)} />
         )}
         {currentStepId === 'church' && (
-          <StepChurch value={churchName} onChange={setChurchName} />
+          <StepChurch />
         )}
         {currentStepId === 'reveal' && (
           <StepMatchReveal onFinish={handleFinish} busy={busy} />

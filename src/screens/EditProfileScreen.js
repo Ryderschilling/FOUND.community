@@ -37,6 +37,7 @@ import { useAuth } from '../auth/AuthContext';
 import { useToast } from '../components/ToastProvider';
 import { geocode } from '../lib/geocode';
 import { firstViolation } from '../lib/contentFilter';
+import ChurchPicker from '../components/ChurchPicker';
 
 function parseLocation(text) {
   if (!text || !text.trim()) return { city: '', state: '' };
@@ -82,7 +83,10 @@ export default function EditProfileScreen({ navigation }) {
   const [activities, setActivities]   = useState([]);    // array of activity ids
   const [goals, setGoals]             = useState([]);
   // Church is free text for now — curated directory comes later.
-  const [churchName, setChurchName]   = useState('');
+  // Church is committed immediately by ChurchPicker — track for display only.
+  const [profileChurchId,   setProfileChurchId]   = useState(null);
+  const [profileIsHome,     setProfileIsHome]     = useState(false);
+  const [profileChurchName, setProfileChurchName] = useState(null);
 
   // Taxonomy
   const [lifeStages, setLifeStages]   = useState([]);
@@ -152,7 +156,7 @@ export default function EditProfileScreen({ navigation }) {
         supabase.from('community_goals').select('id,label,icon,icon_color').order('sort_order'),
         user
           ? supabase.from('profiles')
-              .select('full_name,bio,hometown,city,state,life_stage_id,church_name,profile_activities(activity_id),profile_goals(goal_id)')
+              .select('full_name,bio,hometown,city,state,life_stage_id,church_id,is_home_church,church:churches(name),profile_activities(activity_id),profile_goals(goal_id)')
               .eq('id', user.id)
               .maybeSingle()
           : Promise.resolve({ data: null, error: null }),
@@ -168,7 +172,9 @@ export default function EditProfileScreen({ navigation }) {
         setHometown(p.hometown ?? '');
         setLocationText([p.city, p.state].filter(Boolean).join(', '));
         setLifeStage(p.life_stage_id ?? null);
-        setChurchName(p.church_name ?? '');
+        setProfileChurchId(p.church_id ?? null);
+        setProfileIsHome(p.is_home_church ?? false);
+        setProfileChurchName(p.church?.name ?? null);
         setActivities((p.profile_activities ?? []).map((r) => r.activity_id));
         setGoals((p.profile_goals ?? []).map((r) => r.goal_id));
       } else if (profile) {
@@ -216,11 +222,7 @@ export default function EditProfileScreen({ navigation }) {
       return;
     }
 
-    // 1b) Persist free-text church name via dedicated RPC. Non-fatal.
-    const { error: chErr } = await supabase.rpc('set_church_name', {
-      p_church_name: churchName.trim() || null,
-    });
-    if (chErr) console.warn('[edit-profile] set_church_name failed', chErr.message);
+    // Church is committed immediately by ChurchPicker — nothing to do here.
 
     // 2) Geocode City, State → lat/lng → PostGIS point.
     //    Failures here are non-fatal: profile text fields still saved,
@@ -244,7 +246,7 @@ export default function EditProfileScreen({ navigation }) {
     await refreshProfile();
     setSaving(false);
     navigation?.goBack();
-  }, [saving, fullName, bio, hometown, locationText, lifeStage, churchName, activities, goals, refreshProfile, navigation]);
+  }, [saving, fullName, bio, hometown, locationText, lifeStage, activities, goals, refreshProfile, navigation]);
 
   if (taxLoading) {
     return (
@@ -398,17 +400,17 @@ export default function EditProfileScreen({ navigation }) {
           </View>
         </View>
 
-        {/* Church — free text until we ship a curated directory */}
+        {/* Church — search + request via ChurchPicker */}
         <View style={styles.section}>
           <SectionHeader label="Church" />
-          <TextInput
-            value={churchName}
-            onChangeText={setChurchName}
-            placeholder="What church do you attend? (optional)"
-            placeholderTextColor={COLORS.textTertiary}
-            style={styles.searchInput}
-            autoCapitalize="words"
-            maxLength={120}
+          <ChurchPicker
+            churchId={profileChurchId}
+            isHomeChurch={profileIsHome}
+            churchName={profileChurchName}
+            onSaved={({ churchId, isHomeChurch }) => {
+              setProfileChurchId(churchId);
+              setProfileIsHome(isHomeChurch);
+            }}
           />
         </View>
       </ScrollView>
