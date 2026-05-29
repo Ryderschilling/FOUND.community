@@ -14,7 +14,7 @@
 // On screen focus we call mark_inbound_seen(NULL) so the tab badge clears.
 // ─────────────────────────────────────────────────────────────────────────
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -26,10 +26,13 @@ import {
   StatusBar,
   ActivityIndicator,
   RefreshControl,
+  TextInput,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
 import { Avatar, Wordmark, IconButton } from '../components/Atoms';
+import ScoreRing from '../components/ScoreRing';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../auth/AuthContext';
 import { useConfirm } from '../components/ConfirmProvider';
@@ -156,6 +159,47 @@ function ActivityRow({ row, onAccept, onDismiss, onOpen, onMessage, busy }) {
   );
 }
 
+// ─── Connection row (Connected tab) ──────────────────────────────────────
+function ConnectionRow({ row, onPress }) {
+  const name    = row.full_name || row.handle || 'Someone';
+  const initials = initialsFor(name);
+  const grad    = gradientFor(row.profile_id);
+  const location = [row.city, row.state].filter(Boolean).join(', ');
+  const interests = (row.activities ?? []).slice(0, 3).map(a => a.label).join(' · ');
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.85}
+      style={styles.connRow}
+      onPress={() => onPress?.(row)}
+    >
+      <Avatar
+        initials={initials}
+        size={48}
+        gradientColors={grad}
+        uri={row.avatar_url || undefined}
+      />
+      <View style={styles.connBody}>
+        <View style={styles.connTopLine}>
+          <Text style={styles.connName} numberOfLines={1}>{name}</Text>
+          {row.score != null ? (
+            <ScoreRing score={row.score} size={36} stroke={3} />
+          ) : null}
+        </View>
+        {row.life_stage_label ? (
+          <Text style={styles.connMeta} numberOfLines={1}>{row.life_stage_label}{location ? ` · ${location}` : ''}</Text>
+        ) : location ? (
+          <Text style={styles.connMeta} numberOfLines={1}>{location}</Text>
+        ) : null}
+        {interests ? (
+          <Text style={styles.connInterests} numberOfLines={1}>{interests}</Text>
+        ) : null}
+      </View>
+      <Ionicons name="chevron-forward" size={16} color={COLORS.textTertiary} style={{ alignSelf: 'center' }} />
+    </TouchableOpacity>
+  );
+}
+
 // ─── Screen ───────────────────────────────────────────────────────────────
 // ─── Event card (horizontal strip) ───────────────────────────────────────
 function formatEventShort(ts) {
@@ -191,6 +235,11 @@ export default function ActivityScreen({ navigation }) {
   const { user } = useAuth();
   const confirm = useConfirm();
   const toast = useToast();
+
+  // ── Segment control ─────────────────────────────────────────────────────
+  const [activeTab, setActiveTab] = useState('requests'); // 'requests' | 'connected'
+
+  // ── Requests tab state ──────────────────────────────────────────────────
   const [rows, setRows]               = useState([]);
   const [events, setEvents]           = useState([]);
   const [loading, setLoading]         = useState(true);
@@ -198,6 +247,13 @@ export default function ActivityScreen({ navigation }) {
   const [error, setError]             = useState(null);
   const [busyProfileId, setBusyProfileId] = useState(null);
   const [markingAll,   setMarkingAll]    = useState(false);
+
+  // ── Connected tab state ─────────────────────────────────────────────────
+  const [connections,        setConnections]        = useState([]);
+  const [connLoading,        setConnLoading]        = useState(false);
+  const [connRefreshing,     setConnRefreshing]     = useState(false);
+  const [connSearch,         setConnSearch]         = useState('');
+  const [connSort,           setConnSort]           = useState('recent'); // 'recent' | 'score' | 'name'
 
   // Guard against setState after unmount / after blur
   const mountedRef = useRef(true);
@@ -227,7 +283,45 @@ export default function ActivityScreen({ navigation }) {
     }
   }, [user]);
 
+  const loadConnections = useCallback(async ({ isRefresh } = {}) => {
+    if (!user || !mountedRef.current) return;
+    if (isRefresh) setConnRefreshing(true); else setConnLoading(true);
+    try {
+      const { data, error } = await supabase.rpc('my_connections');
+      if (!mountedRef.current) return;
+      if (error) { console.warn('[activity] my_connections failed', error.message); return; }
+      setConnections(data ?? []);
+    } finally {
+      if (!mountedRef.current) return;
+      setConnLoading(false);
+      setConnRefreshing(false);
+    }
+  }, [user]);
+
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { loadConnections(); }, [loadConnections]);
+
+  // Filtered + sorted connections list (client-side — cap is a few hundred rows)
+  const visibleConnections = useMemo(() => {
+    let list = [...connections];
+    const q = connSearch.trim().toLowerCase();
+    if (q) {
+      list = list.filter((r) => {
+        const haystack = [
+          r.full_name, r.handle, r.bio, r.life_stage_label, r.city, r.state,
+          ...(r.activities ?? []).map(a => a.label),
+        ].filter(Boolean).join(' ').toLowerCase();
+        return haystack.includes(q);
+      });
+    }
+    if (connSort === 'score') {
+      list.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+    } else if (connSort === 'name') {
+      list.sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''));
+    }
+    // 'recent' is already the default from the RPC (connected_at desc)
+    return list;
+  }, [connections, connSearch, connSort]);
 
   // Refresh + mark-all-seen whenever the user lands on this tab.
   // We track a per-focus abort flag so a load that starts on Activity but
@@ -238,6 +332,7 @@ export default function ActivityScreen({ navigation }) {
     const unsubFocus = navigation?.addListener?.('focus', () => {
       abortFocus = false;
       load({ isRefresh: true });
+      loadConnections({ isRefresh: true });
       Promise.resolve(supabase.rpc('mark_inbound_seen', { p_from: null })).catch(() => {});
     });
     const unsubBlur = navigation?.addListener?.('blur', () => {
@@ -247,7 +342,7 @@ export default function ActivityScreen({ navigation }) {
       unsubFocus?.();
       unsubBlur?.();
     };
-  }, [navigation, load]);
+  }, [navigation, load, loadConnections]);
 
   // Accept = reciprocal like. Updates the row optimistically to "match" state
   // and offers to jump straight into a chat — biggest "what now?" moment
@@ -334,6 +429,29 @@ export default function ActivityScreen({ navigation }) {
     setRows((prev) => prev.filter((r) => r.profile_id !== row.profile_id));
   }
 
+  function handleConnOpen(row) {
+    navigation?.navigate('MatchDetail', {
+      match: {
+        id:          row.profile_id,
+        name:        row.full_name || row.handle || 'Someone',
+        handle:      row.handle || null,
+        bio:         row.bio || null,
+        initials:    initialsFor(row.full_name || row.handle),
+        avatarUrl:   row.avatar_url || null,
+        avatarColor: gradientFor(row.profile_id),
+        matchScore:  row.score ?? null,
+        lifeStage:   row.life_stage_label || '',
+        distance:    [row.city, row.state].filter(Boolean).join(', ') || '',
+        cityState:   [row.city, row.state].filter(Boolean).join(', ') || null,
+        church:      null,
+        interests:   (row.activities ?? []),
+        connected:   true,
+        theirKind:   'like',
+        isMatch:     true,
+      },
+    });
+  }
+
   function handleOpen(row) {
     // Reuse MatchDetail — it already handles connect/wave/message CTAs.
     navigation?.navigate('MatchDetail', {
@@ -382,7 +500,7 @@ export default function ActivityScreen({ navigation }) {
           <Wordmark size="md" label="FOUND" />
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          {rows.length > 0 ? (
+          {activeTab === 'requests' && rows.length > 0 ? (
             <TouchableOpacity
               style={styles.markAllBtn}
               onPress={handleMarkAllRead}
@@ -397,39 +515,107 @@ export default function ActivityScreen({ navigation }) {
         </View>
       </View>
 
-      {/* Upcoming events — horizontal scroll so main list always scrollable */}
-      {events.length > 0 && (
-        <View style={styles.eventsSection}>
-          <Text style={styles.eventsSectionLabel}>UPCOMING EVENTS</Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.eventsScroll}
-          >
-            {events.map((ev) => (
-              <EventCard key={ev.event_id} ev={ev} onPress={handleEventPress} />
+      {/* Segment control */}
+      <View style={styles.segmentWrap}>
+        <TouchableOpacity
+          style={[styles.segBtn, activeTab === 'requests' && styles.segBtnActive]}
+          onPress={() => setActiveTab('requests')}
+          activeOpacity={0.8}
+        >
+          <Text style={[styles.segLabel, activeTab === 'requests' && styles.segLabelActive]}>
+            Requests {rows.length > 0 ? `(${rows.length})` : ''}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.segBtn, activeTab === 'connected' && styles.segBtnActive]}
+          onPress={() => setActiveTab('connected')}
+          activeOpacity={0.8}
+        >
+          <Text style={[styles.segLabel, activeTab === 'connected' && styles.segLabelActive]}>
+            Connected {connections.length > 0 ? `(${connections.length})` : ''}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Connected tab: search + sort */}
+      {activeTab === 'connected' ? (
+        <View style={styles.connControls}>
+          {/* Search */}
+          <View style={styles.connSearchBox}>
+            <Ionicons name="search" size={15} color={COLORS.textTertiary} />
+            <TextInput
+              style={styles.connSearchInput}
+              placeholder="Search connections…"
+              placeholderTextColor={COLORS.textTertiary}
+              value={connSearch}
+              onChangeText={setConnSearch}
+              returnKeyType="search"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            {connSearch.length > 0 ? (
+              <TouchableOpacity onPress={() => setConnSearch('')} hitSlop={8}>
+                <Ionicons name="close-circle" size={16} color={COLORS.textTertiary} />
+              </TouchableOpacity>
+            ) : null}
+          </View>
+          {/* Sort chips */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.sortRow}>
+            {[
+              { id: 'recent', label: 'Recent' },
+              { id: 'score',  label: 'Best Match' },
+              { id: 'name',   label: 'Name' },
+            ].map((s) => (
+              <TouchableOpacity
+                key={s.id}
+                style={[styles.sortChip, connSort === s.id && styles.sortChipActive]}
+                onPress={() => setConnSort(s.id)}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.sortChipText, connSort === s.id && styles.sortChipTextActive]}>
+                  {s.label}
+                </Text>
+              </TouchableOpacity>
             ))}
           </ScrollView>
         </View>
-      )}
+      ) : (
+        <>
+          {/* Upcoming events — requests tab only */}
+          {events.length > 0 && (
+            <View style={styles.eventsSection}>
+              <Text style={styles.eventsSectionLabel}>UPCOMING EVENTS</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.eventsScroll}
+              >
+                {events.map((ev) => (
+                  <EventCard key={ev.event_id} ev={ev} onPress={handleEventPress} />
+                ))}
+              </ScrollView>
+            </View>
+          )}
 
-      {/* Event promo card — always visible */}
-      <View style={styles.eventPromoCard}>
-        <View style={styles.eventPromoIcon}>
-          <Ionicons name="calendar" size={20} color={COLORS.text} />
-        </View>
-        <View style={styles.eventPromoBody}>
-          <Text style={styles.eventPromoTitle}>Host a gathering</Text>
-          <Text style={styles.eventPromoSub}>Create an event and invite your connections.</Text>
-        </View>
-        <TouchableOpacity
-          style={styles.eventPromoCta}
-          activeOpacity={0.8}
-          onPress={() => navigation.navigate('CreateEvent')}
-        >
-          <Text style={styles.eventPromoCtaText}>Create</Text>
-        </TouchableOpacity>
-      </View>
+          {/* Event promo card */}
+          <View style={styles.eventPromoCard}>
+            <View style={styles.eventPromoIcon}>
+              <Ionicons name="calendar" size={20} color={COLORS.text} />
+            </View>
+            <View style={styles.eventPromoBody}>
+              <Text style={styles.eventPromoTitle}>Host a gathering</Text>
+              <Text style={styles.eventPromoSub}>Create an event and invite your connections.</Text>
+            </View>
+            <TouchableOpacity
+              style={styles.eventPromoCta}
+              activeOpacity={0.8}
+              onPress={() => navigation.navigate('CreateEvent')}
+            >
+              <Text style={styles.eventPromoCtaText}>Create</Text>
+            </TouchableOpacity>
+          </View>
+        </>
+      )}
     </View>
   );
 
@@ -462,35 +648,78 @@ export default function ActivityScreen({ navigation }) {
     );
   };
 
+  const ConnectedEmpty = () => {
+    if (connLoading) return <View style={styles.stateBox}><ActivityIndicator color={COLORS.textTertiary} /></View>;
+    if (visibleConnections.length === 0 && connSearch.length > 0) {
+      return (
+        <View style={styles.stateBox}>
+          <Ionicons name="search-outline" size={28} color={COLORS.textTertiary} />
+          <Text style={styles.stateTitle}>No results</Text>
+          <Text style={styles.stateBody}>No connections match "{connSearch}".</Text>
+        </View>
+      );
+    }
+    return (
+      <View style={styles.stateBox}>
+        <Ionicons name="people-outline" size={32} color={COLORS.textTertiary} />
+        <Text style={styles.stateTitle}>No connections yet</Text>
+        <Text style={styles.stateBody}>When you mutually connect with someone, they'll show up here.</Text>
+      </View>
+    );
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
-      <Header />
-      <FlatList
-        data={rows}
-        keyExtractor={(r) => r.profile_id}
-        ListEmptyComponent={<Empty />}
-        renderItem={({ item }) => (
-          <ActivityRow
-            row={item}
-            onAccept={handleAccept}
-            onDismiss={handleDismiss}
-            onOpen={handleOpen}
-            onMessage={openChatWith}
-            busy={busyProfileId === item.profile_id}
-          />
-        )}
-        contentContainerStyle={styles.list}
-        ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={() => load({ isRefresh: true })}
-            tintColor={COLORS.textTertiary}
-          />
-        }
-      />
+
+      {activeTab === 'connected' ? (
+        <FlatList
+          data={visibleConnections}
+          keyExtractor={(r) => r.profile_id}
+          ListHeaderComponent={<Header />}
+          ListEmptyComponent={<ConnectedEmpty />}
+          renderItem={({ item }) => (
+            <ConnectionRow row={item} onPress={handleConnOpen} />
+          )}
+          contentContainerStyle={styles.list}
+          ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={connRefreshing}
+              onRefresh={() => loadConnections({ isRefresh: true })}
+              tintColor={COLORS.textTertiary}
+            />
+          }
+        />
+      ) : (
+        <FlatList
+          data={rows}
+          keyExtractor={(r) => r.profile_id}
+          ListHeaderComponent={<Header />}
+          ListEmptyComponent={<Empty />}
+          renderItem={({ item }) => (
+            <ActivityRow
+              row={item}
+              onAccept={handleAccept}
+              onDismiss={handleDismiss}
+              onOpen={handleOpen}
+              onMessage={openChatWith}
+              busy={busyProfileId === item.profile_id}
+            />
+          )}
+          contentContainerStyle={styles.list}
+          ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => load({ isRefresh: true })}
+              tintColor={COLORS.textTertiary}
+            />
+          }
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -742,6 +971,121 @@ const styles = StyleSheet.create({
     fontFamily: FONT.semiBold,
     fontSize: 13,
     color: COLORS.textSecondary,
+  },
+
+  // ── Segment control ─────────────────────────────────────────────
+  segmentWrap: {
+    flexDirection: 'row',
+    marginHorizontal: SPACING.lg,
+    marginBottom: SPACING.md,
+    backgroundColor: COLORS.surfaceAlt,
+    borderRadius: RADIUS.full,
+    padding: 3,
+  },
+  segBtn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    borderRadius: RADIUS.full,
+  },
+  segBtnActive: {
+    backgroundColor: COLORS.white,
+    ...SHADOW.sm,
+  },
+  segLabel: {
+    fontFamily: FONT.semiBold,
+    fontSize: 13,
+    color: COLORS.textSecondary,
+  },
+  segLabelActive: {
+    color: COLORS.text,
+  },
+
+  // ── Connected tab controls ───────────────────────────────────────
+  connControls: {
+    paddingHorizontal: SPACING.lg,
+    gap: SPACING.sm,
+    marginBottom: SPACING.sm,
+  },
+  connSearchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: COLORS.surface,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingHorizontal: 14,
+    paddingVertical: Platform.OS === 'web' ? 9 : 10,
+  },
+  connSearchInput: {
+    flex: 1,
+    fontFamily: FONT.regular,
+    fontSize: 14,
+    color: COLORS.text,
+    padding: 0,
+    ...(Platform.OS === 'web' ? { outlineStyle: 'none' } : null),
+  },
+  sortRow: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+    paddingVertical: 2,
+  },
+  sortChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  sortChipActive: {
+    backgroundColor: COLORS.text,
+    borderColor: COLORS.text,
+  },
+  sortChipText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 13,
+    color: COLORS.textSecondary,
+  },
+  sortChipTextActive: {
+    color: COLORS.white,
+  },
+
+  // ── Connection row ───────────────────────────────────────────────
+  connRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.xl,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: SPACING.md,
+    ...SHADOW.sm,
+  },
+  connBody: { flex: 1, gap: 3 },
+  connTopLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  connName: {
+    fontFamily: FONT.serifItalic,
+    fontSize: 17,
+    color: COLORS.text,
+    flex: 1,
+  },
+  connMeta: {
+    fontFamily: FONT.regular,
+    fontSize: 13,
+    color: COLORS.textSecondary,
+  },
+  connInterests: {
+    fontFamily: FONT.regular,
+    fontSize: 12,
+    color: COLORS.textTertiary,
   },
 
   // State boxes

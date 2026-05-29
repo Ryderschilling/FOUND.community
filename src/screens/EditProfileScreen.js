@@ -94,6 +94,7 @@ export default function EditProfileScreen({ navigation }) {
   const [allGoals, setAllGoals]       = useState([]);
   const [taxLoading, setTaxLoading]   = useState(true);
 
+  const [politicalLean, setPoliticalLean] = useState(null); // null | integer -100..100
   const [saving, setSaving]           = useState(false);
 
   // Interests search + request-modal state
@@ -156,7 +157,7 @@ export default function EditProfileScreen({ navigation }) {
         supabase.from('community_goals').select('id,label,icon,icon_color').order('sort_order'),
         user
           ? supabase.from('profiles')
-              .select('full_name,bio,hometown,city,state,life_stage_id,church_id,is_home_church,church:churches(name),profile_activities(activity_id),profile_goals(goal_id)')
+              .select('full_name,bio,hometown,city,state,life_stage_id,church_id,is_home_church,political_lean,church:churches(name),profile_activities(activity_id),profile_goals(goal_id)')
               .eq('id', user.id)
               .maybeSingle()
           : Promise.resolve({ data: null, error: null }),
@@ -177,6 +178,7 @@ export default function EditProfileScreen({ navigation }) {
         setProfileChurchName(p.church?.name ?? null);
         setActivities((p.profile_activities ?? []).map((r) => r.activity_id));
         setGoals((p.profile_goals ?? []).map((r) => r.goal_id));
+        setPoliticalLean(p.political_lean ?? null);
       } else if (profile) {
         setFullName(profile.full_name ?? '');
       }
@@ -220,6 +222,20 @@ export default function EditProfileScreen({ navigation }) {
       setSaving(false);
       toast({ title: 'Could not save', message: error.message, type: 'error' });
       return;
+    }
+
+    // Save political_lean separately (not in update_profile RPC)
+    if (politicalLean !== null) {
+      await supabase
+        .from('profiles')
+        .update({ political_lean: politicalLean })
+        .eq('id', user.id);
+    } else {
+      // Explicitly clear it if the user deselected
+      await supabase
+        .from('profiles')
+        .update({ political_lean: null })
+        .eq('id', user.id);
     }
 
     // Church is committed immediately by ChurchPicker — nothing to do here.
@@ -399,6 +415,46 @@ export default function EditProfileScreen({ navigation }) {
             ))}
           </View>
         </View>
+
+        {/* Political Lean — optional */}
+        {(() => {
+          const POLITICAL_OPTIONS = [
+            { label: 'Conservative',    value: 80  },
+            { label: 'Center-Right',    value: 40  },
+            { label: 'Moderate',        value: 0   },
+            { label: 'Center-Left',     value: -40 },
+            { label: 'Liberal',         value: -80 },
+          ];
+          return (
+            <View style={styles.section}>
+              <SectionHeader label="Political Views  ·  Optional" />
+              <Text style={styles.sectionHint}>
+                Only used to find people with similar views. Never shown publicly.
+              </Text>
+              <View style={styles.politicalRow}>
+                {POLITICAL_OPTIONS.map((opt) => (
+                  <Pressable
+                    key={opt.value}
+                    style={[
+                      styles.politicalChip,
+                      politicalLean === opt.value && styles.politicalChipActive,
+                    ]}
+                    onPress={() => setPoliticalLean(
+                      politicalLean === opt.value ? null : opt.value
+                    )}
+                  >
+                    <Text style={[
+                      styles.politicalChipText,
+                      politicalLean === opt.value && styles.politicalChipTextActive,
+                    ]}>
+                      {opt.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+          );
+        })()}
 
         {/* Church — search + request via ChurchPicker */}
         <View style={styles.section}>
@@ -616,6 +672,39 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: COLORS.textTertiary,
     marginBottom: SPACING.md,
+  },
+
+  // Political lean picker
+  sectionHint: {
+    fontFamily: FONT.regular,
+    fontSize: 12,
+    color: COLORS.textTertiary,
+    marginBottom: SPACING.sm,
+  },
+  politicalRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  politicalChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  politicalChipActive: {
+    backgroundColor: COLORS.text,
+    borderColor: COLORS.text,
+  },
+  politicalChipText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 14,
+    color: COLORS.textSecondary,
+  },
+  politicalChipTextActive: {
+    color: COLORS.white,
   },
 
   // Request interest button

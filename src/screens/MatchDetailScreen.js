@@ -60,9 +60,11 @@ export default function MatchDetailScreen({ route, navigation }) {
   const [moreMenuOpen,    setMoreMenuOpen]    = useState(false);
   const [reportOpen,      setReportOpen]      = useState(false);
   const [avatarLightbox,  setAvatarLightbox]  = useState(false);
-  const [myInterestIds,  setMyInterestIds]  = useState(new Set());
-  const [myLifeStage,    setMyLifeStage]    = useState(null);
-  const [myChurchId,     setMyChurchId]     = useState(null);
+  const [myInterestIds,    setMyInterestIds]    = useState(new Set());
+  const [myLifeStage,      setMyLifeStage]      = useState(null);
+  const [myChurchId,       setMyChurchId]       = useState(null);
+  const [myPoliticalLean,  setMyPoliticalLean]  = useState(null);
+  const [theirPolitical,   setTheirPolitical]   = useState(null);
 
   // Full profile data — starts from whatever the caller passed, enriched by
   // get_profile_detail() when score / interests are missing.
@@ -112,6 +114,7 @@ export default function MatchDetailScreen({ route, navigation }) {
       const d = Array.isArray(data) ? data[0] : data;
       if (!d) { setDetailLoading(false); return; }
 
+      setTheirPolitical(d.political_lean ?? null);
       setProfile((prev) => ({
         ...prev,
         bio:             d.bio              ?? prev.bio,
@@ -161,12 +164,13 @@ export default function MatchDetailScreen({ route, navigation }) {
     (async () => {
       const [{ data: acts }, { data: me }] = await Promise.all([
         supabase.from('profile_activities').select('activity_id').eq('profile_id', user.id),
-        supabase.from('profiles').select('life_stage_id, church_id').eq('id', user.id).maybeSingle(),
+        supabase.from('profiles').select('life_stage_id, church_id, political_lean').eq('id', user.id).maybeSingle(),
       ]);
       if (cancelled) return;
       setMyInterestIds(new Set((acts ?? []).map((r) => r.activity_id)));
       setMyLifeStage(me?.life_stage_id ?? null);
       setMyChurchId(me?.church_id ?? null);
+      setMyPoliticalLean(me?.political_lean ?? null);
     })();
     return () => { cancelled = true; };
   }, [user]);
@@ -384,7 +388,10 @@ export default function MatchDetailScreen({ route, navigation }) {
                   <ActivityIndicator size="small" color={COLORS.textTertiary} />
                 </View>
               ) : (
-                <ScoreRing score={profile.matchScore} size={64} stroke={5} />
+                <View style={styles.scoreRingWrap}>
+                  <ScoreRing score={profile.matchScore} size={64} stroke={5} />
+                  <Text style={styles.scoreLabel}>match</Text>
+                </View>
               )}
             </View>
           </View>
@@ -423,6 +430,58 @@ export default function MatchDetailScreen({ route, navigation }) {
         </View>
 
         <View style={styles.content}>
+
+          {/* ── In Common — pinned to top ──────────────────────────── */}
+          {(() => {
+            const sharedInterests = profile.interests.filter((i) => myInterestIds.has(i.id));
+            const sameStage   = !!(myLifeStage && profile.lifeStageId && myLifeStage === profile.lifeStageId);
+            const sameChurch  = !!(myChurchId && profile.churchId && myChurchId === profile.churchId);
+            const politicsAlign = myPoliticalLean != null && theirPolitical != null &&
+              Math.abs(myPoliticalLean - theirPolitical) <= 40;
+            const hasCommon = sameStage || sameChurch || sharedInterests.length > 0 || politicsAlign;
+            return (
+              <View style={styles.section}>
+                <SectionHeader label="In Common" />
+                <View style={styles.commonCard}>
+                  {sameStage ? (
+                    <View style={styles.commonRow}>
+                      <Ionicons name="checkmark-circle" size={16} color={COLORS.sage} />
+                      <Text style={styles.commonText}>Same life stage</Text>
+                    </View>
+                  ) : null}
+                  {sameChurch ? (
+                    <View style={styles.commonRow}>
+                      <Ionicons name="checkmark-circle" size={16} color={COLORS.sage} />
+                      <Text style={styles.commonText}>Same church</Text>
+                    </View>
+                  ) : null}
+                  {sharedInterests.slice(0, 3).map((i) => (
+                    <View key={i.id} style={styles.commonRow}>
+                      <Ionicons name="checkmark-circle" size={16} color={COLORS.sage} />
+                      <Text style={styles.commonText}>Both into {i.label.toLowerCase()}</Text>
+                    </View>
+                  ))}
+                  {politicsAlign ? (
+                    <View style={styles.commonRow}>
+                      <Ionicons name="checkmark-circle" size={16} color={COLORS.sage} />
+                      <Text style={styles.commonText}>Similar political views</Text>
+                    </View>
+                  ) : null}
+                  {!hasCommon && !detailLoading ? (
+                    <View style={styles.commonRow}>
+                      <Ionicons name="sparkles-outline" size={16} color={COLORS.textTertiary} />
+                      <Text style={[styles.commonText, { color: COLORS.textSecondary }]}>
+                        Connect to see what you have in common
+                      </Text>
+                    </View>
+                  ) : null}
+                  {detailLoading ? (
+                    <ActivityIndicator size="small" color={COLORS.textTertiary} />
+                  ) : null}
+                </View>
+              </View>
+            );
+          })()}
 
           {/* Highlight Reel */}
           {photos.length > 0 ? (
@@ -474,45 +533,6 @@ export default function MatchDetailScreen({ route, navigation }) {
               </View>
             </View>
           ) : null}
-
-          {/* In Common */}
-          <View style={styles.section}>
-            <SectionHeader label="In Common" />
-            <View style={styles.commonCard}>
-              {myLifeStage && profile.lifeStageId && myLifeStage === profile.lifeStageId ? (
-                <View style={styles.commonRow}>
-                  <Ionicons name="checkmark-circle" size={16} color={COLORS.sage} />
-                  <Text style={styles.commonText}>Same life stage</Text>
-                </View>
-              ) : null}
-              {myChurchId && profile.churchId && myChurchId === profile.churchId ? (
-                <View style={styles.commonRow}>
-                  <Ionicons name="checkmark-circle" size={16} color={COLORS.sage} />
-                  <Text style={styles.commonText}>Same church</Text>
-                </View>
-              ) : null}
-              {profile.interests
-                .filter((i) => myInterestIds.has(i.id))
-                .slice(0, 2)
-                .map((i) => (
-                  <View key={i.id} style={styles.commonRow}>
-                    <Ionicons name="checkmark-circle" size={16} color={COLORS.sage} />
-                    <Text style={styles.commonText}>Both into {i.label.toLowerCase()}</Text>
-                  </View>
-                ))}
-              {!(myLifeStage && profile.lifeStageId && myLifeStage === profile.lifeStageId) &&
-               !(myChurchId && profile.churchId && myChurchId === profile.churchId) &&
-               profile.interests.filter((i) => myInterestIds.has(i.id)).length === 0 &&
-               !detailLoading ? (
-                <View style={styles.commonRow}>
-                  <Ionicons name="sparkles-outline" size={16} color={COLORS.textTertiary} />
-                  <Text style={[styles.commonText, { color: COLORS.textSecondary }]}>
-                    Connect to see what you have in common
-                  </Text>
-                </View>
-              ) : null}
-            </View>
-          </View>
 
         </View>
       </ScrollView>
@@ -763,6 +783,17 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: -26,
     right: -42,
+  },
+  scoreRingWrap: {
+    alignItems: 'center',
+    gap: 2,
+  },
+  scoreLabel: {
+    fontFamily: FONT.mono,
+    fontSize: 8,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    color: COLORS.textTertiary,
   },
   scoreLoadingWrap: {
     width: 64, height: 64,
