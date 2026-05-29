@@ -34,6 +34,118 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS } from '../theme';
 import { supabase } from '../lib/supabase';
 
+// ── Request form modal ────────────────────────────────────────────────────────
+function RequestModal({
+  visible, onClose,
+  reqName, setReqName,
+  reqCity, setReqCity,
+  reqState, setReqState,
+  reqYears, setReqYears,
+  submitting, onSubmit,
+}) {
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+    >
+      <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <TouchableOpacity
+          style={StyleSheet.absoluteFillObject}
+          activeOpacity={1}
+          onPress={onClose}
+        />
+        <View style={styles.modalCard}>
+          {/* Handle */}
+          <View style={styles.modalHandle} />
+
+          <Text style={styles.modalTitle}>Request your church</Text>
+          <Text style={styles.modalSub}>
+            We'll reach out to get them on FOUND so you can connect with other members.
+          </Text>
+
+          {/* Church name */}
+          <View style={styles.fieldBlock}>
+            <Text style={styles.fieldLabel}>CHURCH NAME</Text>
+            <TextInput
+              style={styles.fieldInput}
+              value={reqName}
+              onChangeText={setReqName}
+              placeholder="e.g. Seacoast Church"
+              placeholderTextColor={COLORS.textTertiary}
+              autoCapitalize="words"
+              autoCorrect={false}
+              maxLength={120}
+            />
+          </View>
+
+          {/* Location row */}
+          <View style={styles.fieldBlock}>
+            <Text style={styles.fieldLabel}>LOCATION</Text>
+            <View style={styles.locationRow}>
+              <TextInput
+                style={[styles.fieldInput, { flex: 2 }]}
+                value={reqCity}
+                onChangeText={setReqCity}
+                placeholder="City"
+                placeholderTextColor={COLORS.textTertiary}
+                autoCapitalize="words"
+                autoCorrect={false}
+                maxLength={80}
+              />
+              <TextInput
+                style={[styles.fieldInput, { flex: 1 }]}
+                value={reqState}
+                onChangeText={(v) => setReqState(v.toUpperCase())}
+                placeholder="State"
+                placeholderTextColor={COLORS.textTertiary}
+                autoCapitalize="characters"
+                autoCorrect={false}
+                maxLength={2}
+              />
+            </View>
+          </View>
+
+          {/* Years attended */}
+          <View style={styles.fieldBlock}>
+            <Text style={styles.fieldLabel}>YEARS ATTENDED</Text>
+            <TextInput
+              style={styles.fieldInput}
+              value={reqYears}
+              onChangeText={(v) => setReqYears(v.replace(/[^0-9]/g, ''))}
+              placeholder="e.g. 3"
+              placeholderTextColor={COLORS.textTertiary}
+              keyboardType="number-pad"
+              maxLength={3}
+            />
+          </View>
+
+          {/* Submit */}
+          <TouchableOpacity
+            style={[styles.submitBtn, (!reqName.trim() || submitting) && { opacity: 0.5 }]}
+            activeOpacity={0.85}
+            onPress={onSubmit}
+            disabled={!reqName.trim() || submitting}
+          >
+            {submitting
+              ? <ActivityIndicator color={COLORS.white} size="small" />
+              : <Text style={styles.submitBtnTxt}>Send Request</Text>
+            }
+          </TouchableOpacity>
+
+          <TouchableOpacity onPress={onClose} style={styles.cancelBtn} activeOpacity={0.7}>
+            <Text style={styles.cancelTxt}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
 export default function ChurchPicker({
   churchId     = null,
   isHomeChurch = false,
@@ -251,26 +363,31 @@ export default function ChurchPicker({
           <View style={styles.requestSentRow}>
             <Ionicons name="checkmark-circle" size={16} color={COLORS.sage} />
             <Text style={styles.requestSentTxt}>
-              Request sent for "{query.trim()}" — we'll reach out to them soon.
+              Request sent — we'll reach out to them soon.
             </Text>
           </View>
         ) : showRequest ? (
           <TouchableOpacity
             style={styles.requestBtn}
             activeOpacity={0.8}
-            onPress={handleRequest}
-            disabled={requesting}
+            onPress={openRequestModal}
           >
-            {requesting ? (
-              <ActivityIndicator size="small" color={COLORS.text} />
-            ) : (
-              <>
-                <Ionicons name="add-circle-outline" size={16} color={COLORS.text} />
-                <Text style={styles.requestBtnTxt}>Request "{query.trim()}"</Text>
-              </>
-            )}
+            <Ionicons name="add-circle-outline" size={16} color={COLORS.text} />
+            <Text style={styles.requestBtnTxt}>Request "{query.trim()}"</Text>
           </TouchableOpacity>
         ) : null}
+
+        {/* Request form modal */}
+        <RequestModal
+          visible={modalOpen}
+          onClose={() => setModalOpen(false)}
+          reqName={reqName}     setReqName={setReqName}
+          reqCity={reqCity}     setReqCity={setReqCity}
+          reqState={reqState}   setReqState={setReqState}
+          reqYears={reqYears}   setReqYears={setReqYears}
+          submitting={submitting}
+          onSubmit={handleSubmitRequest}
+        />
       </View>
     );
   }
@@ -499,6 +616,90 @@ const styles = StyleSheet.create({
   changeTxt: {
     fontFamily: FONT.semiBold,
     fontSize:   13,
+    color:      COLORS.textSecondary,
+  },
+
+  // ── request modal ──────────────────────────────────────────────────────────
+  modalOverlay: {
+    flex:            1,
+    justifyContent:  'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
+  modalCard: {
+    backgroundColor: COLORS.white,
+    borderTopLeftRadius:  24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: SPACING.lg,
+    paddingBottom:     SPACING.xl,
+    paddingTop:        SPACING.md,
+  },
+  modalHandle: {
+    width:           40,
+    height:          4,
+    borderRadius:    2,
+    backgroundColor: COLORS.border,
+    alignSelf:       'center',
+    marginBottom:    SPACING.md,
+  },
+  modalTitle: {
+    fontFamily:   FONT.serifRegular,
+    fontSize:     22,
+    color:        COLORS.text,
+    letterSpacing: -0.3,
+    marginBottom: 6,
+  },
+  modalSub: {
+    fontFamily:   FONT.regular,
+    fontSize:     13,
+    color:        COLORS.textSecondary,
+    lineHeight:   19,
+    marginBottom: SPACING.lg,
+  },
+  fieldBlock: {
+    marginBottom: SPACING.md,
+  },
+  fieldLabel: {
+    fontFamily:    FONT.mono,
+    fontSize:      9,
+    letterSpacing: 1.6,
+    color:         COLORS.textTertiary,
+    marginBottom:  6,
+  },
+  fieldInput: {
+    fontFamily:      FONT.regular,
+    fontSize:        15,
+    color:           COLORS.text,
+    backgroundColor: COLORS.surface,
+    borderWidth:     1,
+    borderColor:     COLORS.border,
+    borderRadius:    RADIUS.md,
+    paddingHorizontal: SPACING.md,
+    paddingVertical:   Platform.OS === 'ios' ? 12 : 10,
+    ...(Platform.OS === 'web' ? { outlineStyle: 'none' } : null),
+  },
+  locationRow: {
+    flexDirection: 'row',
+    gap:           SPACING.sm,
+  },
+  submitBtn: {
+    backgroundColor: COLORS.text,
+    borderRadius:    999,
+    paddingVertical: 14,
+    alignItems:      'center',
+    marginTop:       SPACING.sm,
+  },
+  submitBtnTxt: {
+    fontFamily: FONT.semiBold,
+    fontSize:   15,
+    color:      COLORS.white,
+  },
+  cancelBtn: {
+    paddingVertical: 12,
+    alignItems:      'center',
+  },
+  cancelTxt: {
+    fontFamily: FONT.semiBold,
+    fontSize:   14,
     color:      COLORS.textSecondary,
   },
 });
