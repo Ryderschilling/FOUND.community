@@ -66,6 +66,11 @@ export default function MatchDetailScreen({ route, navigation }) {
   const [myPoliticalLean,  setMyPoliticalLean]  = useState(null);
   const [theirPolitical,   setTheirPolitical]   = useState(null);
 
+  // Score breakdown modal
+  const [breakdownOpen,    setBreakdownOpen]    = useState(false);
+  const [breakdown,        setBreakdown]        = useState(null);
+  const [breakdownLoading, setBreakdownLoading] = useState(false);
+
   // Full profile data — starts from whatever the caller passed, enriched by
   // get_profile_detail() when score / interests are missing.
   const [profile, setProfile] = useState({
@@ -196,6 +201,24 @@ export default function MatchDetailScreen({ route, navigation }) {
   // isInbound: they sent me a request I haven't accepted/matched yet
   const isInbound = (theirKind === 'like' || theirKind === 'wave') && !connected && !isMatch;
   const ctaState  = isMatch ? 'connected' : (connected ? 'pending' : 'idle');
+
+  // ── Score breakdown ──────────────────────────────────────────────────────
+  async function handleScorePress() {
+    if (!profile.id || profile.matchScore == null) return;
+    setBreakdownOpen(true);
+    if (breakdown) return; // already fetched
+    setBreakdownLoading(true);
+    try {
+      const { data, error } = await supabase.rpc('get_score_breakdown', {
+        p_viewer:    user.id,
+        p_candidate: profile.id,
+      });
+      if (!mountedRef.current) return;
+      if (!error && data) setBreakdown(data);
+    } catch (_) { /* non-fatal */ } finally {
+      if (mountedRef.current) setBreakdownLoading(false);
+    }
+  }
 
   // ── Actions ──────────────────────────────────────────────────────────────
   async function handleConnect() {
@@ -388,10 +411,15 @@ export default function MatchDetailScreen({ route, navigation }) {
                   <ActivityIndicator size="small" color={COLORS.textTertiary} />
                 </View>
               ) : (
-                <View style={styles.scoreRingWrap}>
+                <TouchableOpacity
+                  style={styles.scoreRingWrap}
+                  activeOpacity={0.75}
+                  onPress={handleScorePress}
+                  disabled={profile.matchScore == null}
+                >
                   <ScoreRing score={profile.matchScore} size={64} stroke={5} />
-                  <Text style={styles.scoreLabel}>match</Text>
-                </View>
+                  <Text style={styles.scoreLabel}>match ⓘ</Text>
+                </TouchableOpacity>
               )}
             </View>
           </View>
@@ -631,6 +659,95 @@ export default function MatchDetailScreen({ route, navigation }) {
           )}
         </View>
       </View>
+
+      {/* ── Score breakdown sheet ─────────────────────────────────────────── */}
+      <Modal
+        visible={breakdownOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setBreakdownOpen(false)}
+      >
+        <View style={styles.menuBackdrop}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => setBreakdownOpen(false)}
+          />
+          <View style={[styles.menuSheet, styles.breakdownSheet]}>
+            {/* Handle bar */}
+            <View style={styles.sheetHandle} />
+
+            <View style={styles.breakdownHeader}>
+              <ScoreRing score={profile.matchScore} size={56} stroke={4} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.breakdownTitle}>
+                  {profile.matchScore != null ? `${profile.matchScore}% match` : 'Match score'}
+                </Text>
+                <Text style={styles.breakdownSub}>
+                  Based on your profile overlap with {profile.name?.split(' ')[0] || 'them'}
+                </Text>
+              </View>
+            </View>
+
+            {breakdownLoading ? (
+              <ActivityIndicator color={COLORS.textTertiary} style={{ marginVertical: 24 }} />
+            ) : breakdown ? (() => {
+              const rows = [
+                { key: 'interests',  label: 'Interests',    icon: 'body-outline'         },
+                { key: 'goals',      label: 'Goals',        icon: 'flag-outline'         },
+                { key: 'life_stage', label: 'Life Stage',   icon: 'people-outline'       },
+                { key: 'values',     label: 'Values',       icon: 'heart-outline'        },
+                { key: 'hometown',   label: 'Hometown',     icon: 'home-outline'         },
+                { key: 'political',  label: 'Politics',     icon: 'ribbon-outline'       },
+              ];
+              return (
+                <View style={styles.breakdownRows}>
+                  {rows.map(({ key, label, icon }) => {
+                    const d = breakdown[key];
+                    if (!d) return null;
+                    const pct = d.max > 0 ? d.pts / d.max : 0;
+                    const subtitle = d.shared != null
+                      ? `${d.shared} of ${d.total} shared`
+                      : null;
+                    return (
+                      <View key={key} style={styles.breakdownRow}>
+                        <View style={styles.breakdownRowLeft}>
+                          <View style={styles.breakdownIconWrap}>
+                            <Ionicons name={icon} size={14} color={COLORS.textSecondary} />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.breakdownRowLabel}>{label}</Text>
+                            {subtitle ? (
+                              <Text style={styles.breakdownRowSub}>{subtitle}</Text>
+                            ) : null}
+                          </View>
+                        </View>
+                        <View style={styles.breakdownBarWrap}>
+                          <View style={styles.breakdownBarTrack}>
+                            <View
+                              style={[
+                                styles.breakdownBarFill,
+                                { width: `${Math.round(pct * 100)}%` },
+                                pct >= 0.7 ? styles.breakdownBarHigh
+                                  : pct >= 0.3 ? styles.breakdownBarMid
+                                  : styles.breakdownBarLow,
+                              ]}
+                            />
+                          </View>
+                          <Text style={styles.breakdownPts}>{d.pts}/{d.max}</Text>
+                        </View>
+                      </View>
+                    );
+                  })}
+                  <Text style={styles.breakdownNote}>
+                    Tip: add more interests, goals, and values to your profile to improve your score.
+                  </Text>
+                </View>
+              );
+            })() : null}
+          </View>
+        </View>
+      </Modal>
 
       {/* Action menu modal for block + report */}
       <Modal
@@ -914,6 +1031,105 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.15)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+
+  // Score breakdown sheet
+  breakdownSheet: {
+    paddingTop: SPACING.sm,
+    paddingBottom: SPACING.xl,
+  },
+  sheetHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: COLORS.border,
+    alignSelf: 'center',
+    marginBottom: SPACING.lg,
+  },
+  breakdownHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+    marginBottom: SPACING.lg,
+    paddingHorizontal: SPACING.sm,
+  },
+  breakdownTitle: {
+    fontFamily: FONT.serifItalic,
+    fontSize: 20,
+    color: COLORS.text,
+  },
+  breakdownSub: {
+    fontFamily: FONT.regular,
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    marginTop: 2,
+  },
+  breakdownRows: {
+    gap: 10,
+  },
+  breakdownRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+  },
+  breakdownRowLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    width: 120,
+  },
+  breakdownIconWrap: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    backgroundColor: COLORS.surfaceAlt,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  breakdownRowLabel: {
+    fontFamily: FONT.semiBold,
+    fontSize: 13,
+    color: COLORS.text,
+  },
+  breakdownRowSub: {
+    fontFamily: FONT.regular,
+    fontSize: 11,
+    color: COLORS.textTertiary,
+  },
+  breakdownBarWrap: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  breakdownBarTrack: {
+    flex: 1,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: COLORS.surfaceAlt,
+    overflow: 'hidden',
+  },
+  breakdownBarFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  breakdownBarHigh: { backgroundColor: COLORS.sage },
+  breakdownBarMid:  { backgroundColor: COLORS.gold },
+  breakdownBarLow:  { backgroundColor: COLORS.border },
+  breakdownPts: {
+    fontFamily: FONT.mono,
+    fontSize: 10,
+    color: COLORS.textTertiary,
+    width: 30,
+    textAlign: 'right',
+  },
+  breakdownNote: {
+    fontFamily: FONT.regular,
+    fontSize: 12,
+    color: COLORS.textTertiary,
+    marginTop: SPACING.sm,
+    textAlign: 'center',
+    lineHeight: 17,
   },
 
   // Action menu
