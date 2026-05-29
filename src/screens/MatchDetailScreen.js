@@ -70,6 +70,7 @@ export default function MatchDetailScreen({ route, navigation }) {
   const [breakdownOpen,    setBreakdownOpen]    = useState(false);
   const [breakdown,        setBreakdown]        = useState(null);
   const [breakdownLoading, setBreakdownLoading] = useState(false);
+  const [breakdownError,   setBreakdownError]   = useState(false);
 
   // Full profile data — starts from whatever the caller passed, enriched by
   // get_profile_detail() when score / interests are missing.
@@ -205,6 +206,7 @@ export default function MatchDetailScreen({ route, navigation }) {
   // ── Score breakdown ──────────────────────────────────────────────────────
   async function handleScorePress() {
     if (!profile.id || profile.matchScore == null) return;
+    setBreakdownError(false);
     setBreakdownOpen(true);
     if (breakdown) return; // already fetched
     setBreakdownLoading(true);
@@ -214,8 +216,16 @@ export default function MatchDetailScreen({ route, navigation }) {
         p_candidate: profile.id,
       });
       if (!mountedRef.current) return;
-      if (!error && data) setBreakdown(data);
-    } catch (_) { /* non-fatal */ } finally {
+      if (error || !data) {
+        console.warn('[breakdown] rpc failed', error?.message);
+        setBreakdownError(true);
+      } else {
+        setBreakdown(data);
+      }
+    } catch (e) {
+      console.warn('[breakdown] fetch threw', e?.message);
+      if (mountedRef.current) setBreakdownError(true);
+    } finally {
       if (mountedRef.current) setBreakdownLoading(false);
     }
   }
@@ -691,6 +701,10 @@ export default function MatchDetailScreen({ route, navigation }) {
 
             {breakdownLoading ? (
               <ActivityIndicator color={COLORS.textTertiary} style={{ marginVertical: 24 }} />
+            ) : breakdownError ? (
+              <Text style={[styles.breakdownNote, { marginVertical: 24 }]}>
+                Couldn't load breakdown. Make sure you're connected and try again.
+              </Text>
             ) : breakdown ? (() => {
               const rows = [
                 { key: 'interests',  label: 'Interests',    icon: 'body-outline'         },
