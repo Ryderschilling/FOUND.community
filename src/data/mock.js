@@ -69,6 +69,22 @@ export const FAMILY_VALUES = [
   { id: 'limit-phones',   label: 'Limit Phones for Kids',  icon: 'phone-portrait-outline',       iconColor: '#4A6FA5' },
 ];
 
+export const DENOMINATIONS = [
+  { id: 'non-denom',        label: 'Non-Denominational',      icon: 'infinite-outline',             iconColor: '#1A1A1A' },
+  { id: 'baptist',          label: 'Baptist',                  icon: 'book-outline',                 iconColor: '#1A1A1A' },
+  { id: 'methodist',        label: 'Methodist',                icon: 'heart-outline',                iconColor: '#1A1A1A' },
+  { id: 'presbyterian',     label: 'Presbyterian',             icon: 'library-outline',              iconColor: '#1A1A1A' },
+  { id: 'lutheran',         label: 'Lutheran',                 icon: 'leaf-outline',                 iconColor: '#1A1A1A' },
+  { id: 'catholic',         label: 'Catholic',                 icon: 'business-outline',             iconColor: '#1A1A1A' },
+  { id: 'anglican',         label: 'Anglican / Episcopal',     icon: 'navigate-outline',             iconColor: '#1A1A1A' },
+  { id: 'pentecostal',      label: 'Pentecostal / Charismatic',icon: 'flame-outline',               iconColor: '#1A1A1A' },
+  { id: 'assemblies',       label: 'Assemblies of God',        icon: 'people-outline',               iconColor: '#1A1A1A' },
+  { id: 'church-of-christ', label: 'Church of Christ',         icon: 'home-outline',                 iconColor: '#1A1A1A' },
+  { id: 'reformed',         label: 'Reformed / Calvinist',     icon: 'shield-outline',               iconColor: '#1A1A1A' },
+  { id: 'evangelical',      label: 'Evangelical Free',         icon: 'star-outline',                 iconColor: '#1A1A1A' },
+  { id: 'other',            label: 'Other',                    icon: 'ellipsis-horizontal-outline',  iconColor: '#1A1A1A' },
+];
+
 export const SCHOOL_TYPES = [
   { id: 'public',     label: 'Public School',      icon: 'school-outline',    iconColor: '#4A6FA5' },
   { id: 'private',    label: 'Private School',     icon: 'business-outline',  iconColor: '#A8793A' },

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import {
   Platform,
   Animated,
   Easing,
+  PanResponder,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
@@ -32,13 +33,14 @@ import {
   SCHOOL_TYPES,
   LOVE_LANGUAGES,
   COMMUNITY_GOALS,
+  DENOMINATIONS,
 } from '../data/mock';
 
 // ─── Step ID sequence ────────────────────────────────────────────────────────
 // School-type is conditionally inserted based on life stage answer.
 // Location is intentionally NOT here — it's captured once at signup (from the
 // ZIP) and never asked again.
-const BASE_STEPS = ['life-stage', 'activities', 'family-values', 'love-language', 'personality', 'community-goals', 'church', 'reveal'];
+const BASE_STEPS = ['life-stage', 'activities', 'family-values', 'love-language', 'personality', 'political-lean', 'community-goals', 'church', 'denomination', 'reveal'];
 
 function buildSteps(lifeStage) {
   const steps = [...BASE_STEPS];
@@ -326,6 +328,223 @@ function StepPersonality({ initiator, onSelectInitiator, outgoing, onSelectOutgo
   );
 }
 
+// ─── Political Lean Step ─────────────────────────────────────────────────────
+// Drag slider: -100 (far left) → 100 (far right). NULL = skipped (optional).
+// Dot starts at center. Dragging left fills track blue; dragging right fills red.
+// Intensity of color increases the further you drag.
+
+const POL_LEFT  = '#3B82F6'; // blue
+const POL_RIGHT = '#EF4444'; // red
+
+function StepPoliticalLean({ value, onChange }) {
+  const [trackHalf, setTrackHalf] = useState(0);
+  const [displayValue, setDisplayValue] = useState(value ?? null);
+
+  const trackHalfRef = useRef(0);
+  const liveValueRef = useRef(value ?? 0);
+  const startPxRef   = useRef(0);
+  const posAnim      = useRef(new Animated.Value(0)).current;
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder:  () => true,
+      onPanResponderGrant: () => {
+        // Capture where the drag starts (in pixels from center)
+        startPxRef.current = (liveValueRef.current / 100) * trackHalfRef.current;
+      },
+      onPanResponderMove: (_, g) => {
+        const half = trackHalfRef.current;
+        if (!half) return;
+        const raw = Math.max(-half, Math.min(half, startPxRef.current + g.dx));
+        posAnim.setValue(raw);
+        const v = Math.round((raw / half) * 100);
+        liveValueRef.current = v;
+        setDisplayValue(v);
+        onChange(v);
+      },
+      onPanResponderRelease:  () => {},
+      onPanResponderTerminate: () => {},
+    })
+  ).current;
+
+  const onTrackLayout = useCallback((e) => {
+    const half = e.nativeEvent.layout.width / 2;
+    trackHalfRef.current = half;
+    setTrackHalf(half);
+    posAnim.setValue((liveValueRef.current / 100) * half);
+  }, [posAnim]);
+
+  // Derived values — recomputed on every setState from drag
+  const pct    = (displayValue ?? 0) / 100; // -1..1
+  const absPct = Math.abs(pct);
+  const isLeft = pct < 0;
+  const hasVal = displayValue !== null;
+
+  const label = !hasVal
+    ? 'Drag to set your lean'
+    : absPct < 0.12
+      ? 'Centrist / Moderate'
+      : isLeft
+        ? (absPct >= 0.65 ? 'Far Left'  : 'Lean Left')
+        : (absPct >= 0.65 ? 'Far Right' : 'Lean Right');
+
+  // Fill: colored strip from center → dot
+  const fillPx    = trackHalf > 0 ? absPct * trackHalf : 0;
+  const fillAlpha = (0.35 + absPct * 0.65).toFixed(2);
+  const fillColor = isLeft
+    ? `rgba(59,130,246,${fillAlpha})`
+    : `rgba(239,68,68,${fillAlpha})`;
+
+  // Dot and label colors
+  const dotBg      = !hasVal ? COLORS.border : absPct < 0.08 ? '#1A1A1A' : isLeft ? POL_LEFT : POL_RIGHT;
+  const labelColor = !hasVal ? COLORS.textTertiary : absPct < 0.12 ? COLORS.text : isLeft ? POL_LEFT : POL_RIGHT;
+
+  return (
+    <>
+      <Text style={styles.stepTitle}>Which way do you lean politically?</Text>
+      <Text style={styles.stepSub}>
+        Your answer is private — only visible when you connect with someone in this area.
+      </Text>
+
+      <View style={politicalStyles.container}>
+        {/* Track row */}
+        <View style={politicalStyles.track} onLayout={onTrackLayout}>
+          {/* Gray background bar */}
+          <View style={politicalStyles.trackBg} />
+
+          {/* Colored fill from center toward dot */}
+          {hasVal && fillPx > 0 && (
+            <View
+              style={[
+                politicalStyles.fill,
+                {
+                  width: fillPx,
+                  left: isLeft ? trackHalf - fillPx : trackHalf,
+                  backgroundColor: fillColor,
+                },
+              ]}
+            />
+          )}
+
+          {/* Center tick mark */}
+          <View style={politicalStyles.centerTick} />
+
+          {/* Draggable dot — centered, moves via translateX */}
+          <Animated.View
+            {...panResponder.panHandlers}
+            style={[
+              politicalStyles.dot,
+              {
+                left: trackHalf - 14,   // 14 = half dot width
+                backgroundColor: dotBg,
+                transform: [{ translateX: posAnim }],
+              },
+            ]}
+          />
+        </View>
+
+        {/* Left / Right end labels */}
+        <View style={politicalStyles.endLabels}>
+          <Text style={[
+            politicalStyles.endLabel,
+            hasVal && isLeft && absPct > 0.08 && { color: POL_LEFT, fontFamily: FONT.semiBold },
+          ]}>
+            ← Left
+          </Text>
+          <Text style={[
+            politicalStyles.endLabel,
+            hasVal && !isLeft && absPct > 0.08 && { color: POL_RIGHT, fontFamily: FONT.semiBold },
+          ]}>
+            Right →
+          </Text>
+        </View>
+
+        {/* Dynamic value callout */}
+        <View style={politicalStyles.callout}>
+          <Text style={[politicalStyles.calloutText, { color: labelColor }]}>
+            {label}
+          </Text>
+        </View>
+      </View>
+
+      <Text style={styles.optionalNote}>Optional — you can skip this step.</Text>
+    </>
+  );
+}
+
+const politicalStyles = StyleSheet.create({
+  container: {
+    marginTop: SPACING.xl,
+    marginBottom: SPACING.md,
+  },
+  track: {
+    height: 44,                  // tall hit area; visual bar is inside
+    justifyContent: 'center',
+    marginHorizontal: SPACING.md,
+    position: 'relative',
+  },
+  trackBg: {
+    position: 'absolute',
+    left: 0, right: 0,
+    height: 5,
+    backgroundColor: COLORS.border,
+    borderRadius: 3,
+  },
+  fill: {
+    position: 'absolute',
+    height: 5,
+    borderRadius: 3,
+  },
+  centerTick: {
+    position: 'absolute',
+    width: 2,
+    height: 16,
+    backgroundColor: COLORS.textTertiary,
+    borderRadius: 1,
+    left: '50%',
+    marginLeft: -1,
+    top: '50%',
+    marginTop: -8,
+  },
+  dot: {
+    position: 'absolute',
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    top: '50%',
+    marginTop: -14,
+    ...SHADOW.sm,
+  },
+  endLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginHorizontal: SPACING.md,
+    marginTop: SPACING.sm,
+  },
+  endLabel: {
+    fontFamily: FONT.regular,
+    fontSize: 12,
+    color: COLORS.textTertiary,
+  },
+  callout: {
+    alignSelf: 'center',
+    backgroundColor: COLORS.surfaceAlt,
+    borderRadius: RADIUS.lg,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.xl,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginTop: SPACING.lg,
+    minWidth: 170,
+  },
+  calloutText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 15,
+    textAlign: 'center',
+  },
+});
+
 function StepCommunityGoals({ selections, onToggle }) {
   return (
     <>
@@ -336,6 +555,28 @@ function StepCommunityGoals({ selections, onToggle }) {
           <OptionCard key={item.id} item={item} selected={selections.includes(item.id)} onPress={() => onToggle(item.id)} />
         ))}
       </View>
+    </>
+  );
+}
+
+function StepDenomination({ selection, onSelect }) {
+  return (
+    <>
+      <Text style={styles.stepTitle}>What's your church background?</Text>
+      <Text style={styles.stepSub}>
+        Helps us connect you with people from similar traditions.
+      </Text>
+      <View style={styles.optGrid}>
+        {DENOMINATIONS.map((item) => (
+          <OptionCard
+            key={item.id}
+            item={item}
+            selected={selection === item.id}
+            onPress={() => onSelect(item.id)}
+          />
+        ))}
+      </View>
+      <Text style={styles.optionalNote}>Optional — you can skip this step.</Text>
     </>
   );
 }
@@ -520,6 +761,8 @@ export default function OnboardingScreen({ navigation }) {
   const [loveLanguage, setLoveLanguage]     = useState(null);
   const [initiator, setInitiator]           = useState(null);
   const [outgoing, setOutgoing]             = useState(null);
+  const [politicalLean, setPoliticalLean]   = useState(null); // null = skipped
+  const [denomination, setDenomination]     = useState(null); // null = skipped
   const [communityGoals, setCommunityGoals] = useState([]);
   // Free-text church name (was a picker; we don't have a curated directory yet).
   // Church is committed to DB immediately by ChurchPicker — no local state needed.
@@ -582,7 +825,9 @@ export default function OnboardingScreen({ navigation }) {
       case 'school-type':     return true; // optional
       case 'love-language':   return loveLanguage !== null;
       case 'personality':     return initiator !== null && outgoing !== null;
+      case 'political-lean':  return true; // optional
       case 'community-goals': return communityGoals.length >= 1;
+      case 'denomination':    return true; // optional
       case 'church':          return true; // optional
       default:                return true;
     }
@@ -625,11 +870,13 @@ export default function OnboardingScreen({ navigation }) {
         p_church_id:     null,                    // curated directory not live yet
         p_city:          profile?.city ?? null,
         p_state:         profile?.state ?? null,
-        p_is_initiator:  initiator,
-        p_is_outgoing:   outgoing,
-        p_activities:    activities,
-        p_goals:         communityGoals,
-        p_values:        familyValues,
+        p_is_initiator:   initiator,
+        p_is_outgoing:    outgoing,
+        p_political_lean:  politicalLean,
+        p_denomination_id: denomination,
+        p_activities:      activities,
+        p_goals:          communityGoals,
+        p_values:         familyValues,
       });
       if (error) throw error;
 
@@ -704,11 +951,17 @@ export default function OnboardingScreen({ navigation }) {
             onSelectOutgoing={setOutgoing}
           />
         )}
+        {currentStepId === 'political-lean' && (
+          <StepPoliticalLean value={politicalLean} onChange={setPoliticalLean} />
+        )}
         {currentStepId === 'community-goals' && (
           <StepCommunityGoals selections={communityGoals} onToggle={toggle(setCommunityGoals)} />
         )}
         {currentStepId === 'church' && (
           <StepChurch />
+        )}
+        {currentStepId === 'denomination' && (
+          <StepDenomination selection={denomination} onSelect={setDenomination} />
         )}
         {currentStepId === 'reveal' && (
           <StepMatchReveal onFinish={handleFinish} busy={busy} />
