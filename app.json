@@ -148,9 +148,7 @@
         "backgroundColor": "#F7F4EF"
       },
       "package": "com.found.community",
-      "permissions": [
-        "android.permission.RECORD_AUDIO"
-      ]
+      "permissions": []
     },
     "web": {
       "favicon": "./assets/favicon.png"

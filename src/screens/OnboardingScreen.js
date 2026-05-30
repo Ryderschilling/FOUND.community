@@ -40,7 +40,7 @@ import {
 // School-type is conditionally inserted based on life stage answer.
 // Location is intentionally NOT here — it's captured once at signup (from the
 // ZIP) and never asked again.
-const BASE_STEPS = ['life-stage', 'activities', 'family-values', 'love-language', 'personality', 'political-lean', 'community-goals', 'church', 'denomination', 'reveal'];
+const BASE_STEPS = ['life-stage', 'activities', 'family-values', 'political-lean', 'love-language', 'personality', 'community-goals', 'church', 'denomination', 'reveal'];
 
 function buildSteps(lifeStage) {
   const steps = [...BASE_STEPS];

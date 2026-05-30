@@ -5,8 +5,8 @@
 // optimistic: the switch flips immediately, then persists; on failure the
 // switch reverts and an alert explains why.
 //
-// NOTE: these preferences persist, but push/email *delivery* is not wired
-// yet. The SettingsNote at the bottom says so honestly.
+// These preferences gate the DB triggers and push delivery. Users can also
+// silence everything at the OS level via device Settings > Notifications.
 // ─────────────────────────────────────────────────────────────────────────
 
 import React, { useEffect, useState, useCallback } from 'react';
@@ -98,9 +98,8 @@ export default function NotificationsScreen({ navigation }) {
       </SettingsGroup>
 
       <SettingsNote>
-        These preferences are saved to your account. Push and email delivery
-        are still being built — turning a toggle off now makes sure you won't
-        be notified once delivery goes live.
+        You can also manage FOUND notifications in your device Settings if you
+        want to silence all alerts at the system level.
       </SettingsNote>
     </SettingsScaffold>
   );
