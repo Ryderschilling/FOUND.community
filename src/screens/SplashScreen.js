@@ -1,111 +1,273 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useRef, useState, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, StatusBar, SafeAreaView, Image, Animated, Easing,
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  FlatList,
+  StatusBar,
+  SafeAreaView,
+  Image,
+  Dimensions,
+  Platform,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS } from '../theme';
-import { Wordmark, PrimaryButton, GhostButton } from '../components/Atoms';
+import { PrimaryButton, GhostButton, Wordmark } from '../components/Atoms';
 
-// FOUND brand mark — the official circle logo PNG (assets/brand-mark.png).
-// Single source of truth: the same file is used for the app icon and favicon.
-function FoundLogo({ size = 64 }) {
+const { width: SCREEN_W } = Dimensions.get('window');
+
+// ─── Slide definitions (from Sam's Welcome Screen spec, 2026-05-30) ──────────
+const SLIDES = [
+  {
+    id: 'welcome',
+    type: 'brand',
+    title: 'Welcome to FOUND',
+    body:
+      'We all need people to run with.\n\nFOUND is a Christian community app designed to help people build meaningful relationships rooted in faith, authenticity, and real-life connection. Whether you\u2019re new to town, looking for community, searching for a church, or simply hoping to meet like-minded people, FOUND helps you discover others nearby and build lasting friendships.\n\nOur mission is simple: to help people become fully known, deeply connected, and never do life alone.',
+  },
+  {
+    id: 'step1',
+    type: 'step',
+    step: 'Step 1',
+    title: 'Create Your Profile',
+    icon: 'person-circle-outline',
+    body: 'Tell your story. Add a photo, write a short bio, select your interests, and create your Highlight Reel. The more complete your profile, the easier it is for others to get to know you before you meet.',
+  },
+  {
+    id: 'step2',
+    type: 'step',
+    step: 'Step 2',
+    title: 'Discover People',
+    icon: 'compass-outline',
+    body: 'Explore people in your area who share similar interests, values, or life experiences. Whether you\u2019re new in town or simply looking to expand your community, there\u2019s someone waiting to meet you.',
+  },
+  {
+    id: 'step3',
+    type: 'step',
+    step: 'Step 3',
+    title: 'Connect',
+    icon: 'link-outline',
+    body: 'Send a connection request and start a conversation. Ask a question, share a common interest, or simply introduce yourself. Great friendships often begin with a simple message.',
+  },
+  {
+    id: 'step4',
+    type: 'step',
+    step: 'Step 4',
+    title: 'Meet Up',
+    icon: 'cafe-outline',
+    body: 'Take the next step. Grab coffee, go for a walk, catch some waves, invite someone to dinner, or join a local event. Community grows when people move beyond screens and into real life.',
+  },
+  {
+    id: 'step5',
+    type: 'step',
+    step: 'Step 5',
+    title: 'Do Life Together',
+    icon: 'people-outline',
+    body: 'The goal isn\u2019t more followers\u2014it\u2019s meaningful relationships. Build a community where people know you, encourage you, celebrate with you, and walk alongside you through life\u2019s highs and lows.',
+  },
+];
+
+const LAST_INDEX = SLIDES.length - 1;
+
+// ─── Brand slide ──────────────────────────────────────────────────────────────
+function BrandSlide({ item }) {
   return (
-    <Image
-      source={require('../../assets/brand-mark.png')}
-      style={{ width: size, height: size }}
-      resizeMode="contain"
-      accessibilityLabel="FOUND"
-    />
-  );
-}
-
-// ── Subtle entrance animation ────────────────────────────────────────────────
-// Each block fades in + slides up ~24px. Slight stagger (brand → hero → CTA)
-// gives a "welcome" feel without being heavy-handed. Native driver so it stays
-// smooth on lower-end devices.
-function useEntrance(delay = 0) {
-  const opacity   = useRef(new Animated.Value(0)).current;
-  const translate = useRef(new Animated.Value(24)).current;
-
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(opacity, {
-        toValue: 1,
-        duration: 650,
-        delay,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-      Animated.timing(translate, {
-        toValue: 0,
-        duration: 650,
-        delay,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [opacity, translate, delay]);
-
-  return { opacity, transform: [{ translateY: translate }] };
-}
-
-export default function SplashScreen({ navigation }) {
-  const brandAnim = useEntrance(0);
-  const heroAnim  = useEntrance(180);
-  const ctaAnim   = useEntrance(360);
-
-  return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
-
-      <View style={{ flex: 1 }} />
-
-      {/* Brand */}
-      <Animated.View style={[styles.brand, brandAnim]}>
-        <FoundLogo size={84} />
+    <View style={styles.slide}>
+      <View style={styles.brandTop}>
+        <Image
+          source={require('../../assets/brand-mark.png')}
+          style={styles.logo}
+          resizeMode="contain"
+          accessibilityLabel="FOUND"
+        />
         <Wordmark size="xl" />
         <View style={styles.badge}>
           <View style={styles.badgeDot} />
           <Text style={styles.badgeText}>Real. Christian. Community.</Text>
         </View>
-      </Animated.View>
+      </View>
+      <View style={styles.brandBody}>
+        <Text style={styles.slideTitle}>{item.title}</Text>
+        <Text style={styles.slideBody}>{item.body}</Text>
+      </View>
+    </View>
+  );
+}
 
-      {/* Hero copy — mirrors the found.community landing page */}
-      <Animated.View style={[styles.hero, heroAnim]}>
-        <Text style={styles.headline}>Find your people.</Text>
-        <Text style={styles.body}>
-          FOUND helps Christians discover like-minded people nearby who share
-          their faith, life stage, interests, and desire to go deeper.
-        </Text>
-        <Text style={styles.subtext}>Because we all need people to run with.</Text>
-      </Animated.View>
+// ─── Step slide ───────────────────────────────────────────────────────────────
+function StepSlide({ item, isLast }) {
+  return (
+    <View style={styles.slide}>
+      <View style={styles.stepIconWrap}>
+        <Ionicons name={item.icon} size={64} color={COLORS.sage} />
+      </View>
+      <View style={styles.stepBody}>
+        <Text style={styles.stepLabel}>{item.step}</Text>
+        <Text style={styles.slideTitle}>{item.title}</Text>
+        <Text style={styles.slideBody}>{item.body}</Text>
+        {isLast && (
+          <Text style={styles.closingLine}>Welcome to FOUND.{'\n'}Find Community.</Text>
+        )}
+      </View>
+    </View>
+  );
+}
 
-      <View style={{ flex: 1 }} />
+// ─── Pagination dots ──────────────────────────────────────────────────────────
+function Dots({ count, active }) {
+  return (
+    <View style={styles.dotsRow}>
+      {Array.from({ length: count }).map((_, i) => (
+        <View
+          key={i}
+          style={[styles.dot, i === active && styles.dotActive]}
+        />
+      ))}
+    </View>
+  );
+}
 
-      {/* CTAs */}
-      <Animated.View style={[styles.ctaWrap, ctaAnim]}>
-        <PrimaryButton label="Get Started" onPress={() => navigation.navigate('SignUp')} />
-        <GhostButton label="Already have an account? Sign in" onPress={() => navigation.navigate('SignIn')} />
-      </Animated.View>
+// ─── Main screen ──────────────────────────────────────────────────────────────
+export default function SplashScreen({ navigation }) {
+  const listRef = useRef(null);
+  const [activeIndex, setActiveIndex] = useState(0);
 
-      <View style={{ height: SPACING['2xl'] }} />
+  const isLast = activeIndex === LAST_INDEX;
+
+  const goTo = useCallback((index) => {
+    listRef.current?.scrollToIndex({ index, animated: true });
+  }, []);
+
+  const handleNext = useCallback(() => {
+    if (isLast) {
+      navigation.navigate('SignUp');
+    } else {
+      goTo(activeIndex + 1);
+    }
+  }, [isLast, activeIndex, goTo, navigation]);
+
+  const handleSkip = useCallback(() => {
+    goTo(LAST_INDEX);
+  }, [goTo]);
+
+  const onViewableItemsChanged = useRef(({ viewableItems }) => {
+    if (viewableItems.length > 0) {
+      setActiveIndex(viewableItems[0].index ?? 0);
+    }
+  }).current;
+
+  const viewabilityConfig = useRef({ viewAreaCoveragePercentThreshold: 50 }).current;
+
+  const renderItem = useCallback(({ item, index }) => {
+    if (item.type === 'brand') return <BrandSlide item={item} />;
+    return <StepSlide item={item} isLast={index === LAST_INDEX} />;
+  }, []);
+
+  const getItemLayout = useCallback((_, index) => ({
+    length: SCREEN_W,
+    offset: SCREEN_W * index,
+    index,
+  }), []);
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
+
+      {/* Skip button — hidden on last slide */}
+      <View style={styles.skipRow}>
+        {!isLast ? (
+          <TouchableOpacity onPress={handleSkip} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+            <Text style={styles.skipText}>Skip</Text>
+          </TouchableOpacity>
+        ) : (
+          <View /> // spacer
+        )}
+      </View>
+
+      {/* Carousel */}
+      <FlatList
+        ref={listRef}
+        data={SLIDES}
+        renderItem={renderItem}
+        keyExtractor={(item) => item.id}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        onViewableItemsChanged={onViewableItemsChanged}
+        viewabilityConfig={viewabilityConfig}
+        getItemLayout={getItemLayout}
+        style={styles.list}
+        bounces={false}
+      />
+
+      {/* Footer: dots + CTAs */}
+      <View style={styles.footer}>
+        <Dots count={SLIDES.length} active={activeIndex} />
+
+        {isLast ? (
+          // Last slide: full CTA pair
+          <View style={styles.ctaWrap}>
+            <PrimaryButton label="Get Started" onPress={() => navigation.navigate('SignUp')} />
+            <GhostButton
+              label="Already have an account? Sign in"
+              onPress={() => navigation.navigate('SignIn')}
+            />
+          </View>
+        ) : (
+          // Mid-slides: Next arrow button
+          <TouchableOpacity style={styles.nextBtn} onPress={handleNext} activeOpacity={0.8}>
+            <Text style={styles.nextLabel}>Next</Text>
+            <Ionicons name="arrow-forward" size={18} color={COLORS.bg} />
+          </TouchableOpacity>
+        )}
+      </View>
     </SafeAreaView>
   );
 }
 
-const H_PAD = SPACING.xl; // 32px — explicit, applied per-element so it can't be dropped
+// ─── Styles ───────────────────────────────────────────────────────────────────
+const H_PAD = SPACING.xl;
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.bg,
-    // NO paddingHorizontal here — applied per element below so it's guaranteed
   },
-  brand: {
-    alignItems: 'center',
-    gap: SPACING.md,
+  skipRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
     paddingHorizontal: H_PAD,
+    paddingTop: SPACING.md,
+    minHeight: 36,
   },
-  // "Real. Christian. Community." pill — matches the website badge
+  skipText: {
+    fontFamily: FONT.regular,
+    fontSize: 14,
+    color: COLORS.textSecondary,
+  },
+  list: {
+    flex: 1,
+  },
+
+  // ── Slide shell ────────────────────────────────────────────────────────────
+  slide: {
+    width: SCREEN_W,
+    flex: 1,
+    paddingHorizontal: H_PAD,
+    justifyContent: 'center',
+    gap: SPACING.lg,
+  },
+
+  // ── Brand slide ────────────────────────────────────────────────────────────
+  brandTop: {
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
+  logo: {
+    width: 72,
+    height: 72,
+  },
   badge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -130,37 +292,88 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     letterSpacing: 0.2,
   },
-  // Hero copy block — same words as found.community
-  hero: {
-    alignItems: 'center',
+  brandBody: {
     gap: SPACING.sm,
-    paddingHorizontal: H_PAD,
-    marginTop: SPACING.xl,
   },
-  headline: {
+
+  // ── Step slide ─────────────────────────────────────────────────────────────
+  stepIconWrap: {
+    alignItems: 'center',
+    paddingTop: SPACING.sm,
+  },
+  stepBody: {
+    gap: SPACING.xs,
+  },
+  stepLabel: {
+    fontFamily: FONT.medium,
+    fontSize: 12,
+    color: COLORS.sage,
+    textTransform: 'uppercase',
+    letterSpacing: 1.2,
+    marginBottom: 2,
+  },
+  closingLine: {
     fontFamily: FONT.serifItalic,
-    fontSize: 34,
+    fontSize: 20,
     color: COLORS.text,
-    textAlign: 'center',
-    letterSpacing: -0.5,
-    lineHeight: 40,
+    lineHeight: 28,
+    marginTop: SPACING.md,
   },
-  body: {
+
+  // ── Shared text ────────────────────────────────────────────────────────────
+  slideTitle: {
+    fontFamily: FONT.serifItalic,
+    fontSize: 28,
+    color: COLORS.text,
+    letterSpacing: -0.3,
+    lineHeight: 34,
+  },
+  slideBody: {
     fontFamily: FONT.regular,
-    fontSize: 15.5,
+    fontSize: 15,
     color: COLORS.textSecondary,
-    textAlign: 'center',
     lineHeight: 24,
   },
-  subtext: {
-    fontFamily: FONT.regular,
-    fontSize: 14,
-    color: COLORS.textTertiary,
-    textAlign: 'center',
-    marginTop: 2,
+
+  // ── Footer ─────────────────────────────────────────────────────────────────
+  footer: {
+    paddingHorizontal: H_PAD,
+    paddingBottom: Platform.OS === 'android' ? SPACING.xl : SPACING.lg,
+    gap: SPACING.lg,
+    alignItems: 'center',
+  },
+  dotsRow: {
+    flexDirection: 'row',
+    gap: 6,
+    alignItems: 'center',
+  },
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: COLORS.border,
+  },
+  dotActive: {
+    width: 20,
+    borderRadius: 3,
+    backgroundColor: COLORS.sage,
   },
   ctaWrap: {
     gap: SPACING.md,
-    marginHorizontal: H_PAD,
+    alignSelf: 'stretch',
+  },
+  nextBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: COLORS.text,
+    paddingVertical: 12,
+    paddingHorizontal: 28,
+    borderRadius: RADIUS.full,
+  },
+  nextLabel: {
+    fontFamily: FONT.medium,
+    fontSize: 15,
+    color: COLORS.bg,
   },
 });
