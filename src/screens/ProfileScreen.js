@@ -455,27 +455,39 @@ function HighlightReel({ photos = [], onAdd, onView, onDelete, busyIndex = -1 })
 // Tap the backdrop or the close button to dismiss.
 // Image is letterboxed (resizeMode contain) so portrait + landscape both fit.
 function PhotoLightbox({ photo, onClose }) {
-  const { width, height } = Dimensions.get('window');
+  const { width: winW, height: winH } = useWindowDimensions();
   return (
     <Modal
       visible={!!photo}
       transparent
       animationType="fade"
       onRequestClose={onClose}
+      statusBarTranslucent
     >
-      <View style={styles.lightboxRoot}>
-        {/* Backdrop — tap to close */}
-        <TouchableOpacity
-          activeOpacity={1}
-          style={StyleSheet.absoluteFill}
-          onPress={onClose}
-        />
+      <View style={[styles.lightboxRoot, { width: winW, height: winH }]}>
         {photo ? (
-          <Image
-            source={{ uri: photo.url }}
-            style={{ width: width * 0.95, height: height * 0.85 }}
-            resizeMode="contain"
-          />
+          /* Inner ScrollView gives pinch-to-zoom + pan when zoomed */
+          <ScrollView
+            style={{ width: winW, height: winH }}
+            contentContainerStyle={{
+              width: winW,
+              height: winH,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+            maximumZoomScale={5}
+            minimumZoomScale={1}
+            bouncesZoom
+            centerContent
+            showsHorizontalScrollIndicator={false}
+            showsVerticalScrollIndicator={false}
+          >
+            <Image
+              source={{ uri: photo.url }}
+              style={{ width: winW, height: winH * 0.88 }}
+              resizeMode="contain"
+            />
+          </ScrollView>
         ) : null}
         <TouchableOpacity
           style={styles.lightboxClose}

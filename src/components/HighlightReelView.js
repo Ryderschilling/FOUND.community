@@ -16,6 +16,7 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import {
   View,
+  Text,
   Image,
   ScrollView,
   TouchableOpacity,
@@ -27,7 +28,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { COLORS, RADIUS, SPACING } from '../theme';
+import { COLORS, FONT, RADIUS, SPACING } from '../theme';
 
 const REEL_GAP      = 12;
 const REEL_FADE     = 100;
@@ -147,16 +148,29 @@ export default function HighlightReelView({ photos = [], sideInset = SPACING.lg 
   );
 }
 
+// ── PhotoLightbox ─────────────────────────────────────────────────────────────
+// Full-screen photo viewer with:
+//   - Swipe left/right to navigate between photos (outer paginated ScrollView)
+//   - Pinch-to-zoom on each photo (inner per-photo ScrollView with maximumZoomScale)
+//   - Photo counter pill at bottom
+//   - Close button top-right
+//   - Web: keyboard arrow + Escape navigation
 function PhotoLightbox({ photos, index, onClose, onNav }) {
-  const { width, height } = Dimensions.get('window');
+  const { width: winW, height: winH } = useWindowDimensions();
   const visible = index !== null && index !== undefined;
-  const photo = visible ? photos[index] : null;
-  const hasPrev = visible && index > 0;
-  const hasNext = visible && index < photos.length - 1;
+  const outerRef = useRef(null);
 
-  // Keyboard arrow navigation on web
+  // Sync the pager to the externally-controlled index (e.g. keyboard arrows on web)
+  useEffect(() => {
+    if (!visible || !outerRef.current) return;
+    outerRef.current.scrollTo({ x: (index ?? 0) * winW, animated: false });
+  }, [index, visible]);
+
+  // Keyboard navigation on web
   useEffect(() => {
     if (Platform.OS !== 'web' || !visible) return;
+    const hasPrev = index > 0;
+    const hasNext = index < photos.length - 1;
     const handleKey = (e) => {
       if (e.key === 'ArrowLeft'  && hasPrev) onNav(index - 1);
       if (e.key === 'ArrowRight' && hasNext) onNav(index + 1);
@@ -164,45 +178,60 @@ function PhotoLightbox({ photos, index, onClose, onNav }) {
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [visible, index, hasPrev, hasNext]);
+  }, [visible, index, photos.length]);
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.lightboxRoot}>
-        {/* Tap backdrop to close */}
-        <TouchableOpacity activeOpacity={1} style={StyleSheet.absoluteFill} onPress={onClose} />
+    <Modal visible={!!visible} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
+      <View style={[styles.lightboxRoot, { width: winW, height: winH }]}>
 
-        {photo ? (
-          <Image
-            source={{ uri: photo.url }}
-            style={{ width: width * 0.95, height: height * 0.85 }}
-            resizeMode="contain"
-          />
-        ) : null}
+        {/* ── Outer paginated scroll — swipe left/right to navigate ── */}
+        <ScrollView
+          ref={outerRef}
+          horizontal
+          pagingEnabled
+          scrollEventThrottle={16}
+          showsHorizontalScrollIndicator={false}
+          onMomentumScrollEnd={(e) => {
+            const newIdx = Math.round(e.nativeEvent.contentOffset.x / winW);
+            if (newIdx !== index) onNav(newIdx);
+          }}
+          style={{ width: winW, height: winH }}
+        >
+          {photos.map((photo) => (
+            // ── Inner per-photo scroll — pinch-to-zoom + pan when zoomed ──
+            <ScrollView
+              key={photo.id}
+              style={{ width: winW, height: winH }}
+              contentContainerStyle={{
+                width: winW,
+                height: winH,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+              maximumZoomScale={5}
+              minimumZoomScale={1}
+              bouncesZoom
+              centerContent
+              showsHorizontalScrollIndicator={false}
+              showsVerticalScrollIndicator={false}
+            >
+              <Image
+                source={{ uri: photo.url }}
+                style={{ width: winW, height: winH * 0.88 }}
+                resizeMode="contain"
+              />
+            </ScrollView>
+          ))}
+        </ScrollView>
 
-        {/* Prev arrow */}
-        {hasPrev && (
-          <TouchableOpacity
-            style={[styles.lightboxArrow, styles.lightboxArrowLeft]}
-            activeOpacity={0.8}
-            onPress={() => onNav(index - 1)}
-          >
-            <Ionicons name="chevron-back" size={26} color="#fff" />
-          </TouchableOpacity>
+        {/* ── Photo counter ── */}
+        {photos.length > 1 && (
+          <View style={styles.lightboxCounter} pointerEvents="none">
+            <Text style={styles.lightboxCounterText}>{(index ?? 0) + 1} / {photos.length}</Text>
+          </View>
         )}
 
-        {/* Next arrow */}
-        {hasNext && (
-          <TouchableOpacity
-            style={[styles.lightboxArrow, styles.lightboxArrowRight]}
-            activeOpacity={0.8}
-            onPress={() => onNav(index + 1)}
-          >
-            <Ionicons name="chevron-forward" size={26} color="#fff" />
-          </TouchableOpacity>
-        )}
-
-        {/* Close */}
+        {/* ── Close button ── */}
         <TouchableOpacity style={styles.lightboxClose} activeOpacity={0.8} onPress={onClose}>
           <Ionicons name="close" size={22} color="#fff" />
         </TouchableOpacity>
@@ -248,30 +277,35 @@ const styles = StyleSheet.create({
   arrowRight: { right: 24 },
 
   lightboxRoot: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.92)',
+    backgroundColor: '#000',
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
   lightboxClose: {
     position: 'absolute',
-    top: 40, right: 20,
+    top: 48, right: 20,
     width: 40, height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: 'rgba(0,0,0,0.55)',
     alignItems: 'center',
     justifyContent: 'center',
+    zIndex: 10,
   },
-  lightboxArrow: {
+  lightboxCounter: {
     position: 'absolute',
-    top: '50%',
-    marginTop: -28,
-    width: 56, height: 56,
-    borderRadius: 28,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    alignItems: 'center',
-    justifyContent: 'center',
+    bottom: 48,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    zIndex: 10,
   },
-  lightboxArrowLeft:  { left:  16 },
-  lightboxArrowRight: { right: 16 },
+  lightboxCounterText: {
+    color: '#fff',
+    fontFamily: FONT.semiBold,
+    fontSize: 13,
+    letterSpacing: 0.3,
+  },
 });

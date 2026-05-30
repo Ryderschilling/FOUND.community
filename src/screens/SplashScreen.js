@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS } from '../theme';
 import { PrimaryButton, GhostButton, Wordmark } from '../components/Atoms';
 
+// Static fallback — overridden by onLayout once the FlatList renders
 const { width: SCREEN_W } = Dimensions.get('window');
 
 // ─── Slide definitions (from Sam's Welcome Screen spec, 2026-05-30) ──────────
@@ -72,10 +73,10 @@ const SLIDES = [
 const LAST_INDEX = SLIDES.length - 1;
 
 // ─── Brand slide ──────────────────────────────────────────────────────────────
-function BrandSlide({ item }) {
+function BrandSlide({ item, width, height }) {
   return (
     <ScrollView
-      style={styles.slideScroll}
+      style={[styles.slideScroll, { width, height: height || undefined }]}
       contentContainerStyle={styles.brandScrollContent}
       showsVerticalScrollIndicator={false}
     >
@@ -93,17 +94,17 @@ function BrandSlide({ item }) {
         </View>
       </View>
       <View style={styles.brandBody}>
-        <Text style={styles.slideTitle}>{item.title}</Text>
-        <Text style={styles.slideBody}>{item.body}</Text>
+        <Text style={[styles.slideTitle, styles.slideTitleCenter]}>{item.title}</Text>
+        <Text style={[styles.slideBody,  styles.slideBodyCenter]}>{item.body}</Text>
       </View>
     </ScrollView>
   );
 }
 
 // ─── Step slide ───────────────────────────────────────────────────────────────
-function StepSlide({ item, isLast }) {
+function StepSlide({ item, isLast, width, height }) {
   return (
-    <View style={styles.slide}>
+    <View style={[styles.slide, { width, height: height || undefined }]}>
       <View style={styles.stepIconWrap}>
         <Ionicons name={item.icon} size={64} color={COLORS.text} />
       </View>
@@ -137,6 +138,10 @@ function Dots({ count, active }) {
 export default function SplashScreen({ navigation }) {
   const listRef = useRef(null);
   const [activeIndex, setActiveIndex] = useState(0);
+  // Real width of the FlatList container — starts with Dimensions fallback,
+  // updated by onLayout so it reflects the actual app frame on web too.
+  const [listWidth,  setListWidth]  = useState(SCREEN_W);
+  const [listHeight, setListHeight] = useState(0);
 
   const isLast = activeIndex === LAST_INDEX;
 
@@ -165,15 +170,15 @@ export default function SplashScreen({ navigation }) {
   const viewabilityConfig = useRef({ viewAreaCoveragePercentThreshold: 50 }).current;
 
   const renderItem = useCallback(({ item, index }) => {
-    if (item.type === 'brand') return <BrandSlide item={item} />;
-    return <StepSlide item={item} isLast={index === LAST_INDEX} />;
-  }, []);
+    if (item.type === 'brand') return <BrandSlide item={item} width={listWidth} height={listHeight} />;
+    return <StepSlide item={item} isLast={index === LAST_INDEX} width={listWidth} height={listHeight} />;
+  }, [listWidth, listHeight]);
 
   const getItemLayout = useCallback((_, index) => ({
-    length: SCREEN_W,
-    offset: SCREEN_W * index,
+    length: listWidth,
+    offset: listWidth * index,
     index,
-  }), []);
+  }), [listWidth]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -204,6 +209,10 @@ export default function SplashScreen({ navigation }) {
         getItemLayout={getItemLayout}
         style={styles.list}
         bounces={false}
+        onLayout={(e) => {
+          setListWidth(e.nativeEvent.layout.width);
+          setListHeight(e.nativeEvent.layout.height);
+        }}
       />
 
       {/* Footer: dots + CTAs */}
@@ -256,18 +265,17 @@ const styles = StyleSheet.create({
   },
 
   // ── Slide shell ────────────────────────────────────────────────────────────
+  // width is injected as an inline prop — measured from FlatList onLayout.
+  // height:'100%' is required because flex:1 doesn't fill the cross-axis in
+  // a horizontal FlatList on RN Web, so justifyContent:'center' had nothing
+  // to center against.
   slide: {
-    width: SCREEN_W,
-    flex: 1,
     paddingHorizontal: H_PAD,
     justifyContent: 'center',
     gap: SPACING.lg,
   },
   // Brand slide uses a ScrollView so long body text doesn't bleed under footer
-  slideScroll: {
-    width: SCREEN_W,
-    flex: 1,
-  },
+  slideScroll: {},
   brandScrollContent: {
     paddingHorizontal: H_PAD,
     paddingTop: SPACING.xl,
@@ -310,6 +318,7 @@ const styles = StyleSheet.create({
   },
   brandBody: {
     gap: SPACING.sm,
+    alignItems: 'center',
   },
 
   // ── Step slide ─────────────────────────────────────────────────────────────
@@ -319,6 +328,7 @@ const styles = StyleSheet.create({
   },
   stepBody: {
     gap: SPACING.xs,
+    alignItems: 'center',
   },
   stepLabel: {
     fontFamily: FONT.medium,
@@ -327,6 +337,7 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 1.2,
     marginBottom: 2,
+    textAlign: 'center',
   },
   closingLine: {
     fontFamily: FONT.serifItalic,
@@ -334,6 +345,7 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     lineHeight: 28,
     marginTop: SPACING.md,
+    textAlign: 'center',
   },
 
   // ── Shared text ────────────────────────────────────────────────────────────
@@ -343,13 +355,18 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     letterSpacing: -0.3,
     lineHeight: 34,
+    textAlign: 'center',
   },
   slideBody: {
     fontFamily: FONT.regular,
     fontSize: 15,
     color: COLORS.textSecondary,
     lineHeight: 24,
+    textAlign: 'center',
   },
+  // Brand-slide-only overrides
+  slideTitleCenter: { textAlign: 'center' },
+  slideBodyCenter:  { textAlign: 'center' },
 
   // ── Footer ─────────────────────────────────────────────────────────────────
   footer: {

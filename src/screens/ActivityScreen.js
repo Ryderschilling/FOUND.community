@@ -379,7 +379,7 @@ export default function ActivityScreen({ navigation }) {
       <View style={styles.pageHeader}>
         <View>
           <Text style={styles.headerMeta}>Your Inbox</Text>
-          <Wordmark size="md" label="Community" />
+          <Wordmark size="md" label="FOUND" />
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           {rows.length > 0 ? (

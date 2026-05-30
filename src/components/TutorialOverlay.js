@@ -35,32 +35,6 @@ const { width: SW, height: SH } = Dimensions.get('window');
 // arrowDir   : 'up' | 'down' | 'none'
 // miniSteps  : optional — renders a compact numbered list instead of body text
 const STEPS = [
-  // ── About section ─────────────────────────────────────────────────────────
-  {
-    id: 'welcome',
-    title: 'We all need people to run with.',
-    body: 'FOUND connects you with Christians nearby who share your life stage, interests, and desire for real community.',
-    refKey: null,
-    tabIndex: null,
-    tooltipPos: 'center',
-    arrowDir: 'none',
-  },
-  {
-    id: 'how_it_works',
-    title: 'How FOUND works',
-    body: null,
-    miniSteps: [
-      { num: '01', label: 'Create Your Profile',  desc: 'Photo, bio, interests, life stage.' },
-      { num: '02', label: 'Discover People',       desc: 'Browse Christians in your area.' },
-      { num: '03', label: 'Connect',               desc: 'Reach out — if they connect back, you match.' },
-      { num: '04', label: 'Meet Up',               desc: 'Coffee, a walk, an event — real life.' },
-      { num: '05', label: 'Do Life Together',       desc: 'Build the community you were made for.' },
-    ],
-    refKey: null,
-    tabIndex: null,
-    tooltipPos: 'center',
-    arrowDir: 'none',
-  },
   // ── Interactive coach marks ────────────────────────────────────────────────
   {
     id: 'location',
@@ -103,7 +77,7 @@ const STEPS = [
     title: 'Activity',
     body: "See everyone who's reached out to you. Accept or pass — your call.",
     refKey: null,
-    tabIndex: 2,
+    tabIndex: 1,
     tooltipPos: 'above',
     arrowDir: 'down',
   },
@@ -112,7 +86,7 @@ const STEPS = [
     title: 'Messages',
     body: 'Once you match with someone, start a conversation here.',
     refKey: null,
-    tabIndex: 3,
+    tabIndex: 2,
     tooltipPos: 'above',
     arrowDir: 'down',
   },

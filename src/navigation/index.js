@@ -68,12 +68,14 @@ const Stack = createNativeStackNavigator();
 const Tab   = createBottomTabNavigator();
 
 // ── Tab config ────────────────────────────────────────────────────
+// Activity tab uses brandMark image instead of an Ionicons icon.
+// Set icon/iconActive to null to signal the image path in TabItem.
 const TABS = [
-  { name: 'Discover', icon: 'compass',       iconActive: 'compass',       label: 'Discover' },
-  { name: 'Groups',   icon: 'people',        iconActive: 'people',        label: 'Groups'   },
-  { name: 'Activity', icon: 'notifications', iconActive: 'notifications', label: 'Community' },
-  { name: 'Messages', icon: 'chatbubble',    iconActive: 'chatbubble',    label: 'Messages' },
-  { name: 'Profile',  icon: 'person',        iconActive: 'person',        label: 'Profile'  },
+  { name: 'Discover', icon: 'compass',   iconActive: 'compass',   label: 'Discover' },
+  { name: 'Activity', icon: null,        iconActive: null,        label: 'FOUND'    },
+  { name: 'Messages', icon: 'chatbubble', iconActive: 'chatbubble', label: 'Messages' },
+  { name: 'Groups',   icon: 'people',    iconActive: 'people',    label: 'Groups'   },
+  { name: 'Profile',  icon: 'person',    iconActive: 'person',    label: 'Profile'  },
 ];
 
 // ── Unread counts hook (Activity + Messages) ─────────────────────
@@ -121,11 +123,23 @@ function TabItem({ tab, focused, badgeCount, onPress }) {
       style={styles.tabItem}
     >
       <Animated.View style={iconBounce}>
-        <Ionicons
-          name={focused ? tab.iconActive : `${tab.icon}-outline`}
-          size={21}
-          color={focused ? COLORS.tabActive : COLORS.tabInactive}
-        />
+        {tab.icon === null ? (
+          // FOUND tab — "F." text mark, sized to match Ionicons visually
+          <Text style={{
+            fontFamily: FONT.bold,
+            fontSize: 18,
+            lineHeight: 21,
+            letterSpacing: -0.5,
+            color: focused ? COLORS.tabActive : COLORS.tabInactive,
+            includeFontPadding: false,
+          }}>F.</Text>
+        ) : (
+          <Ionicons
+            name={focused ? tab.iconActive : `${tab.icon}-outline`}
+            size={21}
+            color={focused ? COLORS.tabActive : COLORS.tabInactive}
+          />
+        )}
         {badgeCount > 0 ? (
           <Animated.View style={[styles.tabBadge, badgePulse]}>
             <Text style={styles.tabBadgeText}>
@@ -260,9 +274,9 @@ function MainTabNavigator() {
       screenOptions={{ headerShown: false }}
     >
       <Tab.Screen name="Discover" component={HomeScreen}     />
-      <Tab.Screen name="Groups"   component={GroupsScreen}   />
       <Tab.Screen name="Activity" component={ActivityScreen} />
       <Tab.Screen name="Messages" component={MessagesScreen} />
+      <Tab.Screen name="Groups"   component={GroupsScreen}   />
       <Tab.Screen name="Profile"  component={ProfileScreen}  />
     </Tab.Navigator>
   );
