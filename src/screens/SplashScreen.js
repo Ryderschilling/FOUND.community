@@ -8,6 +8,7 @@ import {
   StatusBar,
   SafeAreaView,
   Image,
+  ScrollView,
   Dimensions,
   Platform,
 } from 'react-native';
@@ -73,7 +74,11 @@ const LAST_INDEX = SLIDES.length - 1;
 // ─── Brand slide ──────────────────────────────────────────────────────────────
 function BrandSlide({ item }) {
   return (
-    <View style={styles.slide}>
+    <ScrollView
+      style={styles.slideScroll}
+      contentContainerStyle={styles.brandScrollContent}
+      showsVerticalScrollIndicator={false}
+    >
       <View style={styles.brandTop}>
         <Image
           source={require('../../assets/brand-mark.png')}
@@ -91,7 +96,7 @@ function BrandSlide({ item }) {
         <Text style={styles.slideTitle}>{item.title}</Text>
         <Text style={styles.slideBody}>{item.body}</Text>
       </View>
-    </View>
+    </ScrollView>
   );
 }
 
@@ -100,7 +105,7 @@ function StepSlide({ item, isLast }) {
   return (
     <View style={styles.slide}>
       <View style={styles.stepIconWrap}>
-        <Ionicons name={item.icon} size={64} color={COLORS.sage} />
+        <Ionicons name={item.icon} size={64} color={COLORS.text} />
       </View>
       <View style={styles.stepBody}>
         <Text style={styles.stepLabel}>{item.step}</Text>
@@ -258,6 +263,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: SPACING.lg,
   },
+  // Brand slide uses a ScrollView so long body text doesn't bleed under footer
+  slideScroll: {
+    width: SCREEN_W,
+    flex: 1,
+  },
+  brandScrollContent: {
+    paddingHorizontal: H_PAD,
+    paddingTop: SPACING.xl,
+    paddingBottom: SPACING.xl,
+    gap: SPACING.lg,
+  },
 
   // ── Brand slide ────────────────────────────────────────────────────────────
   brandTop: {
@@ -284,7 +300,7 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: COLORS.sage,
+    backgroundColor: COLORS.text,
   },
   badgeText: {
     fontFamily: FONT.regular,
@@ -307,7 +323,7 @@ const styles = StyleSheet.create({
   stepLabel: {
     fontFamily: FONT.medium,
     fontSize: 12,
-    color: COLORS.sage,
+    color: '#B5A090',
     textTransform: 'uppercase',
     letterSpacing: 1.2,
     marginBottom: 2,
@@ -356,7 +372,7 @@ const styles = StyleSheet.create({
   dotActive: {
     width: 20,
     borderRadius: 3,
-    backgroundColor: COLORS.sage,
+    backgroundColor: COLORS.text,
   },
   ctaWrap: {
     gap: SPACING.md,
