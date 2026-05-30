@@ -511,6 +511,7 @@ export default function ProfileScreen({ navigation }) {
   const [stats, setStats]         = useState({ matches: null, connections: null, groups: null });
   const [loading, setLoading]     = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [visibilityBusy, setVisibilityBusy] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [photos, setPhotos]       = useState([]);
   const [photoBusyIdx, setPhotoBusyIdx] = useState(-1);
@@ -527,7 +528,7 @@ export default function ProfileScreen({ navigation }) {
       const profileQ = supabase
         .from('profiles')
         .select(`
-          id, full_name, handle, bio, hometown, city, state, is_initiator, is_outgoing, avatar_url,
+          id, full_name, handle, bio, hometown, city, state, is_initiator, is_outgoing, avatar_url, is_visible,
           life_stage:life_stages(id,label,icon,icon_color),
           church:churches(id,name,city,state),
           profile_activities(activity:activities(id,label,icon,icon_color))
@@ -705,6 +706,30 @@ export default function ProfileScreen({ navigation }) {
     if (ok) doDelete(photo);
   }
 
+  // ── Visibility toggle ──────────────────────────────────────────────────
+  async function handleToggleVisibility() {
+    if (visibilityBusy || !profile) return;
+    const next = !profile.is_visible;
+    // Optimistic update
+    setProfile((prev) => prev ? { ...prev, is_visible: next } : prev);
+    setVisibilityBusy(true);
+    const { error } = await supabase.rpc('set_profile_visibility', { p_visible: next });
+    setVisibilityBusy(false);
+    if (error) {
+      // Revert on failure
+      setProfile((prev) => prev ? { ...prev, is_visible: !next } : prev);
+      toast({ title: 'Could not update visibility', message: error.message || 'Try again.', type: 'error' });
+    } else {
+      toast({
+        title: next ? 'Profile visible' : 'Profile hidden',
+        message: next
+          ? 'You\'re back in Discover.'
+          : 'You\'re hidden from Discover. Your connections and messages are unaffected.',
+        type: 'info',
+      });
+    }
+  }
+
   // Open the dedicated Edit Profile screen.
   function handleEditProfile() {
     navigation?.navigate('EditProfile');
@@ -766,9 +791,37 @@ export default function ProfileScreen({ navigation }) {
           <Text style={styles.headerMeta}>Your Account</Text>
           <Wordmark size="md" label="Profile" />
         </View>
-        <IconButton onPress={handleEditProfile}>
-          <Ionicons name="create-outline" size={18} color={COLORS.text} />
-        </IconButton>
+        <View style={styles.headerActions}>
+          {/* Visibility toggle pill */}
+          <TouchableOpacity
+            style={[
+              styles.visibilityPill,
+              profile?.is_visible === false && styles.visibilityPillHidden,
+            ]}
+            onPress={handleToggleVisibility}
+            disabled={visibilityBusy}
+            activeOpacity={0.75}
+          >
+            {visibilityBusy ? (
+              <ActivityIndicator size="small" color={profile?.is_visible ? COLORS.sage : COLORS.textTertiary} />
+            ) : (
+              <Ionicons
+                name={profile?.is_visible === false ? 'eye-off-outline' : 'eye-outline'}
+                size={14}
+                color={profile?.is_visible === false ? COLORS.textTertiary : COLORS.sage}
+              />
+            )}
+            <Text style={[
+              styles.visibilityPillText,
+              profile?.is_visible === false && styles.visibilityPillTextHidden,
+            ]}>
+              {profile?.is_visible === false ? 'Hidden' : 'Visible'}
+            </Text>
+          </TouchableOpacity>
+          <IconButton onPress={handleEditProfile}>
+            <Ionicons name="create-outline" size={18} color={COLORS.text} />
+          </IconButton>
+        </View>
       </View>
 
       <ScrollView
@@ -1015,6 +1068,35 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.lg,
     paddingTop: SPACING.lg,
     paddingBottom: SPACING.lg,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
+  visibilityPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: COLORS.sage,
+    backgroundColor: COLORS.sageBg,
+  },
+  visibilityPillHidden: {
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surface,
+  },
+  visibilityPillText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 12,
+    color: COLORS.sage,
+    letterSpacing: 0.2,
+  },
+  visibilityPillTextHidden: {
+    color: COLORS.textTertiary,
   },
   headerMeta: {
     fontFamily: FONT.mono,
