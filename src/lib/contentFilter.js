@@ -10,13 +10,9 @@
 // actually handles a determined bad actor. A wordlist can always be
 // evaded; the point here is to stop casual abuse at the input.
 //
-// Design choice: the list is deliberately conservative. A false
-// positive (blocking a real word an honest user typed) is worse than a
-// missed evasion that report/block will catch anyway. Mild profanity
-// (damn, hell, crap) is intentionally NOT blocked.
 // ─────────────────────────────────────────────────────────────────
 
-// Slurs, explicit sexual language, and strong profanity. Kept focused
+// Slurs, explicit sexual language, and profanity. Kept focused
 // to minimise false positives.
 const BLOCKED = [
   // racial / ethnic slurs
@@ -29,8 +25,10 @@ const BLOCKED = [
   // explicit sexual terms
   'cunt', 'whore', 'slut', 'porn', 'rape', 'rapist', 'blowjob', 'handjob',
   'dildo', 'pedophile', 'pedo', 'molest', 'bestiality', 'incest', 'jizz',
+  'pussy',
   // strong profanity
   'fuck', 'motherfucker', 'asshole', 'bullshit', 'bastard', 'bitch',
+  'shit', 'damn', 'dammit', 'piss',
 ];
 
 // Leet / obfuscation normalisation, so "f4ggot" or "n1gger" are still

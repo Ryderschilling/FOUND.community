@@ -1,21 +1,28 @@
 {
   "cli": {
     "version": ">= 12.0.0",
-    "appVersionSource": "remote"
+    "appVersionSource": "remote",
+    "promptToConfigurePushNotifications": false
   },
   "build": {
     "development": {
       "developmentClient": true,
       "distribution": "internal",
-      "ios": { "simulator": true }
+      "ios": {
+        "simulator": true
+      }
     },
     "preview": {
       "distribution": "internal",
-      "ios": { "simulator": false }
+      "ios": {
+        "simulator": false
+      }
     },
     "production": {
       "autoIncrement": true,
-      "ios": { "simulator": false }
+      "ios": {
+        "simulator": false
+      }
     }
   },
   "submit": {

@@ -192,6 +192,9 @@ function PhotoLightbox({ photos, index, onClose, onNav }) {
           scrollEventThrottle={16}
           showsHorizontalScrollIndicator={false}
           onMomentumScrollEnd={(e) => {
+            // Guard: scroll momentum can fire after close and re-open the modal.
+            // If index is null/undefined the lightbox is already closed — bail.
+            if (index === null || index === undefined) return;
             const newIdx = Math.round(e.nativeEvent.contentOffset.x / winW);
             if (newIdx !== index) onNav(newIdx);
           }}
@@ -231,9 +234,14 @@ function PhotoLightbox({ photos, index, onClose, onNav }) {
           </View>
         )}
 
-        {/* ── Close button ── */}
-        <TouchableOpacity style={styles.lightboxClose} activeOpacity={0.8} onPress={onClose}>
-          <Ionicons name="close" size={22} color="#fff" />
+        {/* ── Close button — hitSlop extends tap area so it's easy to hit ── */}
+        <TouchableOpacity
+          style={styles.lightboxClose}
+          activeOpacity={0.8}
+          onPress={onClose}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+        >
+          <Ionicons name="close" size={24} color="#fff" />
         </TouchableOpacity>
       </View>
     </Modal>

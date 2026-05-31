@@ -16,6 +16,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, FONT, SPACING } from '../theme';
 import PersonCard from '../components/PersonCard';
 import InboundStrip from '../components/InboundStrip';
@@ -140,6 +141,7 @@ function bioIsEmpty(p) {
 export default function HomeScreen({ navigation }) {
   const { user, profile } = useAuth();
   const { count: notifCount } = useUnreadNotifications(user?.id, 'home');
+  const insets = useSafeAreaInsets();
 
   const [activeFilter, setActiveFilter] = useState('all');
   const [query, setQuery]               = useState('');
@@ -168,9 +170,11 @@ export default function HomeScreen({ navigation }) {
   const profileRef        = useRef(profile);  // latest profile for the timeout closure
   const bioPromptShownRef = useRef(false);    // once-per-session guard
 
-  const headerTranslate = useRef(new Animated.Value(0)).current;
-  const lastScrollY     = useRef(0);
-  const headerVisible   = useRef(true);
+  const headerTranslate  = useRef(new Animated.Value(0)).current;
+  const lastScrollY      = useRef(0);
+  const headerVisible    = useRef(true);
+  const scrollUpAccum    = useRef(0);   // accumulated upward px since last hide
+  const scrollDownAccum  = useRef(0);   // accumulated downward px since last show
 
   // ── First-time tutorial ─────────────────────────────────────────────────
   const [showTutorial, setShowTutorial] = useState(false);
@@ -392,20 +396,36 @@ export default function HomeScreen({ navigation }) {
     const y    = nativeEvent.contentOffset.y;
     const diff = y - lastScrollY.current;
 
-    if (diff > 6 && headerVisible.current) {
-      headerVisible.current = false;
-      Animated.timing(headerTranslate, {
-        toValue: -HEADER_HEIGHT,
-        duration: 220,
-        useNativeDriver: true,
-      }).start();
-    } else if (diff < -6 && !headerVisible.current) {
-      headerVisible.current = true;
-      Animated.timing(headerTranslate, {
-        toValue: 0,
-        duration: 220,
-        useNativeDriver: true,
-      }).start();
+    if (diff > 0) {
+      // Scrolling down — only hide if we're past the top zone (avoids hiding on tiny bounces)
+      scrollUpAccum.current = 0;
+      if (headerVisible.current && y > 40) {
+        scrollDownAccum.current += diff;
+        if (scrollDownAccum.current >= 30) {
+          scrollDownAccum.current = 0;
+          headerVisible.current = false;
+          Animated.timing(headerTranslate, {
+            toValue: -HEADER_HEIGHT,
+            duration: 260,
+            useNativeDriver: true,
+          }).start();
+        }
+      }
+    } else if (diff < 0) {
+      // Scrolling up — accumulate; show after 40px of intentional upward scroll
+      scrollDownAccum.current = 0;
+      if (!headerVisible.current) {
+        scrollUpAccum.current += Math.abs(diff);
+        if (scrollUpAccum.current >= 40) {
+          scrollUpAccum.current = 0;
+          headerVisible.current = true;
+          Animated.timing(headerTranslate, {
+            toValue: 0,
+            duration: 220,
+            useNativeDriver: true,
+          }).start();
+        }
+      }
     }
 
     lastScrollY.current = y;
@@ -649,7 +669,7 @@ export default function HomeScreen({ navigation }) {
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
 
       {/* ── Sticky header — absolutely positioned so it floats above the list ── */}
-      <Animated.View style={[styles.header, { transform: [{ translateY: headerTranslate }] }]}>
+      <Animated.View style={[styles.header, { top: insets.top, paddingTop: SPACING.sm, transform: [{ translateY: headerTranslate }] }]}>
         <View>
           <Text style={styles.headerMeta}>30A Area · Friday</Text>
           <Wordmark size="md" />
@@ -698,7 +718,7 @@ export default function HomeScreen({ navigation }) {
             />
           )
         )}
-        contentContainerStyle={styles.list}
+        contentContainerStyle={[styles.list, { paddingTop: HEADER_HEIGHT }]}
         ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
         showsVerticalScrollIndicator={false}
         onScroll={handleScroll}

@@ -160,12 +160,13 @@ function ActivityRow({ row, onAccept, onDismiss, onOpen, onMessage, busy }) {
 }
 
 // ─── Connection row (Connected tab) ──────────────────────────────────────
-function ConnectionRow({ row, onPress }) {
+function ConnectionRow({ row, onPress, onPin }) {
   const name    = row.full_name || row.handle || 'Someone';
   const initials = initialsFor(name);
   const grad    = gradientFor(row.profile_id);
   const location = [row.city, row.state].filter(Boolean).join(', ');
   const interests = (row.activities ?? []).slice(0, 3).map(a => a.label).join(' · ');
+  const isPinned = !!row.pinned_at;
 
   return (
     <TouchableOpacity
@@ -195,7 +196,18 @@ function ConnectionRow({ row, onPress }) {
           <Text style={styles.connInterests} numberOfLines={1}>{interests}</Text>
         ) : null}
       </View>
-      <Ionicons name="chevron-forward" size={16} color={COLORS.textTertiary} style={{ alignSelf: 'center' }} />
+      <TouchableOpacity
+        onPress={(e) => { e.stopPropagation?.(); onPin?.(row); }}
+        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+        style={{ padding: 6, alignSelf: 'center' }}
+        activeOpacity={0.7}
+      >
+        <Ionicons
+          name={isPinned ? 'bookmark' : 'bookmark-outline'}
+          size={18}
+          color={isPinned ? COLORS.sage : COLORS.textTertiary}
+        />
+      </TouchableOpacity>
     </TouchableOpacity>
   );
 }
@@ -319,7 +331,12 @@ export default function ActivityScreen({ navigation }) {
     } else if (connSort === 'name') {
       list.sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''));
     }
-    // 'recent' is already the default from the RPC (connected_at desc)
+    // Pinned always float to top regardless of sort mode
+    list.sort((a, b) => {
+      if (a.pinned_at && !b.pinned_at) return -1;
+      if (!a.pinned_at && b.pinned_at) return 1;
+      return 0;
+    });
     return list;
   }, [connections, connSearch, connSort]);
 
@@ -450,6 +467,31 @@ export default function ActivityScreen({ navigation }) {
         isMatch:     true,
       },
     });
+  }
+
+  async function handlePin(row) {
+    const nowPinned = !!row.pinned_at;
+    // Optimistic update
+    setConnections((prev) =>
+      prev.map((c) =>
+        c.profile_id === row.profile_id
+          ? { ...c, pinned_at: nowPinned ? null : new Date().toISOString() }
+          : c
+      )
+    );
+    const fn = nowPinned ? 'unpin_connection' : 'pin_connection';
+    const { error } = await supabase.rpc(fn, { p_profile: row.profile_id });
+    if (error) {
+      console.warn('[activity] pin failed', error.message);
+      // Rollback
+      setConnections((prev) =>
+        prev.map((c) =>
+          c.profile_id === row.profile_id
+            ? { ...c, pinned_at: row.pinned_at }
+            : c
+        )
+      );
+    }
   }
 
   function handleOpen(row) {
@@ -679,7 +721,7 @@ export default function ActivityScreen({ navigation }) {
           ListHeaderComponent={<Header />}
           ListEmptyComponent={<ConnectedEmpty />}
           renderItem={({ item }) => (
-            <ConnectionRow row={item} onPress={handleConnOpen} />
+            <ConnectionRow row={item} onPress={handleConnOpen} onPin={handlePin} />
           )}
           contentContainerStyle={styles.list}
           ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
@@ -750,7 +792,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: SPACING.sm,
-    marginHorizontal: SPACING.lg,
+    marginHorizontal: SPACING.sm,
     marginBottom: SPACING.md,
     backgroundColor: COLORS.surface,
     borderRadius: 14,
@@ -976,7 +1018,7 @@ const styles = StyleSheet.create({
   // ── Segment control ─────────────────────────────────────────────
   segmentWrap: {
     flexDirection: 'row',
-    marginHorizontal: SPACING.lg,
+    marginHorizontal: SPACING.sm,
     marginBottom: SPACING.md,
     backgroundColor: COLORS.surfaceAlt,
     borderRadius: RADIUS.full,

@@ -133,6 +133,13 @@ export default function GroupDetailScreen({ route, navigation }) {
   const [loadingRequests, setLoadingRequests] = useState(false);
   const [requestsOpen, setRequestsOpen] = useState(false);
 
+  // Invite sheet state
+  const [inviteSheetOpen, setInviteSheetOpen]     = useState(false);
+  const [inviteConnections, setInviteConnections] = useState([]);
+  const [inviteConnLoading, setInviteConnLoading] = useState(false);
+  const [invitingIds, setInvitingIds]             = useState(new Set()); // profileIds currently being invited
+  const [invitedIds, setInvitedIds]               = useState(new Set()); // profileIds already invited this session
+
   // Report sheet state
   const [reportSheet, setReportSheet] = useState({ visible: false, targetKind: null, targetId: null });
 
@@ -309,6 +316,11 @@ export default function GroupDetailScreen({ route, navigation }) {
       toast({ title: 'Too long', message: `Posts are limited to ${MAX_POST_BODY} characters.`, type: 'info' });
       return;
     }
+    const violation = firstViolation([{ text: body, label: 'post' }]);
+    if (!violation.ok) {
+      toast({ title: 'Check your wording', message: violation.message, type: 'info' });
+      return;
+    }
     setPosting(true);
     try {
       let photoUrl = null;
@@ -426,6 +438,59 @@ export default function GroupDetailScreen({ route, navigation }) {
     setBusy(false);
     if (error) { toast({ title: 'Could not cancel', message: error.message, type: 'error' }); return; }
     await refreshDetail();
+  }
+
+  // ── Invite helpers ───────────────────────────────────────────────────────
+  async function openInviteSheet() {
+    setInviteSheetOpen(true);
+    setInviteConnLoading(true);
+    try {
+      // Step 1: fetch connection IDs (people I've connected to)
+      const { data: connRows, error: connErr } = await supabase
+        .from('connections')
+        .select('to_profile')
+        .eq('from_profile', user.id)
+        .eq('kind', 'like');
+
+      if (connErr) throw connErr;
+      if (!connRows?.length) { setInviteConnections([]); return; }
+
+      // Step 2: exclude people already in the group
+      const memberIds = new Set(members.map((m) => m.profile_id));
+      const eligible  = connRows.map((r) => r.to_profile).filter((id) => !memberIds.has(id) && id !== user.id);
+      if (!eligible.length) { setInviteConnections([]); return; }
+
+      // Step 3: fetch their names + avatars
+      const { data: profiles, error: profErr } = await supabase
+        .from('profiles')
+        .select('id, full_name, avatar_url')
+        .in('id', eligible);
+
+      if (profErr) throw profErr;
+      setInviteConnections(profiles ?? []);
+    } catch (e) {
+      toast({ title: 'Could not load connections', message: e.message, type: 'error' });
+    } finally {
+      setInviteConnLoading(false);
+    }
+  }
+
+  async function handleInvitePerson(profileId) {
+    if (invitingIds.has(profileId) || invitedIds.has(profileId)) return;
+    setInvitingIds((prev) => new Set([...prev, profileId]));
+    try {
+      const { error } = await supabase.rpc('invite_to_group', {
+        p_group:    groupId,
+        p_invitees: [profileId],
+      });
+      if (error) throw error;
+      setInvitedIds((prev) => new Set([...prev, profileId]));
+      toast({ title: 'Invite sent!', message: 'They\'ll get a notification.', type: 'success' });
+    } catch (e) {
+      toast({ title: 'Could not send invite', message: e.message, type: 'error' });
+    } finally {
+      setInvitingIds((prev) => { const s = new Set(prev); s.delete(profileId); return s; });
+    }
   }
 
   // ── Render ───────────────────────────────────────────────────────────────
@@ -816,6 +881,11 @@ export default function GroupDetailScreen({ route, navigation }) {
           <View style={styles.section}>
             <View style={styles.sectionHeadRow}>
               <Text style={styles.sectionLabel}>MEMBERS · {members.length}</Text>
+              {isMember ? (
+                <TouchableOpacity onPress={openInviteSheet} activeOpacity={0.7} style={styles.memberAddBtn}>
+                  <Text style={styles.memberAddBtnText}>+ Add</Text>
+                </TouchableOpacity>
+              ) : null}
             </View>
             <View style={styles.memberList}>
               {members.map((m) => {
@@ -964,7 +1034,90 @@ export default function GroupDetailScreen({ route, navigation }) {
           toast({ title: 'Report submitted', message: 'Thank you for helping keep FOUND safe.', type: 'success' });
         }}
       />
+
+      {/* Invite people sheet */}
+      <InviteSheet
+        visible={inviteSheetOpen}
+        connections={inviteConnections}
+        loading={inviteConnLoading}
+        invitingIds={invitingIds}
+        invitedIds={invitedIds}
+        onInvite={handleInvitePerson}
+        onClose={() => { setInviteSheetOpen(false); setInvitedIds(new Set()); }}
+      />
     </SafeAreaView>
+  );
+}
+
+// ─── Invite sheet ─────────────────────────────────────────────────────────
+function InviteSheet({ visible, connections = [], loading, invitingIds, invitedIds, onInvite, onClose }) {
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={modalStyles.backdrop}>
+        <TouchableOpacity activeOpacity={1} style={StyleSheet.absoluteFill} onPress={onClose} />
+        <View style={[modalStyles.sheet, { maxHeight: '75%' }]}>
+          <View style={modalStyles.handle} />
+          <View style={[modalStyles.headerRow, { marginBottom: SPACING.sm }]}>
+            <Text style={modalStyles.title}>Invite People</Text>
+            <TouchableOpacity onPress={onClose} hitSlop={10}>
+              <Ionicons name="close" size={22} color={COLORS.textSecondary} />
+            </TouchableOpacity>
+          </View>
+
+          {loading ? (
+            <View style={{ paddingVertical: 32, alignItems: 'center' }}>
+              <ActivityIndicator color={COLORS.textTertiary} />
+            </View>
+          ) : connections.length === 0 ? (
+            <View style={{ paddingVertical: 32, alignItems: 'center', gap: 8 }}>
+              <Ionicons name="people-outline" size={28} color={COLORS.textTertiary} />
+              <Text style={{ fontFamily: FONT.regular, fontSize: 14, color: COLORS.textSecondary, textAlign: 'center' }}>
+                No connections to invite.{'\n'}Everyone you're connected with is already in this group.
+              </Text>
+            </View>
+          ) : (
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: SPACING.lg }}>
+              {connections.map((person) => {
+                const isInviting = invitingIds.has(person.id);
+                const isInvited  = invitedIds.has(person.id);
+                return (
+                  <View key={person.id} style={styles.memberRow}>
+                    <Avatar
+                      uri={person.avatar_url || undefined}
+                      initials={initialsFor(person.full_name)}
+                      size={40}
+                      gradientColors={gradientFor(person.id)}
+                    />
+                    <View style={styles.memberInfo}>
+                      <Text style={styles.memberName} numberOfLines={1}>
+                        {person.full_name || 'Connection'}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[
+                        styles.inviteBtn,
+                        isInvited && styles.inviteBtnDone,
+                      ]}
+                      onPress={() => onInvite(person.id)}
+                      disabled={isInviting || isInvited}
+                      activeOpacity={0.8}
+                    >
+                      {isInviting ? (
+                        <ActivityIndicator size="small" color={COLORS.white} />
+                      ) : (
+                        <Text style={[styles.inviteBtnText, isInvited && styles.inviteBtnTextDone]}>
+                          {isInvited ? 'Invited ✓' : 'Invite'}
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+            </ScrollView>
+          )}
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -1035,10 +1188,24 @@ function MembersModal({ visible, members = [], currentUserId, onClose }) {
 // ─── Photo lightbox ───────────────────────────────────────────────────────
 function PhotoLightbox({ photo, onClose }) {
   const { width, height } = Dimensions.get('window');
+  // Guard against the fade-out animation leaking touches back to photo tiles,
+  // which would immediately re-open the lightbox.
+  const closingRef = React.useRef(false);
+
+  React.useEffect(() => {
+    if (photo) closingRef.current = false;
+  }, [photo]);
+
+  function handleClose() {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    onClose();
+  }
+
   return (
-    <Modal visible={!!photo} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal visible={!!photo} transparent animationType="fade" onRequestClose={handleClose}>
       <View style={styles.lightboxRoot}>
-        <TouchableOpacity activeOpacity={1} style={StyleSheet.absoluteFill} onPress={onClose} />
+        <TouchableOpacity activeOpacity={1} style={StyleSheet.absoluteFill} onPress={handleClose} />
         {photo ? (
           <Image
             source={{ uri: photo.url }}
@@ -1046,7 +1213,12 @@ function PhotoLightbox({ photo, onClose }) {
             resizeMode="contain"
           />
         ) : null}
-        <TouchableOpacity style={styles.lightboxClose} activeOpacity={0.8} onPress={onClose}>
+        <TouchableOpacity
+          style={styles.lightboxClose}
+          activeOpacity={0.8}
+          onPress={handleClose}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+        >
           <Ionicons name="close" size={22} color="#fff" />
         </TouchableOpacity>
       </View>
@@ -1619,6 +1791,17 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: COLORS.sage,
   },
+  memberAddBtn: {
+    backgroundColor: COLORS.sage,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  memberAddBtnText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 13,
+    color: '#FFFFFF',
+  },
 
   // Composer
   composer: {
@@ -1898,6 +2081,30 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.full,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+
+  // Invite sheet
+  inviteBtn: {
+    backgroundColor: COLORS.accent,
+    borderRadius: RADIUS.lg,
+    paddingHorizontal: 14,
+    height: 34,
+    minWidth: 68,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  inviteBtnDone: {
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  inviteBtnText: {
+    fontFamily: FONT.bold,
+    fontSize: 13,
+    color: COLORS.white,
+  },
+  inviteBtnTextDone: {
+    color: COLORS.sage,
   },
 
   emptyTitle: { fontFamily: FONT.serifItalic, fontSize: 20, color: COLORS.text, marginTop: 4 },

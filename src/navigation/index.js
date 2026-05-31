@@ -127,8 +127,8 @@ function TabItem({ tab, focused, badgeCount, onPress }) {
           // FOUND tab — "F." text mark, sized to match Ionicons visually
           <Text style={{
             fontFamily: FONT.bold,
-            fontSize: 18,
-            lineHeight: 21,
+            fontSize: 22,
+            lineHeight: 22,
             letterSpacing: -0.5,
             color: focused ? COLORS.tabActive : COLORS.tabInactive,
             includeFontPadding: false,

@@ -70,14 +70,6 @@ export default function GroupCard({ group, onJoin, onLeave, onCancelRequest, onP
         <View style={styles.contentWrap}>
           <View style={styles.nameRow}>
             <Text style={styles.name}>{group.name}</Text>
-            {!isPublic && (
-              <Ionicons
-                name="lock-closed"
-                size={11}
-                color={COLORS.textTertiary}
-                style={styles.lockIcon}
-              />
-            )}
           </View>
 
           {/* Meta: members + schedule */}
@@ -138,14 +130,17 @@ export default function GroupCard({ group, onJoin, onLeave, onCancelRequest, onP
               <Text style={styles.joinBtnText}>Join</Text>
             </TouchableOpacity>
           ) : (
-            <TouchableOpacity
-              style={styles.joinBtn}
-              onPress={handleJoin}
-              disabled={busy}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.joinBtnText}>Request</Text>
-            </TouchableOpacity>
+            <View style={styles.requestRow}>
+              <Ionicons name="lock-closed" size={11} color={COLORS.textTertiary} />
+              <TouchableOpacity
+                style={styles.joinBtn}
+                onPress={handleJoin}
+                disabled={busy}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.joinBtnText}>Request</Text>
+              </TouchableOpacity>
+            </View>
           )}
         </View>
       </View>
@@ -228,6 +223,13 @@ const styles = StyleSheet.create({
   // Right button wrap
   buttonWrap: {
     flexShrink: 0,
+  },
+
+  // Lock icon + Request button side by side
+  requestRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
   },
 
   joinedBtn: {

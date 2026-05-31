@@ -43,6 +43,7 @@ import HighlightReelView from '../components/HighlightReelView';
 import { useConfirm } from '../components/ConfirmProvider';
 import { useToast } from '../components/ToastProvider';
 import ReportSheet from '../components/ReportSheet';
+import { LOVE_LANGUAGES, COMMUNITY_GOALS } from '../data/mock';
 
 export default function MatchDetailScreen({ route, navigation }) {
   const { user } = useAuth();
@@ -59,12 +60,21 @@ export default function MatchDetailScreen({ route, navigation }) {
   const [ignoring,        setIgnoring]        = useState(false);
   const [moreMenuOpen,    setMoreMenuOpen]    = useState(false);
   const [reportOpen,      setReportOpen]      = useState(false);
+  const [addToGroupOpen,  setAddToGroupOpen]  = useState(false);
+  const [myGroups,        setMyGroups]        = useState([]);
+  const [groupsLoading,   setGroupsLoading]   = useState(false);
+  const [groupInvitingId, setGroupInvitingId] = useState(null);  // groupId being invited to
+  const [groupInvitedIds, setGroupInvitedIds] = useState(new Set());
   const [avatarLightbox,  setAvatarLightbox]  = useState(false);
   const [myInterestIds,    setMyInterestIds]    = useState(new Set());
   const [myLifeStage,      setMyLifeStage]      = useState(null);
   const [myChurchId,       setMyChurchId]       = useState(null);
   const [myPoliticalLean,  setMyPoliticalLean]  = useState(null);
+  const [myLoveLanguage,   setMyLoveLanguage]   = useState(null);
+  const [myGoalIds,        setMyGoalIds]        = useState(new Set());
   const [theirPolitical,   setTheirPolitical]   = useState(null);
+  const [theirLoveLanguage,setTheirLoveLanguage]= useState(null);
+  const [theirGoalIds,     setTheirGoalIds]     = useState(new Set());
 
   // Score breakdown modal
   const [breakdownOpen,    setBreakdownOpen]    = useState(false);
@@ -108,9 +118,11 @@ export default function MatchDetailScreen({ route, navigation }) {
     if (!initialMatch.id || !needsFetch) return;
     let cancelled = false;
     (async () => {
-      const { data, error } = await supabase.rpc('get_profile_detail', {
-        p_profile: initialMatch.id,
-      });
+      const [{ data, error }, { data: theirLang }, { data: theirGoals }] = await Promise.all([
+        supabase.rpc('get_profile_detail', { p_profile: initialMatch.id }),
+        supabase.from('profiles').select('love_language_id').eq('id', initialMatch.id).maybeSingle(),
+        supabase.from('profile_goals').select('goal_id').eq('profile_id', initialMatch.id),
+      ]);
       if (cancelled) return;
       if (error) {
         console.warn('[match] get_profile_detail failed', error.message);
@@ -121,6 +133,8 @@ export default function MatchDetailScreen({ route, navigation }) {
       if (!d) { setDetailLoading(false); return; }
 
       setTheirPolitical(d.political_lean ?? null);
+      setTheirLoveLanguage(theirLang?.love_language_id ?? null);
+      setTheirGoalIds(new Set((theirGoals ?? []).map((r) => r.goal_id)));
       setProfile((prev) => ({
         ...prev,
         bio:             d.bio              ?? prev.bio,
@@ -168,15 +182,18 @@ export default function MatchDetailScreen({ route, navigation }) {
     if (!user) return;
     let cancelled = false;
     (async () => {
-      const [{ data: acts }, { data: me }] = await Promise.all([
+      const [{ data: acts }, { data: me }, { data: goals }] = await Promise.all([
         supabase.from('profile_activities').select('activity_id').eq('profile_id', user.id),
-        supabase.from('profiles').select('life_stage_id, church_id, political_lean').eq('id', user.id).maybeSingle(),
+        supabase.from('profiles').select('life_stage_id, church_id, political_lean, love_language_id').eq('id', user.id).maybeSingle(),
+        supabase.from('profile_goals').select('goal_id').eq('profile_id', user.id),
       ]);
       if (cancelled) return;
       setMyInterestIds(new Set((acts ?? []).map((r) => r.activity_id)));
       setMyLifeStage(me?.life_stage_id ?? null);
       setMyChurchId(me?.church_id ?? null);
       setMyPoliticalLean(me?.political_lean ?? null);
+      setMyLoveLanguage(me?.love_language_id ?? null);
+      setMyGoalIds(new Set((goals ?? []).map((r) => r.goal_id)));
     })();
     return () => { cancelled = true; };
   }, [user]);
@@ -377,6 +394,45 @@ export default function MatchDetailScreen({ route, navigation }) {
     setReportOpen(true);
   }
 
+  async function handleOpenAddToGroup() {
+    setMoreMenuOpen(false);
+    setAddToGroupOpen(true);
+    setGroupsLoading(true);
+    try {
+      // Load all groups the current user is a member of
+      const { data, error } = await supabase
+        .from('group_members')
+        .select('group_id, role, groups!inner(id, name, icon, icon_color, icon_bg)')
+        .eq('profile_id', user.id);
+      if (error) throw error;
+      setMyGroups(
+        (data ?? []).map((row) => ({ ...row.groups, role: row.role }))
+      );
+    } catch (e) {
+      toast({ title: 'Could not load groups', message: e.message, type: 'error' });
+    } finally {
+      setGroupsLoading(false);
+    }
+  }
+
+  async function handleInviteToGroup(groupId) {
+    if (groupInvitingId === groupId || groupInvitedIds.has(groupId)) return;
+    setGroupInvitingId(groupId);
+    try {
+      const { error } = await supabase.rpc('invite_to_group', {
+        p_group:    groupId,
+        p_invitees: [profile.id],
+      });
+      if (error) throw error;
+      setGroupInvitedIds((prev) => new Set([...prev, groupId]));
+      toast({ title: 'Invite sent!', message: `${profile.name?.split(' ')[0] || 'They'} will get a notification.`, type: 'success' });
+    } catch (e) {
+      toast({ title: 'Could not invite', message: e.message, type: 'error' });
+    } finally {
+      setGroupInvitingId(null);
+    }
+  }
+
   // ── Render ───────────────────────────────────────────────────────────────
   return (
     <SafeAreaView style={styles.container}>
@@ -472,11 +528,28 @@ export default function MatchDetailScreen({ route, navigation }) {
           {/* ── In Common — pinned to top ──────────────────────────── */}
           {(() => {
             const sharedInterests = profile.interests.filter((i) => myInterestIds.has(i.id));
-            const sameStage   = !!(myLifeStage && profile.lifeStageId && myLifeStage === profile.lifeStageId);
-            const sameChurch  = !!(myChurchId && profile.churchId && myChurchId === profile.churchId);
+            const sameStage     = !!(myLifeStage && profile.lifeStageId && myLifeStage === profile.lifeStageId);
+            const sameChurch    = !!(myChurchId && profile.churchId && myChurchId === profile.churchId);
             const politicsAlign = myPoliticalLean != null && theirPolitical != null &&
               Math.abs(myPoliticalLean - theirPolitical) <= 40;
-            const hasCommon = sameStage || sameChurch || sharedInterests.length > 0 || politicsAlign;
+            const sameLoveLanguage = !!(myLoveLanguage && theirLoveLanguage &&
+              myLoveLanguage !== 'not-sure' && theirLoveLanguage !== 'not-sure' &&
+              myLoveLanguage === theirLoveLanguage);
+            const loveLangLabel = sameLoveLanguage
+              ? (LOVE_LANGUAGES.find((l) => l.id === myLoveLanguage)?.label ?? null)
+              : null;
+            const sharedGoals = COMMUNITY_GOALS.filter(
+              (g) => myGoalIds.has(g.id) && theirGoalIds.has(g.id)
+            );
+            // Hometown overlap: split both hometown strings by "→" and look for any matching city
+            const parseHometowns = (s) =>
+              (s ?? '').split('→').map((c) => c.trim().toLowerCase()).filter(Boolean);
+            const myHometowns   = parseHometowns(profile.hometown); // they're viewing their profile
+            // We compare profile.hometown (theirs) against my own — but my hometown isn't in state.
+            // Use same_hometown from get_profile_detail where possible; fall back to string overlap.
+            const sameHometown  = false; // will be surfaced via same_hometown migration (0043)
+            const hasCommon = sameStage || sameChurch || sharedInterests.length > 0 ||
+              politicsAlign || sameLoveLanguage || sharedGoals.length > 0;
             return (
               <View style={styles.section}>
                 <SectionHeader label="In Common" />
@@ -493,10 +566,22 @@ export default function MatchDetailScreen({ route, navigation }) {
                       <Text style={styles.commonText}>Same church</Text>
                     </View>
                   ) : null}
+                  {sameLoveLanguage && loveLangLabel ? (
+                    <View style={styles.commonRow}>
+                      <Ionicons name="checkmark-circle" size={16} color={COLORS.sage} />
+                      <Text style={styles.commonText}>Same love language — {loveLangLabel}</Text>
+                    </View>
+                  ) : null}
                   {sharedInterests.slice(0, 3).map((i) => (
                     <View key={i.id} style={styles.commonRow}>
                       <Ionicons name="checkmark-circle" size={16} color={COLORS.sage} />
                       <Text style={styles.commonText}>Both into {i.label.toLowerCase()}</Text>
+                    </View>
+                  ))}
+                  {sharedGoals.slice(0, 2).map((g) => (
+                    <View key={g.id} style={styles.commonRow}>
+                      <Ionicons name="checkmark-circle" size={16} color={COLORS.sage} />
+                      <Text style={styles.commonText}>Both looking for {g.label.toLowerCase()}</Text>
                     </View>
                   ))}
                   {politicsAlign ? (
@@ -779,6 +864,14 @@ export default function MatchDetailScreen({ route, navigation }) {
           <View style={styles.menuSheet}>
             <TouchableOpacity
               style={styles.menuItem}
+              onPress={handleOpenAddToGroup}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="people-outline" size={18} color={COLORS.text} />
+              <Text style={styles.menuItemText}>Add to Group</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.menuItem}
               onPress={handleBlock}
               activeOpacity={0.7}
             >
@@ -805,6 +898,76 @@ export default function MatchDetailScreen({ route, navigation }) {
         onClose={() => setReportOpen(false)}
         onReported={() => {}}
       />
+
+      {/* Add to group sheet */}
+      <Modal
+        visible={addToGroupOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => { setAddToGroupOpen(false); setGroupInvitedIds(new Set()); }}
+      >
+        <View style={styles.menuBackdrop}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => { setAddToGroupOpen(false); setGroupInvitedIds(new Set()); }}
+          />
+          <View style={[styles.menuSheet, { paddingBottom: 24, maxHeight: '70%' }]}>
+            <View style={addToGroupStyles.handle} />
+            <View style={addToGroupStyles.headerRow}>
+              <Text style={addToGroupStyles.title}>Add to Group</Text>
+              <TouchableOpacity
+                onPress={() => { setAddToGroupOpen(false); setGroupInvitedIds(new Set()); }}
+                hitSlop={10}
+              >
+                <Ionicons name="close" size={22} color={COLORS.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            {groupsLoading ? (
+              <View style={{ paddingVertical: 28, alignItems: 'center' }}>
+                <ActivityIndicator color={COLORS.textTertiary} />
+              </View>
+            ) : myGroups.length === 0 ? (
+              <View style={{ paddingVertical: 28, alignItems: 'center', gap: 8 }}>
+                <Ionicons name="people-outline" size={26} color={COLORS.textTertiary} />
+                <Text style={{ fontFamily: FONT.regular, fontSize: 14, color: COLORS.textSecondary, textAlign: 'center' }}>
+                  You haven't joined any groups yet.
+                </Text>
+              </View>
+            ) : (
+              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 8 }}>
+                {myGroups.map((group) => {
+                  const isSending = groupInvitingId === group.id;
+                  const isSent    = groupInvitedIds.has(group.id);
+                  return (
+                    <View key={group.id} style={addToGroupStyles.groupRow}>
+                      <View style={[addToGroupStyles.groupIcon, { backgroundColor: group.icon_bg ?? COLORS.sageBg }]}>
+                        <Ionicons name={group.icon ?? 'people'} size={18} color={group.icon_color ?? COLORS.sage} />
+                      </View>
+                      <Text style={addToGroupStyles.groupName} numberOfLines={1}>{group.name}</Text>
+                      <TouchableOpacity
+                        style={[addToGroupStyles.inviteBtn, isSent && addToGroupStyles.inviteBtnDone]}
+                        onPress={() => handleInviteToGroup(group.id)}
+                        disabled={isSending || isSent}
+                        activeOpacity={0.8}
+                      >
+                        {isSending ? (
+                          <ActivityIndicator size="small" color={COLORS.white} />
+                        ) : (
+                          <Text style={[addToGroupStyles.inviteBtnText, isSent && addToGroupStyles.inviteBtnTextDone]}>
+                            {isSent ? 'Invited ✓' : 'Invite'}
+                          </Text>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })}
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
 
       {/* Avatar lightbox — tap profile photo to expand */}
       <Modal
@@ -1180,5 +1343,71 @@ const styles = StyleSheet.create({
     fontFamily: FONT.semiBold,
     fontSize: 15,
     color: COLORS.text,
+  },
+});
+
+const addToGroupStyles = StyleSheet.create({
+  handle: {
+    alignSelf: 'center',
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: COLORS.border,
+    marginBottom: SPACING.sm,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: SPACING.md,
+    paddingHorizontal: 4,
+  },
+  title: {
+    fontFamily: FONT.serifItalic,
+    fontSize: 20,
+    color: COLORS.text,
+  },
+  groupRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.borderLight,
+  },
+  groupIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: RADIUS.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  groupName: {
+    flex: 1,
+    fontFamily: FONT.semiBold,
+    fontSize: 14,
+    color: COLORS.text,
+  },
+  inviteBtn: {
+    backgroundColor: COLORS.accent,
+    borderRadius: RADIUS.lg,
+    paddingHorizontal: 14,
+    height: 34,
+    minWidth: 68,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  inviteBtnDone: {
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  inviteBtnText: {
+    fontFamily: FONT.bold,
+    fontSize: 13,
+    color: COLORS.white,
+  },
+  inviteBtnTextDone: {
+    color: COLORS.sage,
   },
 });

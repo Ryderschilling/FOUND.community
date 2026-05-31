@@ -33,6 +33,7 @@ export const LIFE_STAGES = [
   { id: 'married-mixed',   label: 'Married w/ Mixed Ages',        icon: 'people-circle-outline',   iconColor: '#4A8A6A' },
   { id: 'empty-nester',    label: 'Empty Nester',                 icon: 'home-outline',            iconColor: '#5A8A6A' },
   { id: 'grandparent',     label: 'Grandparent',                  icon: 'sunny-outline',           iconColor: '#C0795A' },
+  { id: 'single-parent',   label: 'Single Parent',                icon: 'person-circle-outline',   iconColor: '#7A5AA8' },
 ];
 
 // Life stages where school-type question is relevant
@@ -99,6 +100,7 @@ export const LOVE_LANGUAGES = [
   { id: 'quality-time',    label: 'Quality Time',          icon: 'time-outline',                   iconColor: '#4A6FA5' },
   { id: 'words',           label: 'Words of Affirmation',  icon: 'chatbubble-ellipses-outline',    iconColor: '#7A5AA8' },
   { id: 'physical-touch',  label: 'Physical Touch',        icon: 'hand-left-outline',              iconColor: '#C0795A' },
+  { id: 'not-sure',        label: "I'm not sure",          icon: 'help-circle-outline',            iconColor: '#999999' },
 ];
 
 export const COMMUNITY_GOALS = [
