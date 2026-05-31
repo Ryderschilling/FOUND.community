@@ -283,10 +283,24 @@ export default function HomeScreen({ navigation }) {
   // Refetch on focus so returning from Activity/MatchDetail picks up state
   // changes (newly accepted matches, dismissed inbound rows, etc.) without
   // requiring a manual pull-to-refresh.
+  // Also restore the header if it was hidden when the user left.
   useEffect(() => {
-    const unsub = navigation?.addListener?.('focus', () => loadMatches({ isRefresh: true }));
+    const unsub = navigation?.addListener?.('focus', () => {
+      loadMatches({ isRefresh: true });
+      // Snap header back to visible on re-focus (avoids stuck-hidden state)
+      if (!headerVisible.current) {
+        headerVisible.current = true;
+        scrollDownAccum.current = 0;
+        scrollUpAccum.current = 0;
+        Animated.timing(headerTranslate, {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: true,
+        }).start();
+      }
+    });
     return unsub;
-  }, [navigation, loadMatches]);
+  }, [navigation, loadMatches, headerTranslate]);
 
   // Keep a ref to the freshest profile so the bio-nudge timeout (set once on
   // mount) reads current state instead of a stale closure value.
@@ -671,7 +685,9 @@ export default function HomeScreen({ navigation }) {
       {/* ── Sticky header — absolutely positioned so it floats above the list ── */}
       <Animated.View style={[styles.header, { top: insets.top, paddingTop: SPACING.sm, transform: [{ translateY: headerTranslate }] }]}>
         <View>
-          <Text style={styles.headerMeta}>30A Area · Friday</Text>
+          <Text style={styles.headerMeta}>
+            {profile?.city ? `${profile.city}` : 'Your Area'}{' · '}{new Date().toLocaleDateString('en-US', { weekday: 'long' })}
+          </Text>
           <Wordmark size="md" />
         </View>
         <View style={styles.bellWrap}>

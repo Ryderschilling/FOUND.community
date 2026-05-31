@@ -70,11 +70,13 @@ export default function MatchDetailScreen({ route, navigation }) {
   const [myLifeStage,      setMyLifeStage]      = useState(null);
   const [myChurchId,       setMyChurchId]       = useState(null);
   const [myPoliticalLean,  setMyPoliticalLean]  = useState(null);
-  const [myLoveLanguage,   setMyLoveLanguage]   = useState(null);
-  const [myGoalIds,        setMyGoalIds]        = useState(new Set());
-  const [theirPolitical,   setTheirPolitical]   = useState(null);
-  const [theirLoveLanguage,setTheirLoveLanguage]= useState(null);
-  const [theirGoalIds,     setTheirGoalIds]     = useState(new Set());
+  const [myLoveLanguage,    setMyLoveLanguage]    = useState(null);
+  const [myGoalIds,         setMyGoalIds]         = useState(new Set());
+  const [myHometownCities,  setMyHometownCities]  = useState([]);
+  const [theirPolitical,    setTheirPolitical]    = useState(null);
+  const [theirLoveLanguage, setTheirLoveLanguage] = useState(null);
+  const [theirGoalIds,      setTheirGoalIds]      = useState(new Set());
+  const [theirHometownCities, setTheirHometownCities] = useState([]);
 
   // Score breakdown modal
   const [breakdownOpen,    setBreakdownOpen]    = useState(false);
@@ -120,7 +122,7 @@ export default function MatchDetailScreen({ route, navigation }) {
     (async () => {
       const [{ data, error }, { data: theirLang }, { data: theirGoals }] = await Promise.all([
         supabase.rpc('get_profile_detail', { p_profile: initialMatch.id }),
-        supabase.from('profiles').select('love_language_id').eq('id', initialMatch.id).maybeSingle(),
+        supabase.from('profiles').select('love_language_id, hometown_cities').eq('id', initialMatch.id).maybeSingle(),
         supabase.from('profile_goals').select('goal_id').eq('profile_id', initialMatch.id),
       ]);
       if (cancelled) return;
@@ -135,6 +137,7 @@ export default function MatchDetailScreen({ route, navigation }) {
       setTheirPolitical(d.political_lean ?? null);
       setTheirLoveLanguage(theirLang?.love_language_id ?? null);
       setTheirGoalIds(new Set((theirGoals ?? []).map((r) => r.goal_id)));
+      setTheirHometownCities((theirLang?.hometown_cities ?? []).map((c) => c.toLowerCase().trim()));
       setProfile((prev) => ({
         ...prev,
         bio:             d.bio              ?? prev.bio,
@@ -184,7 +187,7 @@ export default function MatchDetailScreen({ route, navigation }) {
     (async () => {
       const [{ data: acts }, { data: me }, { data: goals }] = await Promise.all([
         supabase.from('profile_activities').select('activity_id').eq('profile_id', user.id),
-        supabase.from('profiles').select('life_stage_id, church_id, political_lean, love_language_id').eq('id', user.id).maybeSingle(),
+        supabase.from('profiles').select('life_stage_id, church_id, political_lean, love_language_id, hometown_cities').eq('id', user.id).maybeSingle(),
         supabase.from('profile_goals').select('goal_id').eq('profile_id', user.id),
       ]);
       if (cancelled) return;
@@ -194,6 +197,7 @@ export default function MatchDetailScreen({ route, navigation }) {
       setMyPoliticalLean(me?.political_lean ?? null);
       setMyLoveLanguage(me?.love_language_id ?? null);
       setMyGoalIds(new Set((goals ?? []).map((r) => r.goal_id)));
+      setMyHometownCities((me?.hometown_cities ?? []).map((c) => c.toLowerCase().trim()));
     })();
     return () => { cancelled = true; };
   }, [user]);
@@ -541,15 +545,11 @@ export default function MatchDetailScreen({ route, navigation }) {
             const sharedGoals = COMMUNITY_GOALS.filter(
               (g) => myGoalIds.has(g.id) && theirGoalIds.has(g.id)
             );
-            // Hometown overlap: split both hometown strings by "→" and look for any matching city
-            const parseHometowns = (s) =>
-              (s ?? '').split('→').map((c) => c.trim().toLowerCase()).filter(Boolean);
-            const myHometowns   = parseHometowns(profile.hometown); // they're viewing their profile
-            // We compare profile.hometown (theirs) against my own — but my hometown isn't in state.
-            // Use same_hometown from get_profile_detail where possible; fall back to string overlap.
-            const sameHometown  = false; // will be surfaced via same_hometown migration (0043)
+            // Hometown city overlap: find any cities both users have listed
+            const sharedCities = myHometownCities.filter((c) => theirHometownCities.includes(c));
+            const sharedCityLabels = sharedCities; // already lowercased; display as-is or title-case
             const hasCommon = sameStage || sameChurch || sharedInterests.length > 0 ||
-              politicsAlign || sameLoveLanguage || sharedGoals.length > 0;
+              politicsAlign || sameLoveLanguage || sharedGoals.length > 0 || sharedCities.length > 0;
             return (
               <View style={styles.section}>
                 <SectionHeader label="In Common" />
@@ -572,6 +572,14 @@ export default function MatchDetailScreen({ route, navigation }) {
                       <Text style={styles.commonText}>Same love language — {loveLangLabel}</Text>
                     </View>
                   ) : null}
+                  {sharedCityLabels.slice(0, 2).map((city) => (
+                    <View key={city} style={styles.commonRow}>
+                      <Ionicons name="checkmark-circle" size={16} color={COLORS.sage} />
+                      <Text style={styles.commonText}>
+                        Both lived in {city.replace(/\b\w/g, (c) => c.toUpperCase())}
+                      </Text>
+                    </View>
+                  ))}
                   {sharedInterests.slice(0, 3).map((i) => (
                     <View key={i.id} style={styles.commonRow}>
                       <Ionicons name="checkmark-circle" size={16} color={COLORS.sage} />

@@ -75,9 +75,10 @@ export default function EditProfileScreen({ navigation }) {
   const toast = useToast();
 
   // Form state — initialized from current profile once loaded.
-  const [fullName, setFullName]       = useState('');
-  const [bio, setBio]                 = useState('');
-  const [hometown, setHometown]       = useState('');
+  const [fullName, setFullName]         = useState('');
+  const [bio, setBio]                   = useState('');
+  const [hometown, setHometown]         = useState('');
+  const [hometownCitiesText, setHometownCitiesText] = useState(''); // comma-separated display
   const [locationText, setLocationText] = useState('');
   const [lifeStage, setLifeStage]     = useState(null);
   const [activities, setActivities]   = useState([]);    // array of activity ids
@@ -157,7 +158,7 @@ export default function EditProfileScreen({ navigation }) {
         supabase.from('community_goals').select('id,label,icon,icon_color').order('sort_order'),
         user
           ? supabase.from('profiles')
-              .select('full_name,bio,hometown,city,state,life_stage_id,church_id,is_home_church,political_lean,church:churches(name),profile_activities(activity_id),profile_goals(goal_id)')
+              .select('full_name,bio,hometown,hometown_cities,city,state,life_stage_id,church_id,is_home_church,political_lean,church:churches(name),profile_activities(activity_id),profile_goals(goal_id)')
               .eq('id', user.id)
               .maybeSingle()
           : Promise.resolve({ data: null, error: null }),
@@ -171,6 +172,7 @@ export default function EditProfileScreen({ navigation }) {
         setFullName(p.full_name ?? '');
         setBio(p.bio ?? '');
         setHometown(p.hometown ?? '');
+        setHometownCitiesText((p.hometown_cities ?? []).join(', '));
         setLocationText([p.city, p.state].filter(Boolean).join(', '));
         setLifeStage(p.life_stage_id ?? null);
         setProfileChurchId(p.church_id ?? null);
@@ -207,16 +209,23 @@ export default function EditProfileScreen({ navigation }) {
     const { city, state } = parseLocation(locationText);
 
     // 1) Persist core profile fields
+    // Parse hometown_cities from comma-separated input → trimmed array
+    const parsedHometownCities = hometownCitiesText
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+
     const { error } = await supabase.rpc('update_profile', {
-      p_full_name:  fullName.trim() || null,
-      p_bio:        bio.trim() || null,
-      p_hometown:   hometown.trim() || null,
-      p_city:       city || null,
-      p_state:      state || null,
-      p_life_stage: lifeStage,
-      p_church_id:  null,                  // structured directory not live yet
-      p_activities: activities,            // pass array → REPLACE
-      p_goals:      goals,
+      p_full_name:       fullName.trim() || null,
+      p_bio:             bio.trim() || null,
+      p_hometown:        hometown.trim() || null,
+      p_city:            city || null,
+      p_state:           state || null,
+      p_life_stage:      lifeStage,
+      p_church_id:       null,                  // structured directory not live yet
+      p_activities:      activities,            // pass array → REPLACE
+      p_goals:           goals,
+      p_hometown_cities: parsedHometownCities.length > 0 ? parsedHometownCities : null,
     });
     if (error) {
       setSaving(false);
@@ -317,17 +326,34 @@ export default function EditProfileScreen({ navigation }) {
           <Text style={styles.counter}>{bio.length}/500</Text>
         </View>
 
-        {/* Where you're from */}
+        {/* Where you're from — journey string */}
         <View style={styles.section}>
           <SectionHeader label="Where you're from" />
           <TextInput
             style={styles.input}
             value={hometown}
             onChangeText={setHometown}
-            placeholder="e.g. Nashville, TN"
+            placeholder="e.g. Nashville, TN or Miami → Dallas → Pensacola"
             placeholderTextColor={COLORS.textTertiary}
             autoCapitalize="words"
-            maxLength={80}
+            maxLength={120}
+          />
+        </View>
+
+        {/* Cities lived in — for matching */}
+        <View style={styles.section}>
+          <SectionHeader label="Cities you've lived in (Optional)" />
+          <Text style={styles.fieldHint}>
+            Separate with commas. Used to match you with people who share a hometown.
+          </Text>
+          <TextInput
+            style={styles.input}
+            value={hometownCitiesText}
+            onChangeText={setHometownCitiesText}
+            placeholder="e.g. Pensacola FL, Miami FL, Frisco TX"
+            placeholderTextColor={COLORS.textTertiary}
+            autoCapitalize="words"
+            maxLength={200}
           />
         </View>
 
@@ -582,6 +608,7 @@ const styles = StyleSheet.create({
   },
   textarea: { minHeight: 100, textAlignVertical: 'top' },
   counter: { fontFamily: FONT.mono, fontSize: 10, color: COLORS.textTertiary, alignSelf: 'flex-end' },
+  fieldHint: { fontFamily: FONT.body, fontSize: 12, color: COLORS.textTertiary, marginBottom: 8, lineHeight: 17 },
 
   // Option grid
   optGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
