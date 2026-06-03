@@ -15,6 +15,10 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.found.community",
+      "icon": {
+        "light": "./assets/icon.png",
+        "dark": "./assets/icon-dark.png"
+      },
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "FOUND uses your camera so you can take a profile photo.",

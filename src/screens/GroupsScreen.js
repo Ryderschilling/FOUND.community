@@ -75,6 +75,8 @@ export default function GroupsScreen({ navigation }) {
   const [postCreateGroup, setPostCreateGroup] = useState(null); // { id, name } | null
   const [searchText, setSearchText]  = useState('');
   const [filterType, setFilterType]  = useState('all'); // 'all' | 'joined' | 'public' | 'private'
+  const [invites, setInvites]        = useState([]);    // pending group invites
+  const [respondingId, setRespondingId] = useState(null); // groupId being accepted/declined
 
   const load = useCallback(async ({ isRefresh } = {}) => {
     if (isRefresh) setRefreshing(true); else setLoading(true);
@@ -90,13 +92,62 @@ export default function GroupsScreen({ navigation }) {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  const loadInvites = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.rpc('my_group_invites');
+      if (!error) setInvites(data ?? []);
+    } catch {
+      // non-fatal
+    }
+  }, []);
+
+  const handleAcceptInvite = useCallback(async (invite) => {
+    if (respondingId) return;
+    setRespondingId(invite.group_id);
+    try {
+      const { error } = await supabase.rpc('respond_to_group_invite', {
+        p_invite: invite.id,
+        p_accept: true,
+      });
+      if (error) {
+        toast({ title: 'Could not accept invite', message: error.message, type: 'error' });
+      } else {
+        setInvites((prev) => prev.filter((i) => i.id !== invite.id));
+        load({ isRefresh: true });
+        toast({ title: 'Joined!', message: `You joined "${invite.group_name}".`, type: 'success' });
+      }
+    } catch (e) {
+      toast({ title: 'Error', message: e?.message, type: 'error' });
+    } finally {
+      setRespondingId(null);
+    }
+  }, [respondingId, load, toast]);
+
+  const handleDeclineInvite = useCallback(async (invite) => {
+    setRespondingId(invite.group_id);
+    try {
+      await supabase.rpc('respond_to_group_invite', {
+        p_invite: invite.id,
+        p_accept: false,
+      });
+      setInvites((prev) => prev.filter((i) => i.id !== invite.id));
+    } catch {
+      // non-fatal
+    } finally {
+      setRespondingId(null);
+    }
+  }, []);
+
+  useEffect(() => { load(); loadInvites(); }, [load, loadInvites]);
 
   // Refresh when focused (e.g. after creating a group)
   useEffect(() => {
-    const unsub = navigation?.addListener?.('focus', () => load({ isRefresh: true }));
+    const unsub = navigation?.addListener?.('focus', () => {
+      load({ isRefresh: true });
+      loadInvites();
+    });
     return unsub;
-  }, [navigation, load]);
+  }, [navigation, load, loadInvites]);
 
   // Optimistic join: public groups join instantly, private groups file a request
   const handleJoin = useCallback(async (group) => {
@@ -270,6 +321,39 @@ export default function GroupsScreen({ navigation }) {
             </View>
           )}
           ListHeaderComponent={
+            <View>
+              {/* Group invites strip */}
+              {invites.length > 0 ? (
+                <View style={styles.inviteSection}>
+                  <Text style={styles.inviteSectionLabel}>GROUP INVITES</Text>
+                  {invites.map((inv) => (
+                    <View key={inv.id} style={styles.inviteCard}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.inviteName}>{inv.group_name}</Text>
+                        {inv.inviter_name ? (
+                          <Text style={styles.inviteMeta}>Invited by {inv.inviter_name}</Text>
+                        ) : null}
+                      </View>
+                      <TouchableOpacity
+                        style={[styles.inviteBtn, styles.inviteAccept]}
+                        onPress={() => handleAcceptInvite(inv)}
+                        disabled={respondingId === inv.group_id}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={styles.inviteAcceptText}>Accept</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.inviteBtn}
+                        onPress={() => handleDeclineInvite(inv)}
+                        disabled={respondingId === inv.group_id}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={styles.inviteDenyText}>Decline</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
             <View style={styles.listSubHeader}>
               {/* Search bar */}
               <View style={styles.searchWrap}>
@@ -315,6 +399,7 @@ export default function GroupsScreen({ navigation }) {
                   onPress={() => setFilterType('private')}
                 />
               </ScrollView>
+            </View>
             </View>
           }
           ListEmptyComponent={
@@ -616,7 +701,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: COLORS.text,
+    backgroundColor: COLORS.clay,   // peach per Sam 6-2-26
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -668,6 +753,64 @@ const styles = StyleSheet.create({
   cardWrap: {
     paddingHorizontal: SPACING.lg,
     marginBottom: SPACING.sm,
+  },
+
+  // Group invites
+  inviteSection: {
+    paddingHorizontal: SPACING.lg,
+    paddingTop: SPACING.md,
+    paddingBottom: SPACING.sm,
+    gap: SPACING.sm,
+  },
+  inviteSectionLabel: {
+    fontFamily: FONT.mono,
+    fontSize: 9,
+    letterSpacing: 1.6,
+    textTransform: 'uppercase',
+    color: COLORS.textTertiary,
+  },
+  inviteCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1.5,
+    borderColor: COLORS.clay,
+    padding: SPACING.md,
+  },
+  inviteName: {
+    fontFamily: FONT.semiBold,
+    fontSize: 14,
+    color: COLORS.text,
+  },
+  inviteMeta: {
+    fontFamily: FONT.regular,
+    fontSize: 12,
+    color: COLORS.textTertiary,
+    marginTop: 2,
+  },
+  inviteBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.bg,
+  },
+  inviteAccept: {
+    backgroundColor: COLORS.clay,
+    borderColor: COLORS.clay,
+  },
+  inviteAcceptText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 13,
+    color: COLORS.white,
+  },
+  inviteDenyText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 13,
+    color: COLORS.textSecondary,
   },
 
   empty: {
@@ -854,7 +997,7 @@ function PostCreateGroupModal({ group, onClose }) {
 
   return (
     <>
-      <Modal visible={!!group} transparent animationType="fade" onRequestClose={onClose}>
+      <Modal visible={!!group && !inviteOpen} transparent animationType="fade" onRequestClose={onClose}>
         <View style={postCreateStyles.backdrop}>
           <View style={postCreateStyles.sheet}>
             <View style={postCreateStyles.celebrateIconWrap}>

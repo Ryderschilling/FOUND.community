@@ -69,8 +69,8 @@ const STEPS = [
     body: "Tap Connect on a card to reach out. If they connect back, you're matched.",
     refKey: 'firstCard',
     tabIndex: null,
-    tooltipPos: 'below',
-    arrowDir: 'up',
+    tooltipPos: 'above',
+    arrowDir: 'down',
   },
   {
     id: 'activity',

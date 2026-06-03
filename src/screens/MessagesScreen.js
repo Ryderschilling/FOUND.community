@@ -55,7 +55,9 @@ function relativeTime(iso) {
 function MessageRow({ item, onPress }) {
   const isGroup = item.kind === 'group';
   const name    = item.other_full_name || item.other_handle || 'Conversation';
-  const preview = item.last_message_body || (isGroup ? 'Group thread' : 'Say hi!');
+  // "You: [body]" when last message is mine; raw body otherwise
+  const rawBody = item.last_message_body || (isGroup ? 'Group thread' : 'Say hi!');
+  const preview = item.last_message_is_mine ? `You: ${rawBody}` : rawBody;
   return (
     <TouchableOpacity style={styles.row} onPress={onPress} activeOpacity={0.7}>
       <View style={styles.avatarWrap}>
@@ -73,7 +75,8 @@ function MessageRow({ item, onPress }) {
         )}
       </View>
       <View style={styles.info}>
-        <Text style={styles.name}>{name}</Text>
+        {/* Bold name for direct threads — these are always connected people */}
+        <Text style={[styles.name, !isGroup && styles.nameConnected]}>{name}</Text>
         <Text style={styles.preview} numberOfLines={1}>{preview}</Text>
       </View>
       <View style={styles.right}>
@@ -501,8 +504,9 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   info: { flex: 1, gap: 3, minWidth: 0 },
-  name:    { fontFamily: FONT.semiBold, fontSize: 15, color: COLORS.text },
-  preview: { fontFamily: FONT.regular,  fontSize: 13, color: COLORS.textSecondary },
+  name:          { fontFamily: FONT.semiBold, fontSize: 15, color: COLORS.text },
+  nameConnected: { fontFamily: FONT.bold,     fontSize: 15, color: COLORS.text },
+  preview:       { fontFamily: FONT.regular,  fontSize: 13, color: COLORS.textSecondary },
   right: { alignItems: 'flex-end', gap: 4, flexShrink: 0 },
   time:  { fontFamily: FONT.regular, fontSize: 11, color: COLORS.textTertiary },
   badge: {

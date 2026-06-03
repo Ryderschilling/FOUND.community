@@ -72,17 +72,24 @@ export default function MatchDetailScreen({ route, navigation }) {
   const [myPoliticalLean,  setMyPoliticalLean]  = useState(null);
   const [myLoveLanguage,    setMyLoveLanguage]    = useState(null);
   const [myGoalIds,         setMyGoalIds]         = useState(new Set());
-  const [myHometownCities,  setMyHometownCities]  = useState([]);
-  const [theirPolitical,    setTheirPolitical]    = useState(null);
-  const [theirLoveLanguage, setTheirLoveLanguage] = useState(null);
-  const [theirGoalIds,      setTheirGoalIds]      = useState(new Set());
-  const [theirHometownCities, setTheirHometownCities] = useState([]);
+  const [myHometownCities,      setMyHometownCities]      = useState([]);
+  const [myCurrentCity,         setMyCurrentCity]         = useState(null);
+  const [myLookingForChurch,    setMyLookingForChurch]    = useState(null);
+  const [theirPolitical,        setTheirPolitical]        = useState(null);
+  const [theirLoveLanguage,     setTheirLoveLanguage]     = useState(null);
+  const [theirGoalIds,          setTheirGoalIds]          = useState(new Set());
+  const [theirHometownCities,   setTheirHometownCities]   = useState([]);
+  const [theirLookingForChurch, setTheirLookingForChurch] = useState(null);
 
   // Score breakdown modal
   const [breakdownOpen,    setBreakdownOpen]    = useState(false);
   const [breakdown,        setBreakdown]        = useState(null);
   const [breakdownLoading, setBreakdownLoading] = useState(false);
   const [breakdownError,   setBreakdownError]   = useState(false);
+  // Category drill-down (interests / goals / values)
+  const [activeCategory,   setActiveCategory]   = useState(null);   // key string or null
+  const [categoryDetail,   setCategoryDetail]   = useState(null);   // full detail object
+  const [detailFetching,   setDetailFetching]   = useState(false);
 
   // Full profile data — starts from whatever the caller passed, enriched by
   // get_profile_detail() when score / interests are missing.
@@ -138,6 +145,7 @@ export default function MatchDetailScreen({ route, navigation }) {
       setTheirLoveLanguage(theirLang?.love_language_id ?? null);
       setTheirGoalIds(new Set((theirGoals ?? []).map((r) => r.goal_id)));
       setTheirHometownCities((theirLang?.hometown_cities ?? []).map((c) => c.toLowerCase().trim()));
+      setTheirLookingForChurch(d.looking_for_church ?? null);
       setProfile((prev) => ({
         ...prev,
         bio:             d.bio              ?? prev.bio,
@@ -187,7 +195,7 @@ export default function MatchDetailScreen({ route, navigation }) {
     (async () => {
       const [{ data: acts }, { data: me }, { data: goals }] = await Promise.all([
         supabase.from('profile_activities').select('activity_id').eq('profile_id', user.id),
-        supabase.from('profiles').select('life_stage_id, church_id, political_lean, love_language_id, hometown_cities').eq('id', user.id).maybeSingle(),
+        supabase.from('profiles').select('life_stage_id, church_id, political_lean, love_language_id, hometown_cities, city, state, looking_for_church').eq('id', user.id).maybeSingle(),
         supabase.from('profile_goals').select('goal_id').eq('profile_id', user.id),
       ]);
       if (cancelled) return;
@@ -198,6 +206,8 @@ export default function MatchDetailScreen({ route, navigation }) {
       setMyLoveLanguage(me?.love_language_id ?? null);
       setMyGoalIds(new Set((goals ?? []).map((r) => r.goal_id)));
       setMyHometownCities((me?.hometown_cities ?? []).map((c) => c.toLowerCase().trim()));
+      setMyCurrentCity(me?.city && me?.state ? `${me.city}, ${me.state}` : null);
+      setMyLookingForChurch(me?.looking_for_church ?? null);
     })();
     return () => { cancelled = true; };
   }, [user]);
@@ -248,6 +258,33 @@ export default function MatchDetailScreen({ route, navigation }) {
       if (mountedRef.current) setBreakdownError(true);
     } finally {
       if (mountedRef.current) setBreakdownLoading(false);
+    }
+  }
+
+  // ── Category detail (tap to expand) ──────────────────────────────────────
+  const DETAIL_KEYS = new Set(['interests', 'goals', 'values']);
+
+  async function handleCategoryPress(key) {
+    if (!DETAIL_KEYS.has(key)) return;
+    if (activeCategory === key) { setActiveCategory(null); return; } // toggle off
+    setActiveCategory(key);
+    if (categoryDetail) return; // already fetched
+    setDetailFetching(true);
+    try {
+      const { data, error } = await supabase.rpc('get_score_breakdown_detail', {
+        p_viewer:    user.id,
+        p_candidate: profile.id,
+      });
+      if (!mountedRef.current) return;
+      if (error || !data) {
+        console.warn('[breakdown detail] rpc failed', error?.message);
+      } else {
+        setCategoryDetail(data);
+      }
+    } catch (e) {
+      console.warn('[breakdown detail] fetch threw', e?.message);
+    } finally {
+      if (mountedRef.current) setDetailFetching(false);
     }
   }
 
@@ -535,7 +572,12 @@ export default function MatchDetailScreen({ route, navigation }) {
             const sameStage     = !!(myLifeStage && profile.lifeStageId && myLifeStage === profile.lifeStageId);
             const sameChurch    = !!(myChurchId && profile.churchId && myChurchId === profile.churchId);
             const politicsAlign = myPoliticalLean != null && theirPolitical != null &&
-              Math.abs(myPoliticalLean - theirPolitical) <= 40;
+              myPoliticalLean !== 0 && theirPolitical !== 0 &&
+              ((myPoliticalLean > 0 && theirPolitical > 0) ||
+               (myPoliticalLean < 0 && theirPolitical < 0));
+            const politicsLabel = politicsAlign
+              ? (myPoliticalLean > 0 ? 'Conservative' : 'Liberal')
+              : null;
             const sameLoveLanguage = !!(myLoveLanguage && theirLoveLanguage &&
               myLoveLanguage !== 'not-sure' && theirLoveLanguage !== 'not-sure' &&
               myLoveLanguage === theirLoveLanguage);
@@ -545,59 +587,170 @@ export default function MatchDetailScreen({ route, navigation }) {
             const sharedGoals = COMMUNITY_GOALS.filter(
               (g) => myGoalIds.has(g.id) && theirGoalIds.has(g.id)
             );
-            // Hometown city overlap: find any cities both users have listed
-            const sharedCities = myHometownCities.filter((c) => theirHometownCities.includes(c));
-            const sharedCityLabels = sharedCities; // already lowercased; display as-is or title-case
-            const hasCommon = sameStage || sameChurch || sharedInterests.length > 0 ||
-              politicsAlign || sameLoveLanguage || sharedGoals.length > 0 || sharedCities.length > 0;
+            const normalizeCity = (raw) => {
+              const s = (raw ?? '').toLowerCase().trim();
+              return s.replace(/,?\s+[a-z]{2}$/, '').trim();
+            };
+            const myNorm    = myHometownCities.map(normalizeCity);
+            const theirNorm = theirHometownCities.map(normalizeCity);
+            const sharedCities = myHometownCities.filter((_, i) =>
+              myNorm[i].length > 0 && theirNorm.includes(myNorm[i])
+            );
+            const titleCase = (s) => s.replace(/\b\w/g, (c) => c.toUpperCase());
+            const sharedCityLabels = sharedCities.map(titleCase);
+
+            // Same current city — where both live now
+            const sameCurrentCity = !!(
+              myCurrentCity &&
+              profile.cityState &&
+              normalizeCity(myCurrentCity) === normalizeCity(profile.cityState)
+            );
+
+            // Both church-goers (different churches — same church handled above as a banner)
+            const bothChurchGoers = !sameChurch && !!(myChurchId && profile.churchId);
+            // Both looking for a church home
+            const bothLookingForChurch = myLookingForChurch === true && theirLookingForChurch === true;
+
+            const hasCommon = sameStage || sameChurch || bothChurchGoers || bothLookingForChurch ||
+              sharedInterests.length > 0 || politicsAlign || sameLoveLanguage ||
+              sharedGoals.length > 0 || sharedCities.length > 0 || sameCurrentCity;
+
             return (
               <View style={styles.section}>
                 <SectionHeader label="In Common" />
                 <View style={styles.commonCard}>
+
+                  {/* ── Banner: Same current city ─────────────────── */}
+                  {sameCurrentCity ? (
+                    <View style={[styles.commonBanner, styles.commonBannerSage]}>
+                      <View style={[styles.commonBannerIcon, { backgroundColor: COLORS.sageBg }]}>
+                        <Ionicons name="location" size={18} color={COLORS.sage} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.commonBannerLabel}>You live in the same area</Text>
+                        <Text style={styles.commonBannerSub}>{profile.cityState}</Text>
+                      </View>
+                    </View>
+                  ) : null}
+
+                  {/* ── Banner: Shared hometown ───────────────────── */}
+                  {sharedCityLabels.length > 0 ? (
+                    <View style={[styles.commonBanner, styles.commonBannerClay]}>
+                      <View style={[styles.commonBannerIcon, { backgroundColor: COLORS.clayBg }]}>
+                        <Ionicons name="home" size={18} color={COLORS.clay} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.commonBannerLabel}>
+                          {sharedCityLabels.length === 1
+                            ? `Both from ${sharedCityLabels[0]}`
+                            : `${sharedCityLabels.length} shared hometowns`}
+                        </Text>
+                        {sharedCityLabels.length > 1 ? (
+                          <Text style={styles.commonBannerSub}>
+                            {sharedCityLabels.slice(0, 3).join(' · ')}
+                          </Text>
+                        ) : null}
+                      </View>
+                    </View>
+                  ) : null}
+
+                  {/* ── Banner: Same church ───────────────────────── */}
+                  {sameChurch ? (
+                    <View style={[styles.commonBanner, styles.commonBannerGold]}>
+                      <View style={[styles.commonBannerIcon, { backgroundColor: COLORS.goldBg }]}>
+                        <Ionicons name="business-outline" size={18} color={COLORS.gold} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.commonBannerLabel}>Same church</Text>
+                        {profile.church ? (
+                          <Text style={styles.commonBannerSub}>{profile.church}</Text>
+                        ) : null}
+                      </View>
+                    </View>
+                  ) : null}
+
+                  {/* ── Row: Both church-goers (different churches) ── */}
+                  {bothChurchGoers ? (
+                    <View style={styles.commonRow}>
+                      <View style={styles.commonRowIcon}>
+                        <Ionicons name="business-outline" size={14} color={COLORS.gold} />
+                      </View>
+                      <Text style={styles.commonText}>Both attend church</Text>
+                    </View>
+                  ) : null}
+
+                  {/* ── Row: Both looking for a church home ──────── */}
+                  {bothLookingForChurch ? (
+                    <View style={styles.commonRow}>
+                      <View style={styles.commonRowIcon}>
+                        <Ionicons name="search-outline" size={14} color={COLORS.gold} />
+                      </View>
+                      <Text style={styles.commonText}>Both looking for a church home</Text>
+                    </View>
+                  ) : null}
+
+                  {/* ── Banner: Political alignment ───────────────── */}
+                  {politicsAlign ? (
+                    <View style={[styles.commonBanner, styles.commonBannerPolitics]}>
+                      <View style={[styles.commonBannerIcon, { backgroundColor: '#EEF2FF' }]}>
+                        <Ionicons name="shield-checkmark-outline" size={17} color="#4F6EB0" />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.commonBannerLabel}>Politically aligned</Text>
+                        <Text style={styles.commonBannerSub}>Both lean {politicsLabel}</Text>
+                      </View>
+                    </View>
+                  ) : null}
+
+                  {/* ── Row: Life stage ───────────────────────────── */}
                   {sameStage ? (
                     <View style={styles.commonRow}>
-                      <Ionicons name="checkmark-circle" size={16} color={COLORS.sage} />
+                      <View style={styles.commonRowIcon}>
+                        <Ionicons name="people" size={14} color={COLORS.sage} />
+                      </View>
                       <Text style={styles.commonText}>Same life stage</Text>
                     </View>
                   ) : null}
-                  {sameChurch ? (
-                    <View style={styles.commonRow}>
-                      <Ionicons name="checkmark-circle" size={16} color={COLORS.sage} />
-                      <Text style={styles.commonText}>Same church</Text>
-                    </View>
-                  ) : null}
+
+                  {/* ── Row: Love language ───────────────────────── */}
                   {sameLoveLanguage && loveLangLabel ? (
                     <View style={styles.commonRow}>
-                      <Ionicons name="checkmark-circle" size={16} color={COLORS.sage} />
-                      <Text style={styles.commonText}>Same love language — {loveLangLabel}</Text>
-                    </View>
-                  ) : null}
-                  {sharedCityLabels.slice(0, 2).map((city) => (
-                    <View key={city} style={styles.commonRow}>
-                      <Ionicons name="checkmark-circle" size={16} color={COLORS.sage} />
+                      <View style={styles.commonRowIcon}>
+                        <Ionicons name="heart" size={14} color={COLORS.clay} />
+                      </View>
                       <Text style={styles.commonText}>
-                        Both lived in {city.replace(/\b\w/g, (c) => c.toUpperCase())}
+                        Same love language · <Text style={{ fontFamily: FONT.semiBold }}>{loveLangLabel}</Text>
                       </Text>
                     </View>
-                  ))}
-                  {sharedInterests.slice(0, 3).map((i) => (
-                    <View key={i.id} style={styles.commonRow}>
-                      <Ionicons name="checkmark-circle" size={16} color={COLORS.sage} />
-                      <Text style={styles.commonText}>Both into {i.label.toLowerCase()}</Text>
+                  ) : null}
+
+                  {/* ── Shared interests — labeled chip grid ─────── */}
+                  {sharedInterests.length > 0 ? (
+                    <View style={styles.commonInterestsBlock}>
+                      <Text style={styles.commonInterestsLabel}>
+                        {sharedInterests.length} {sharedInterests.length === 1 ? 'activity' : 'activities'} in common
+                      </Text>
+                      <View style={styles.commonChips}>
+                        {sharedInterests.map((i) => (
+                          <View key={i.id} style={styles.commonChip}>
+                            <Text style={styles.commonChipText}>{i.label}</Text>
+                          </View>
+                        ))}
+                      </View>
                     </View>
-                  ))}
-                  {sharedGoals.slice(0, 2).map((g) => (
+                  ) : null}
+
+                  {/* ── Goals ─────────────────────────────────────── */}
+                  {sharedGoals.map((g) => (
                     <View key={g.id} style={styles.commonRow}>
-                      <Ionicons name="checkmark-circle" size={16} color={COLORS.sage} />
+                      <View style={styles.commonRowIcon}>
+                        <Ionicons name="flag" size={14} color={COLORS.sage} />
+                      </View>
                       <Text style={styles.commonText}>Both looking for {g.label.toLowerCase()}</Text>
                     </View>
                   ))}
-                  {politicsAlign ? (
-                    <View style={styles.commonRow}>
-                      <Ionicons name="checkmark-circle" size={16} color={COLORS.sage} />
-                      <Text style={styles.commonText}>Similar political views</Text>
-                    </View>
-                  ) : null}
+
+                  {/* ── Empty state ───────────────────────────────── */}
                   {!hasCommon && !detailLoading ? (
                     <View style={styles.commonRow}>
                       <Ionicons name="sparkles-outline" size={16} color={COLORS.textTertiary} />
@@ -768,13 +921,13 @@ export default function MatchDetailScreen({ route, navigation }) {
         visible={breakdownOpen}
         transparent
         animationType="slide"
-        onRequestClose={() => setBreakdownOpen(false)}
+        onRequestClose={() => { setBreakdownOpen(false); setActiveCategory(null); }}
       >
         <View style={styles.menuBackdrop}>
           <TouchableOpacity
             style={StyleSheet.absoluteFill}
             activeOpacity={1}
-            onPress={() => setBreakdownOpen(false)}
+            onPress={() => { setBreakdownOpen(false); setActiveCategory(null); }}
           />
           <View style={[styles.menuSheet, styles.breakdownSheet]}>
             {/* Handle bar */}
@@ -807,8 +960,14 @@ export default function MatchDetailScreen({ route, navigation }) {
                 { key: 'hometown',   label: 'Hometown',     icon: 'home-outline'         },
                 { key: 'political',  label: 'Politics',     icon: 'ribbon-outline'       },
               ];
+              const isTappable = (key) => DETAIL_KEYS.has(key);
               return (
-                <View style={styles.breakdownRows}>
+                <ScrollView
+                  style={styles.breakdownRowsScroll}
+                  contentContainerStyle={styles.breakdownRows}
+                  showsVerticalScrollIndicator={false}
+                  keyboardShouldPersistTaps="handled"
+                >
                   {rows.map(({ key, label, icon }) => {
                     const d = breakdown[key];
                     if (!d) return null;
@@ -816,40 +975,96 @@ export default function MatchDetailScreen({ route, navigation }) {
                     const subtitle = d.shared != null
                       ? `${d.shared} of ${d.total} shared`
                       : null;
+                    const isOpen   = activeCategory === key;
+                    const tappable = isTappable(key);
+                    const detail   = categoryDetail?.[key];
+                    const RowWrap  = tappable ? TouchableOpacity : View;
+                    const rowProps = tappable
+                      ? { onPress: () => handleCategoryPress(key), activeOpacity: 0.7 }
+                      : {};
                     return (
-                      <View key={key} style={styles.breakdownRow}>
-                        <View style={styles.breakdownRowLeft}>
-                          <View style={styles.breakdownIconWrap}>
-                            <Ionicons name={icon} size={14} color={COLORS.textSecondary} />
+                      <View key={key}>
+                        <RowWrap {...rowProps} style={styles.breakdownRow}>
+                          <View style={styles.breakdownRowLeft}>
+                            <View style={styles.breakdownIconWrap}>
+                              <Ionicons name={icon} size={14} color={COLORS.textSecondary} />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                              <Text style={styles.breakdownRowLabel}>{label}</Text>
+                              {subtitle ? (
+                                <Text style={styles.breakdownRowSub}>{subtitle}</Text>
+                              ) : null}
+                            </View>
                           </View>
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.breakdownRowLabel}>{label}</Text>
-                            {subtitle ? (
-                              <Text style={styles.breakdownRowSub}>{subtitle}</Text>
+                          <View style={styles.breakdownBarWrap}>
+                            <View style={styles.breakdownBarTrack}>
+                              <View
+                                style={[
+                                  styles.breakdownBarFill,
+                                  { width: `${Math.round(pct * 100)}%` },
+                                  pct >= 0.7 ? styles.breakdownBarHigh
+                                    : pct >= 0.3 ? styles.breakdownBarMid
+                                    : styles.breakdownBarLow,
+                                ]}
+                              />
+                            </View>
+                            <Text style={styles.breakdownPts}>{d.pts}/{d.max}</Text>
+                            {tappable ? (
+                              <Ionicons
+                                name={isOpen ? 'chevron-up' : 'chevron-down'}
+                                size={12}
+                                color={COLORS.textTertiary}
+                                style={{ marginLeft: 4 }}
+                              />
                             ) : null}
                           </View>
-                        </View>
-                        <View style={styles.breakdownBarWrap}>
-                          <View style={styles.breakdownBarTrack}>
-                            <View
-                              style={[
-                                styles.breakdownBarFill,
-                                { width: `${Math.round(pct * 100)}%` },
-                                pct >= 0.7 ? styles.breakdownBarHigh
-                                  : pct >= 0.3 ? styles.breakdownBarMid
-                                  : styles.breakdownBarLow,
-                              ]}
-                            />
+                        </RowWrap>
+
+                        {/* ── Inline item expansion ── */}
+                        {isOpen && tappable && (
+                          <View style={styles.breakdownDetail}>
+                            {detailFetching && !detail ? (
+                              <ActivityIndicator size="small" color={COLORS.textTertiary} style={{ marginVertical: 8 }} />
+                            ) : detail ? (
+                              <>
+                                {detail.shared?.length > 0 && (
+                                  <>
+                                    <Text style={styles.breakdownDetailHeading}>In common</Text>
+                                    {detail.shared.map((item) => (
+                                      <View key={item.id} style={styles.breakdownDetailRow}>
+                                        <Ionicons name="checkmark-circle" size={14} color={COLORS.sage} style={{ marginRight: 6 }} />
+                                        <Text style={styles.breakdownDetailLabel}>{item.label}</Text>
+                                      </View>
+                                    ))}
+                                  </>
+                                )}
+                                {detail.candidate_only?.length > 0 && (
+                                  <>
+                                    <Text style={[styles.breakdownDetailHeading, { marginTop: detail.shared?.length > 0 ? 10 : 0 }]}>
+                                      They have, you don't
+                                    </Text>
+                                    {detail.candidate_only.map((item) => (
+                                      <View key={item.id} style={styles.breakdownDetailRow}>
+                                        <Ionicons name="add-circle-outline" size={14} color={COLORS.textTertiary} style={{ marginRight: 6 }} />
+                                        <Text style={[styles.breakdownDetailLabel, { color: COLORS.textTertiary }]}>{item.label}</Text>
+                                      </View>
+                                    ))}
+                                  </>
+                                )}
+                                {detail.shared?.length === 0 && detail.candidate_only?.length === 0 && (
+                                  <Text style={[styles.breakdownNote, { marginVertical: 8 }]}>Nothing in common here yet.</Text>
+                                )}
+                              </>
+                            ) : null}
                           </View>
-                          <Text style={styles.breakdownPts}>{d.pts}/{d.max}</Text>
-                        </View>
+                        )}
                       </View>
                     );
                   })}
                   <Text style={styles.breakdownNote}>
                     Tip: add more interests, goals, and values to your profile to improve your score.
                   </Text>
-                </View>
+                </ScrollView>
               );
             })() : null}
           </View>
@@ -1148,7 +1363,90 @@ const styles = StyleSheet.create({
     padding: SPACING.md, borderWidth: 1, borderColor: COLORS.border, gap: 10,
   },
   commonRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
-  commonText: { fontFamily: FONT.regular, fontSize: 14, color: COLORS.text },
+  commonText: { fontFamily: FONT.regular, fontSize: 14, color: COLORS.text, flex: 1 },
+
+  // Icon pill used in row items
+  commonRowIcon: {
+    width: 26, height: 26,
+    borderRadius: 8,
+    backgroundColor: COLORS.surfaceAlt,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  // Shared interests labeled block
+  commonInterestsBlock: {
+    gap: 8,
+  },
+  commonInterestsLabel: {
+    fontFamily: FONT.semiBold,
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  commonChips: {
+    flex: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  commonChip: {
+    backgroundColor: COLORS.surfaceAlt,
+    borderRadius: RADIUS.full,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  commonChipText: {
+    fontFamily: FONT.regular,
+    fontSize: 12,
+    color: COLORS.text,
+  },
+
+  // Banner items — high-signal location/church matches
+  commonBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1.5,
+    padding: SPACING.md,
+  },
+  commonBannerSage: {
+    backgroundColor: COLORS.sageBg,
+    borderColor: COLORS.sageLight,
+  },
+  commonBannerClay: {
+    backgroundColor: '#FDF0E8',
+    borderColor: COLORS.clay,
+  },
+  commonBannerGold: {
+    backgroundColor: COLORS.goldBg,
+    borderColor: COLORS.gold,
+  },
+  commonBannerPolitics: {
+    backgroundColor: '#EEF2FF',
+    borderColor: '#B0BEE0',
+  },
+  commonBannerIcon: {
+    width: 36, height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  commonBannerLabel: {
+    fontFamily: FONT.semiBold,
+    fontSize: 14,
+    color: COLORS.text,
+  },
+  commonBannerSub: {
+    fontFamily: FONT.regular,
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginTop: 2,
+  },
 
   rule: { marginBottom: SPACING.sm },
 
@@ -1221,7 +1519,7 @@ const styles = StyleSheet.create({
   // Score breakdown sheet
   breakdownSheet: {
     paddingTop: SPACING.sm,
-    paddingBottom: SPACING.xl,
+    maxHeight: '88%',
   },
   sheetHandle: {
     width: 36,
@@ -1249,8 +1547,12 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     marginTop: 2,
   },
+  breakdownRowsScroll: {
+    flex: 1,
+  },
   breakdownRows: {
     gap: 10,
+    paddingBottom: SPACING.xl,
   },
   breakdownRow: {
     flexDirection: 'row',
@@ -1315,6 +1617,35 @@ const styles = StyleSheet.create({
     marginTop: SPACING.sm,
     textAlign: 'center',
     lineHeight: 17,
+  },
+
+  breakdownDetail: {
+    backgroundColor: COLORS.surface ?? '#F4F1EC',
+    borderRadius: RADIUS.sm,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    marginBottom: SPACING.xs,
+    marginTop: 4,
+  },
+  breakdownDetailHeading: {
+    fontFamily: FONT.medium,
+    fontSize: 11,
+    color: COLORS.textTertiary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 6,
+    marginTop: 4,
+  },
+  breakdownDetailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 3,
+  },
+  breakdownDetailLabel: {
+    fontFamily: FONT.regular,
+    fontSize: 13,
+    color: COLORS.text,
+    flex: 1,
   },
 
   // Action menu

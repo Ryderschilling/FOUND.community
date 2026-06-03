@@ -35,7 +35,7 @@ function initialsFor(name) {
 
 function badgeFor(row) {
   if (row.is_match)              return { icon: 'sparkles',  label: 'Match',     color: COLORS.sage };
-  if (row.their_kind === 'like') return { icon: 'heart',     label: 'Wants to connect', color: COLORS.clay };
+  if (row.their_kind === 'like') return { icon: 'heart',     label: 'Connect',          color: COLORS.clay };
   if (row.their_kind === 'wave') return { icon: 'hand-left', label: 'Wave',      color: COLORS.gold };
   return null;
 }
@@ -108,35 +108,39 @@ const styles = StyleSheet.create({
   list: { paddingHorizontal: SPACING.lg, paddingVertical: 2 },
 
   card: {
-    width: 84,
+    width: 80,
     alignItems: 'center',
-    gap: 6,
+    gap: 5,
     backgroundColor: COLORS.surface,
     borderRadius: RADIUS.lg,
     borderWidth: 1,
     borderColor: COLORS.border,
     paddingVertical: 10,
-    paddingHorizontal: 6,
+    paddingHorizontal: 4,
     ...SHADOW.sm,
+    overflow: 'hidden',   // prevent any child from stretching the card
   },
   name: {
     fontFamily: FONT.semiBold,
     fontSize: 12,
     color: COLORS.text,
-    maxWidth: 70,
+    width: 72,
+    textAlign: 'center',
   },
   badge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    paddingHorizontal: 6,
+    paddingHorizontal: 5,
     paddingVertical: 2,
     borderRadius: RADIUS.full,
     backgroundColor: COLORS.sageBg,
+    maxWidth: 72,
   },
   badgeText: {
     fontFamily: FONT.semiBold,
     fontSize: 9,
     letterSpacing: 0.2,
+    flexShrink: 1,
   },
 });

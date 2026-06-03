@@ -564,7 +564,7 @@ export default function HomeScreen({ navigation }) {
     <View style={styles.listHeader}>
       {/* Location filter pill — tap to open the bottom sheet */}
       <View style={styles.locationPillRow}>
-        <View ref={tutorialRefs.locPill} collapsable={false} style={{ alignSelf: 'flex-start' }}>
+        <View ref={tutorialRefs.locPill} collapsable={false} style={{ alignSelf: 'stretch' }}>
           <TouchableOpacity
             style={styles.locationPill}
             activeOpacity={0.8}
@@ -683,7 +683,7 @@ export default function HomeScreen({ navigation }) {
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
 
       {/* ── Sticky header — absolutely positioned so it floats above the list ── */}
-      <Animated.View style={[styles.header, { top: insets.top, paddingTop: SPACING.sm, transform: [{ translateY: headerTranslate }] }]}>
+      <Animated.View style={[styles.header, { top: insets.top, paddingTop: SPACING.lg, transform: [{ translateY: headerTranslate }] }]}>
         <View>
           <Text style={styles.headerMeta}>
             {profile?.city ? `${profile.city}` : 'Your Area'}{' · '}{new Date().toLocaleDateString('en-US', { weekday: 'long' })}
@@ -881,11 +881,11 @@ const styles = StyleSheet.create({
 
   // Location pill — top of header, opens the LocationFilterSheet
   locationPillRow: {
-    paddingHorizontal: SPACING.lg,
+    paddingHorizontal: SPACING.md,
     marginBottom: SPACING.md,
   },
   locationPill: {
-    alignSelf: 'flex-start',
+    alignSelf: 'stretch',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -904,7 +904,7 @@ const styles = StyleSheet.create({
 
   // Search bar
   searchRow: {
-    paddingHorizontal: SPACING.lg,
+    paddingHorizontal: SPACING.md,
     marginBottom: SPACING.md,
   },
   searchBox: {

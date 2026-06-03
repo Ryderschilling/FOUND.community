@@ -147,13 +147,16 @@ function RequestModal({
 }
 
 export default function ChurchPicker({
-  churchId     = null,
-  isHomeChurch = false,
-  churchName   = null,
+  churchId          = null,
+  isHomeChurch      = false,
+  churchName        = null,
+  lookingForChurch  = null,
+  onLookingChange,
   onSaved,
 }) {
   // ── state ──────────────────────────────────────────────────────────────────
-  const initialMode = (isHomeChurch || churchId) ? 'done' : 'idle';
+  // Home Church is now an inline toggle — only go to 'done' when a specific church is linked
+  const initialMode = churchId ? 'done' : 'idle';
 
   const [mode, setMode]                   = useState(initialMode);
   const [selectedChurch, setSelectedChurch] = useState(
@@ -201,13 +204,22 @@ export default function ChurchPicker({
 
   // ── handlers ───────────────────────────────────────────────────────────────
   async function handleHomeChurch() {
-    setSaving(true);
-    await supabase.rpc('set_profile_church', { p_church_id: null, p_is_home_church: true });
-    setSaving(false);
-    setHomeSelected(true);
-    setSelectedChurch(null);
-    setMode('done');
-    onSaved?.({ churchId: null, isHomeChurch: true });
+    const next = !homeSelected;
+    setHomeSelected(next);
+    if (next) {
+      // Mark as home church — save in background, stay on this screen
+      setSaving(true);
+      await supabase.rpc('set_profile_church', { p_church_id: null, p_is_home_church: true });
+      setSaving(false);
+      setSelectedChurch(null);
+      onSaved?.({ churchId: null, isHomeChurch: true });
+    } else {
+      // Deselect — clear home church flag
+      setSaving(true);
+      await supabase.rpc('set_profile_church', { p_church_id: null, p_is_home_church: false });
+      setSaving(false);
+      onSaved?.({ churchId: null, isHomeChurch: false });
+    }
   }
 
   async function handleSelectChurch(church) {
@@ -400,22 +412,30 @@ export default function ChurchPicker({
         Enter your church name and we'll reach out to get them on FOUND — so you can connect with other members.
       </Text>
 
-      <View style={styles.optRow}>
-        {/* Home Church */}
+      <View style={styles.optStack}>
+        {/* Home Church — selectable toggle, no navigation */}
         <TouchableOpacity
-          style={styles.optBtn}
+          style={[styles.optBtn, homeSelected && styles.optBtnActive]}
           activeOpacity={0.8}
           onPress={handleHomeChurch}
           disabled={saving}
         >
-          {saving ? (
-            <ActivityIndicator size="small" color={COLORS.text} />
-          ) : (
-            <>
-              <Ionicons name="home-outline" size={18} color={COLORS.text} />
-              <Text style={styles.optBtnTxt}>Home Church</Text>
-            </>
-          )}
+          <View style={[styles.optIconWrap, homeSelected && styles.optIconWrapActive]}>
+            {saving
+              ? <ActivityIndicator size="small" color={homeSelected ? COLORS.white : COLORS.text} />
+              : <Ionicons name="home-outline" size={20} color={homeSelected ? COLORS.white : COLORS.text} />
+            }
+          </View>
+          <View style={styles.optTextWrap}>
+            <Text style={[styles.optBtnTxt, homeSelected && styles.optBtnTxtActive]}>Home Church</Text>
+            <Text style={[styles.optBtnSub, homeSelected && styles.optBtnSubActive]}>
+              {homeSelected ? 'Marked — you have a home church' : 'I have a church I call home'}
+            </Text>
+          </View>
+          {homeSelected
+            ? <Ionicons name="checkmark-circle" size={18} color={COLORS.white} />
+            : <View style={{ width: 18 }} />
+          }
         </TouchableOpacity>
 
         {/* Find My Church */}
@@ -424,8 +444,41 @@ export default function ChurchPicker({
           activeOpacity={0.8}
           onPress={enterSearch}
         >
-          <Ionicons name="search-outline" size={18} color={COLORS.text} />
-          <Text style={styles.optBtnTxt}>Find My Church</Text>
+          <View style={styles.optIconWrap}>
+            <Ionicons name="search-outline" size={20} color={COLORS.text} />
+          </View>
+          <View style={styles.optTextWrap}>
+            <Text style={styles.optBtnTxt}>Find My Church</Text>
+            <Text style={styles.optBtnSub}>Search for my church on FOUND</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={16} color={COLORS.textTertiary} />
+        </TouchableOpacity>
+
+        {/* Still Searching */}
+        <TouchableOpacity
+          style={[styles.optBtn, lookingForChurch === true && styles.optBtnActive]}
+          activeOpacity={0.8}
+          onPress={() => onLookingChange?.(lookingForChurch === true ? null : true)}
+        >
+          <View style={[styles.optIconWrap, lookingForChurch === true && styles.optIconWrapActive]}>
+            <Ionicons
+              name="compass-outline"
+              size={20}
+              color={lookingForChurch === true ? COLORS.white : COLORS.text}
+            />
+          </View>
+          <View style={styles.optTextWrap}>
+            <Text style={[styles.optBtnTxt, lookingForChurch === true && styles.optBtnTxtActive]}>
+              Still Searching
+            </Text>
+            <Text style={[styles.optBtnSub, lookingForChurch === true && styles.optBtnSubActive]}>
+              {lookingForChurch === true ? 'Marked — we\'ll help you find one' : "I\'m looking for a church community"}
+            </Text>
+          </View>
+          {lookingForChurch === true
+            ? <Ionicons name="checkmark-circle" size={18} color={COLORS.white} />
+            : <View style={{ width: 18 }} />
+          }
         </TouchableOpacity>
       </View>
     </View>
@@ -450,27 +503,57 @@ const styles = StyleSheet.create({
     color:      COLORS.textSecondary,
     lineHeight: 19,
   },
-  optRow: {
-    flexDirection: 'row',
-    gap:           SPACING.sm,
-    marginTop:     SPACING.xs,
+  optStack: {
+    gap:       SPACING.sm,
+    marginTop: SPACING.xs,
   },
   optBtn: {
-    flex:            1,
     flexDirection:   'row',
     alignItems:      'center',
-    justifyContent:  'center',
-    gap:             6,
-    paddingVertical: 12,
-    borderRadius:    RADIUS.md,
-    borderWidth:     1,
+    gap:             SPACING.md,
+    paddingVertical: 14,
+    paddingHorizontal: SPACING.md,
+    borderRadius:    RADIUS.xl,
+    borderWidth:     1.5,
     borderColor:     COLORS.border,
     backgroundColor: COLORS.white,
   },
+  optBtnActive: {
+    backgroundColor: COLORS.text,
+    borderColor:     COLORS.text,
+  },
+  optIconWrap: {
+    width:           38,
+    height:          38,
+    borderRadius:    19,
+    backgroundColor: COLORS.surfaceAlt,
+    alignItems:      'center',
+    justifyContent:  'center',
+    flexShrink:      0,
+  },
+  optIconWrapActive: {
+    backgroundColor: 'rgba(255,255,255,0.15)',
+  },
+  optTextWrap: {
+    flex: 1,
+    gap:  2,
+  },
   optBtnTxt: {
     fontFamily: FONT.semiBold,
-    fontSize:   13,
+    fontSize:   15,
     color:      COLORS.text,
+  },
+  optBtnTxtActive: {
+    color: COLORS.white,
+  },
+  optBtnSub: {
+    fontFamily: FONT.regular,
+    fontSize:   12,
+    color:      COLORS.textTertiary,
+    lineHeight: 16,
+  },
+  optBtnSubActive: {
+    color: 'rgba(255,255,255,0.7)',
   },
 
   // ── search ─────────────────────────────────────────────────────────────────

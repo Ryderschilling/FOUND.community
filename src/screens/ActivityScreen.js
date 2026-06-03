@@ -160,7 +160,7 @@ function ActivityRow({ row, onAccept, onDismiss, onOpen, onMessage, busy }) {
 }
 
 // ─── Connection row (Connected tab) ──────────────────────────────────────
-function ConnectionRow({ row, onPress, onPin }) {
+function ConnectionRow({ row, onPress, onPin, selectMode, selected, onSelect }) {
   const name    = row.full_name || row.handle || 'Someone';
   const initials = initialsFor(name);
   const grad    = gradientFor(row.profile_id);
@@ -171,15 +171,26 @@ function ConnectionRow({ row, onPress, onPin }) {
   return (
     <TouchableOpacity
       activeOpacity={0.85}
-      style={styles.connRow}
-      onPress={() => onPress?.(row)}
+      style={[styles.connRow, isPinned && styles.connRowPinned]}
+      onPress={() => selectMode ? onSelect?.(row.profile_id) : onPress?.(row)}
     >
-      <Avatar
-        initials={initials}
-        size={48}
-        gradientColors={grad}
-        uri={row.avatar_url || undefined}
-      />
+      {/* Peach left stripe for saved/pinned connections */}
+      {isPinned ? <View style={styles.pinnedStripe} /> : null}
+
+      {/* Checkbox in select mode */}
+      {selectMode ? (
+        <View style={[styles.connCheckbox, selected && styles.connCheckboxOn]}>
+          {selected ? <Ionicons name="checkmark" size={13} color={COLORS.white} /> : null}
+        </View>
+      ) : (
+        <Avatar
+          initials={initials}
+          size={48}
+          gradientColors={grad}
+          uri={row.avatar_url || undefined}
+        />
+      )}
+
       <View style={styles.connBody}>
         <View style={styles.connTopLine}>
           <Text style={styles.connName} numberOfLines={1}>{name}</Text>
@@ -196,42 +207,49 @@ function ConnectionRow({ row, onPress, onPin }) {
           <Text style={styles.connInterests} numberOfLines={1}>{interests}</Text>
         ) : null}
       </View>
-      <TouchableOpacity
-        onPress={(e) => { e.stopPropagation?.(); onPin?.(row); }}
-        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-        style={{ padding: 6, alignSelf: 'center' }}
-        activeOpacity={0.7}
-      >
-        <Ionicons
-          name={isPinned ? 'bookmark' : 'bookmark-outline'}
-          size={18}
-          color={isPinned ? COLORS.sage : COLORS.textTertiary}
-        />
-      </TouchableOpacity>
+
+      {!selectMode ? (
+        <TouchableOpacity
+          onPress={(e) => { e.stopPropagation?.(); onPin?.(row); }}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          style={{ padding: 6, alignSelf: 'center' }}
+          activeOpacity={0.7}
+        >
+          <Ionicons
+            name={isPinned ? 'bookmark' : 'bookmark-outline'}
+            size={18}
+            color={isPinned ? COLORS.clay : COLORS.textTertiary}
+          />
+        </TouchableOpacity>
+      ) : null}
     </TouchableOpacity>
   );
 }
 
 // ─── Screen ───────────────────────────────────────────────────────────────
-// ─── Event card (horizontal strip) ───────────────────────────────────────
+// ─── Event card ───────────────────────────────────────────────────────────
 function formatEventShort(ts) {
   if (!ts) return '';
   const d = new Date(ts);
   return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-    + '\n'
+    + '  ·  '
     + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
 }
 
-function EventCard({ ev, onPress }) {
+function EventCard({ ev, onPress, fullWidth }) {
   const isCreator = ev.my_role === 'creator';
   return (
-    <TouchableOpacity style={styles.eventCard} activeOpacity={0.8} onPress={() => onPress(ev)}>
+    <TouchableOpacity
+      style={[styles.eventCard, fullWidth && styles.eventCardFull]}
+      activeOpacity={0.8}
+      onPress={() => onPress(ev)}
+    >
       <View style={[styles.eventRolePill, isCreator ? styles.eventRoleCreator : styles.eventRoleAttendee]}>
         <Text style={[styles.eventRoleText, isCreator ? styles.eventRoleCreatorText : styles.eventRoleAttendeeText]}>
           {isCreator ? 'Hosting' : 'Going'}
         </Text>
       </View>
-      <Text style={styles.eventCardTitle} numberOfLines={2}>{ev.title}</Text>
+      <Text style={[styles.eventCardTitle, fullWidth && { fontSize: 17 }]} numberOfLines={2}>{ev.title}</Text>
       <Text style={styles.eventCardTime}>{formatEventShort(ev.event_time)}</Text>
       {ev.location_name ? (
         <Text style={styles.eventCardLocation} numberOfLines={1}>📍 {ev.location_name}</Text>
@@ -248,8 +266,8 @@ export default function ActivityScreen({ navigation }) {
   const confirm = useConfirm();
   const toast = useToast();
 
-  // ── Segment control ─────────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState('requests'); // 'requests' | 'connected'
+  // ── Segment control — default to Connected per Sam's 6-2-26 review ─────
+  const [activeTab, setActiveTab] = useState('connected'); // 'connected' | 'requests'
 
   // ── Requests tab state ──────────────────────────────────────────────────
   const [rows, setRows]               = useState([]);
@@ -266,6 +284,16 @@ export default function ActivityScreen({ navigation }) {
   const [connRefreshing,     setConnRefreshing]     = useState(false);
   const [connSearch,         setConnSearch]         = useState('');
   const [connSort,           setConnSort]           = useState('recent'); // 'recent' | 'score' | 'name'
+  const [connFilter,         setConnFilter]         = useState('all');   // 'all' | 'pending' | 'saved' | stage/interest id
+  const [selectMode,         setSelectMode]         = useState(false);
+  const [selected,           setSelected]           = useState({});      // { [profileId]: true }
+  // Must be declared before visibleConnections useMemo (TDZ fix)
+  const [openDropdown, setOpenDropdown] = useState(null);
+  const [activeFilters, setActiveFilters] = useState({ saved: false, lifeStage: null, interests: null });
+  const [dropdownAnchor, setDropdownAnchor] = useState({ top: 0, left: 0 });
+  const lifeStageRef  = useRef(null);
+  const interestsRef  = useRef(null);
+  const containerRef  = useRef(null);
 
   // Guard against setState after unmount / after blur
   const mountedRef = useRef(true);
@@ -282,7 +310,8 @@ export default function ActivityScreen({ navigation }) {
       ]);
       if (!mountedRef.current) return;
       if (connRes.error) throw connRes.error;
-      setRows(connRes.data ?? []);
+      // Exclude already-matched rows — they belong in the Connected tab, not Requests.
+      setRows((connRes.data ?? []).filter((r) => !r.is_match));
       setEvents(evRes.data ?? []);
     } catch (e) {
       if (!mountedRef.current) return;
@@ -326,6 +355,10 @@ export default function ActivityScreen({ navigation }) {
         return haystack.includes(q);
       });
     }
+    // Category filters
+    if (activeFilters.saved)      list = list.filter((r) => !!r.pinned_at);
+    if (activeFilters.lifeStage)  list = list.filter((r) => r.life_stage_label === activeFilters.lifeStage);
+    if (activeFilters.interests)  list = list.filter((r) => (r.activities ?? []).some((a) => a.label === activeFilters.interests));
     if (connSort === 'score') {
       list.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
     } else if (connSort === 'name') {
@@ -338,7 +371,54 @@ export default function ActivityScreen({ navigation }) {
       return 0;
     });
     return list;
-  }, [connections, connSearch, connSort]);
+  }, [connections, connSearch, connSort, activeFilters]);
+
+  // Derive unique options for each filter category
+  const filterOptions = useMemo(() => {
+    const stages    = new Set();
+    const interests = new Set();
+    connections.forEach((r) => {
+      if (r.life_stage_label) stages.add(r.life_stage_label);
+      (r.activities ?? []).forEach((a) => interests.add(a.label));
+    });
+    return {
+      lifeStage:  Array.from(stages),
+      interests:  Array.from(interests),
+    };
+  }, [connections]);
+
+  function toggleDropdown(key) {
+    if (openDropdown === key) { setOpenDropdown(null); return; }
+    const ref = key === 'lifeStage' ? lifeStageRef : interestsRef;
+    const pillNode      = ref?.current;
+    const containerNode = containerRef?.current;
+    if (pillNode?.getBoundingClientRect) {
+      // React Native Web — use DOM rects relative to the root container
+      const pill      = pillNode.getBoundingClientRect();
+      const container = containerNode?.getBoundingClientRect?.() ?? { top: 0, left: 0 };
+      setDropdownAnchor({
+        top:  pill.bottom - container.top + 4,
+        left: pill.left   - container.left,
+      });
+    } else if (pillNode?.measure) {
+      // Native fallback
+      pillNode.measure((_x, _y, _w, h, pageX, pageY) => {
+        setDropdownAnchor({ top: pageY + h + 4, left: pageX });
+      });
+    }
+    setOpenDropdown(key);
+  }
+  function setFilter(category, value) {
+    setActiveFilters((prev) => ({ ...prev, [category]: value }));
+    // Update the old connFilter string for the existing filter logic
+    setConnFilter(value || 'all');
+    setOpenDropdown(null);
+  }
+
+  const activeFilterCount = [activeFilters.saved, activeFilters.lifeStage, activeFilters.interests]
+    .filter(Boolean).length;
+
+  const selectedCount = Object.values(selected).filter(Boolean).length;
 
   // Refresh + mark-all-seen whenever the user lands on this tab.
   // We track a per-focus abort flag so a load that starts on Activity but
@@ -380,21 +460,22 @@ export default function ActivityScreen({ navigation }) {
       return;
     }
 
+    // Mark the inbound connection + all notifications from this person as read.
+    // Fire both in parallel — non-fatal if either fails (badge will self-correct on next poll).
+    Promise.all([
+      supabase.rpc('mark_inbound_seen',           { p_from: row.profile_id }),
+      supabase.rpc('mark_notifications_from_actor', { p_actor: row.profile_id }),
+    ]).catch(() => {});
+
     // Determine whether this acceptance produced a match (their kind was already 'like').
     const becameMatch = row.their_kind === 'like';
-
-    // Optimistic row update — flips the action buttons from Accept/Dismiss → Message/Clear
-    setRows((prev) =>
-      prev.map((r) =>
-        r.profile_id === row.profile_id
-          ? { ...r, my_kind: 'like', is_match: becameMatch }
-          : r
-      )
-    );
 
     // Confirmation + jump-into-chat shortcut
     const name = row.full_name || row.handle || 'them';
     if (becameMatch) {
+      // Remove from Requests immediately — they'll appear in Connected tab.
+      setRows((prev) => prev.filter((r) => r.profile_id !== row.profile_id));
+      loadConnections();
       const ok = await confirm({
         title: 'FOUND!',
         message: `You and ${name} are now connected. Say hi?`,
@@ -402,6 +483,15 @@ export default function ActivityScreen({ navigation }) {
         cancelLabel: 'Later',
       });
       if (ok) openChatWith(row);
+    } else {
+      // Optimistic update for wave-accept (not yet a match) — keep in Requests
+      setRows((prev) =>
+        prev.map((r) =>
+          r.profile_id === row.profile_id
+            ? { ...r, my_kind: 'like', is_match: false }
+            : r
+        )
+      );
     }
   }
 
@@ -533,7 +623,8 @@ export default function ActivityScreen({ navigation }) {
     });
   }, [navigation]);
 
-  const Header = () => (
+  // eslint-disable-next-line react/display-name
+  const Header = useCallback(() => (
     <View>
       {/* Title row */}
       <View style={styles.pageHeader}>
@@ -557,8 +648,17 @@ export default function ActivityScreen({ navigation }) {
         </View>
       </View>
 
-      {/* Segment control */}
+      {/* Segment control — Connected | Requests | Events */}
       <View style={styles.segmentWrap}>
+        <TouchableOpacity
+          style={[styles.segBtn, activeTab === 'connected' && styles.segBtnActive]}
+          onPress={() => setActiveTab('connected')}
+          activeOpacity={0.8}
+        >
+          <Text style={[styles.segLabel, activeTab === 'connected' && styles.segLabelActive]}>
+            Connected {connections.length > 0 ? `(${connections.length})` : ''}
+          </Text>
+        </TouchableOpacity>
         <TouchableOpacity
           style={[styles.segBtn, activeTab === 'requests' && styles.segBtnActive]}
           onPress={() => setActiveTab('requests')}
@@ -569,97 +669,113 @@ export default function ActivityScreen({ navigation }) {
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.segBtn, activeTab === 'connected' && styles.segBtnActive]}
-          onPress={() => setActiveTab('connected')}
+          style={[styles.segBtn, activeTab === 'events' && styles.segBtnActive]}
+          onPress={() => setActiveTab('events')}
           activeOpacity={0.8}
         >
-          <Text style={[styles.segLabel, activeTab === 'connected' && styles.segLabelActive]}>
-            Connected {connections.length > 0 ? `(${connections.length})` : ''}
+          <Text style={[styles.segLabel, activeTab === 'events' && styles.segLabelActive]}>
+            Events {events.length > 0 ? `(${events.length})` : ''}
           </Text>
         </TouchableOpacity>
       </View>
 
-      {/* Connected tab: search + sort */}
+      {/* Connected tab: search + filter + select */}
       {activeTab === 'connected' ? (
         <View style={styles.connControls}>
-          {/* Search */}
-          <View style={styles.connSearchBox}>
-            <Ionicons name="search" size={15} color={COLORS.textTertiary} />
-            <TextInput
-              style={styles.connSearchInput}
-              placeholder="Search connections…"
-              placeholderTextColor={COLORS.textTertiary}
-              value={connSearch}
-              onChangeText={setConnSearch}
-              returnKeyType="search"
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            {connSearch.length > 0 ? (
-              <TouchableOpacity onPress={() => setConnSearch('')} hitSlop={8}>
-                <Ionicons name="close-circle" size={16} color={COLORS.textTertiary} />
+          {/* Search + Select toggle row */}
+          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+            <View style={[styles.connSearchBox, { flex: 1 }]}>
+              <Ionicons name="search" size={15} color={COLORS.textTertiary} />
+              <TextInput
+                style={styles.connSearchInput}
+                placeholder="Search connections…"
+                placeholderTextColor={COLORS.textTertiary}
+                value={connSearch}
+                onChangeText={setConnSearch}
+                returnKeyType="search"
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              {connSearch.length > 0 ? (
+                <TouchableOpacity onPress={() => setConnSearch('')} hitSlop={8}>
+                  <Ionicons name="close-circle" size={16} color={COLORS.textTertiary} />
+                </TouchableOpacity>
+              ) : null}
+            </View>
+            <TouchableOpacity
+              style={[styles.selectToggleBtn, selectMode && styles.selectToggleBtnActive]}
+              onPress={() => { setSelectMode(!selectMode); setSelected({}); }}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.selectToggleText, selectMode && styles.selectToggleTextActive]}>
+                {selectMode ? 'Cancel' : 'Select'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Filter dropdown pills */}
+          <View style={styles.filterRow}>
+            {/* Saved toggle */}
+            <TouchableOpacity
+              style={[styles.filterPill, activeFilters.saved && styles.filterPillActive]}
+              onPress={() => setActiveFilters((p) => ({ ...p, saved: !p.saved }))}
+              activeOpacity={0.8}
+            >
+              <Ionicons name={activeFilters.saved ? 'bookmark' : 'bookmark-outline'} size={13}
+                color={activeFilters.saved ? COLORS.white : COLORS.textSecondary} />
+              <Text style={[styles.filterPillText, activeFilters.saved && styles.filterPillTextActive]}>
+                Saved
+              </Text>
+            </TouchableOpacity>
+
+            {/* Life Stage dropdown — pill only; menu portals to root */}
+            <View ref={lifeStageRef} collapsable={false}>
+              <TouchableOpacity
+                style={[styles.filterPill, (activeFilters.lifeStage || openDropdown === 'lifeStage') && styles.filterPillActive]}
+                onPress={() => toggleDropdown('lifeStage')}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.filterPillText, activeFilters.lifeStage && styles.filterPillTextActive]}>
+                  {activeFilters.lifeStage || 'Life Stage'}
+                </Text>
+                <Ionicons name={openDropdown === 'lifeStage' ? 'chevron-up' : 'chevron-down'} size={11}
+                  color={activeFilters.lifeStage ? COLORS.white : COLORS.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Interests dropdown — pill only; menu portals to root */}
+            <View ref={interestsRef} collapsable={false}>
+              <TouchableOpacity
+                style={[styles.filterPill, (activeFilters.interests || openDropdown === 'interests') && styles.filterPillActive]}
+                onPress={() => toggleDropdown('interests')}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.filterPillText, activeFilters.interests && styles.filterPillTextActive]}>
+                  {activeFilters.interests || 'Interests'}
+                </Text>
+                <Ionicons name={openDropdown === 'interests' ? 'chevron-up' : 'chevron-down'} size={11}
+                  color={activeFilters.interests ? COLORS.white : COLORS.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Clear all */}
+            {activeFilterCount > 0 ? (
+              <TouchableOpacity style={styles.clearAllBtn}
+                onPress={() => { setActiveFilters({ saved: false, lifeStage: null, interests: null }); setOpenDropdown(null); }}
+                activeOpacity={0.7}>
+                <Text style={styles.clearAllText}>Clear all</Text>
               </TouchableOpacity>
             ) : null}
           </View>
-          {/* Sort chips */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.sortRow}>
-            {[
-              { id: 'recent', label: 'Recent' },
-              { id: 'score',  label: 'Best Match' },
-              { id: 'name',   label: 'Name' },
-            ].map((s) => (
-              <TouchableOpacity
-                key={s.id}
-                style={[styles.sortChip, connSort === s.id && styles.sortChipActive]}
-                onPress={() => setConnSort(s.id)}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.sortChipText, connSort === s.id && styles.sortChipTextActive]}>
-                  {s.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-      ) : (
-        <>
-          {/* Upcoming events — requests tab only */}
-          {events.length > 0 && (
-            <View style={styles.eventsSection}>
-              <Text style={styles.eventsSectionLabel}>UPCOMING EVENTS</Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.eventsScroll}
-              >
-                {events.map((ev) => (
-                  <EventCard key={ev.event_id} ev={ev} onPress={handleEventPress} />
-                ))}
-              </ScrollView>
-            </View>
-          )}
 
-          {/* Event promo card */}
-          <View style={styles.eventPromoCard}>
-            <View style={styles.eventPromoIcon}>
-              <Ionicons name="calendar" size={20} color={COLORS.text} />
-            </View>
-            <View style={styles.eventPromoBody}>
-              <Text style={styles.eventPromoTitle}>Host a gathering</Text>
-              <Text style={styles.eventPromoSub}>Create an event and invite your connections.</Text>
-            </View>
-            <TouchableOpacity
-              style={styles.eventPromoCta}
-              activeOpacity={0.8}
-              onPress={() => navigation.navigate('CreateEvent')}
-            >
-              <Text style={styles.eventPromoCtaText}>Create</Text>
-            </TouchableOpacity>
-          </View>
-        </>
-      )}
+        </View>
+      ) : null}
+
     </View>
-  );
+  ), [activeTab, connections.length, rows.length, events.length, markingAll,
+      connSearch, selectMode, activeFilters, openDropdown, dropdownAnchor,
+      activeFilterCount, handleMarkAllRead, toggleDropdown, setFilter,
+      setActiveFilters, setConnSearch, setSelectMode, setSelected, navigation]);
 
   const Empty = () => {
     if (loading) {
@@ -710,36 +826,174 @@ export default function ActivityScreen({ navigation }) {
     );
   };
 
+  // ── Dropdown portal — renders at root so FlatList overflow can't clip it ──
+  const activeDropdownOptions = openDropdown === 'lifeStage'
+    ? filterOptions.lifeStage
+    : openDropdown === 'interests'
+    ? filterOptions.interests
+    : [];
+  const activeDropdownValue = openDropdown === 'lifeStage'
+    ? activeFilters.lifeStage
+    : activeFilters.interests;
+
+  const DropdownPortal = openDropdown ? (
+    <>
+      {/* Invisible backdrop to close on outside tap */}
+      <TouchableOpacity
+        style={StyleSheet.absoluteFillObject}
+        onPress={() => setOpenDropdown(null)}
+        activeOpacity={1}
+      />
+      <View style={[styles.dropdownMenu, { position: 'absolute', top: dropdownAnchor.top, left: dropdownAnchor.left }]}>
+        {activeDropdownValue ? (
+          <TouchableOpacity style={styles.dropdownItem} onPress={() => setFilter(openDropdown, null)}>
+            <Text style={styles.dropdownItemClear}>Clear</Text>
+          </TouchableOpacity>
+        ) : null}
+        {activeDropdownOptions.map((opt) => (
+          <TouchableOpacity
+            key={opt}
+            style={[styles.dropdownItem, activeDropdownValue === opt && styles.dropdownItemActive]}
+            onPress={() => setFilter(openDropdown, opt)}
+          >
+            <Text style={[styles.dropdownItemText, activeDropdownValue === opt && styles.dropdownItemTextActive]}
+              numberOfLines={1}>{opt}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    </>
+  ) : null;
+
+  // ── Stable component refs for FlatList props (prevents remount/blank on re-render) ──
+  const Separator = useCallback(() => <View style={{ height: 10 }} />, []);
+  const renderEventItem = useCallback(({ item }) => (
+    <EventCard ev={item} onPress={handleEventPress} fullWidth />
+  ), [handleEventPress]);
+  const GatheringPromo = useCallback(() => (
+    <View style={styles.eventPromoCard}>
+      <View style={styles.eventPromoIcon}>
+        <Ionicons name="calendar" size={20} color={COLORS.text} />
+      </View>
+      <View style={styles.eventPromoBody}>
+        <Text style={styles.eventPromoTitle}>Host a gathering</Text>
+        <Text style={styles.eventPromoSub}>Create an event and invite your connections.</Text>
+      </View>
+      <TouchableOpacity
+        style={styles.eventPromoCta}
+        activeOpacity={0.8}
+        onPress={() => navigation.navigate('CreateEvent')}
+      >
+        <Text style={styles.eventPromoCtaText}>Create</Text>
+      </TouchableOpacity>
+    </View>
+  ), [navigation]);
+
+  const ConnectedHeader = useCallback(() => (
+    <View>
+      <Header />
+      <GatheringPromo />
+    </View>
+  ), [Header, GatheringPromo]);
+
+  const RequestsHeader = useCallback(() => (
+    <View>
+      <Header />
+      <GatheringPromo />
+    </View>
+  ), [Header, GatheringPromo]);
+
+  const EventsHeader = useCallback(() => (
+    <View>
+      <Header />
+      <GatheringPromo />
+    </View>
+  ), [Header, GatheringPromo]);
+  const EventsEmpty = useCallback(() => loading ? (
+    <View style={styles.stateBox}><ActivityIndicator color={COLORS.textTertiary} /></View>
+  ) : (
+    <View style={styles.stateBox}>
+      <Ionicons name="calendar-outline" size={32} color={COLORS.textTertiary} />
+      <Text style={styles.stateTitle}>No upcoming events</Text>
+      <Text style={styles.stateBody}>Create a gathering and invite your connections.</Text>
+    </View>
+  ), [loading]);
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
+      <View ref={containerRef} style={{ flex: 1, position: 'relative' }}>
 
       {activeTab === 'connected' ? (
+        <>
+          <FlatList
+            key="connected"
+            data={visibleConnections}
+            keyExtractor={(r) => r.profile_id}
+            ListHeaderComponent={ConnectedHeader}
+            ListEmptyComponent={ConnectedEmpty}
+            renderItem={({ item }) => (
+              <ConnectionRow
+                row={item}
+                onPress={handleConnOpen}
+                onPin={handlePin}
+                selectMode={selectMode}
+                selected={!!selected[item.profile_id]}
+                onSelect={(id) => setSelected((s) => ({ ...s, [id]: !s[id] }))}
+              />
+            )}
+            contentContainerStyle={[styles.list, selectMode && { paddingBottom: 140 }]}
+            ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={connRefreshing}
+                onRefresh={() => loadConnections({ isRefresh: true })}
+                tintColor={COLORS.textTertiary}
+              />
+            }
+          />
+          {/* Bulk action bar — shown when in select mode */}
+          {selectMode ? (
+            <View style={styles.bulkBar}>
+              <Text style={styles.bulkCount}>
+                {selectedCount > 0 ? `${selectedCount} selected` : 'Tap to select'}
+              </Text>
+              <View style={styles.bulkActions}>
+                <TouchableOpacity
+                  style={[styles.bulkBtn, selectedCount === 0 && styles.bulkBtnDisabled]}
+                  disabled={selectedCount === 0}
+                  activeOpacity={0.8}
+                  onPress={() => {
+                    const ids = Object.keys(selected).filter((k) => selected[k]);
+                    // TODO: open group message compose with selected ids
+                    toast({ title: 'Coming soon', message: 'Group messaging will open here.', type: 'info' });
+                  }}
+                >
+                  <Ionicons name="chatbubbles-outline" size={16} color={selectedCount === 0 ? COLORS.textTertiary : COLORS.white} />
+                  <Text style={[styles.bulkBtnText, selectedCount === 0 && { color: COLORS.textTertiary }]}>Message</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.bulkBtn, selectedCount === 0 && styles.bulkBtnDisabled]}
+                  disabled={selectedCount === 0}
+                  activeOpacity={0.8}
+                  onPress={() => {
+                    toast({ title: 'Coming soon', message: 'Event invites will open here.', type: 'info' });
+                  }}
+                >
+                  <Ionicons name="calendar-outline" size={16} color={selectedCount === 0 ? COLORS.textTertiary : COLORS.white} />
+                  <Text style={[styles.bulkBtnText, selectedCount === 0 && { color: COLORS.textTertiary }]}>Invite</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : null}
+        </>
+      ) : activeTab === 'requests' ? (
         <FlatList
-          data={visibleConnections}
-          keyExtractor={(r) => r.profile_id}
-          ListHeaderComponent={<Header />}
-          ListEmptyComponent={<ConnectedEmpty />}
-          renderItem={({ item }) => (
-            <ConnectionRow row={item} onPress={handleConnOpen} onPin={handlePin} />
-          )}
-          contentContainerStyle={styles.list}
-          ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl
-              refreshing={connRefreshing}
-              onRefresh={() => loadConnections({ isRefresh: true })}
-              tintColor={COLORS.textTertiary}
-            />
-          }
-        />
-      ) : (
-        <FlatList
+          key="requests"
           data={rows}
           keyExtractor={(r) => r.profile_id}
-          ListHeaderComponent={<Header />}
-          ListEmptyComponent={<Empty />}
+          ListHeaderComponent={RequestsHeader}
+          ListEmptyComponent={Empty}
           renderItem={({ item }) => (
             <ActivityRow
               row={item}
@@ -761,13 +1015,37 @@ export default function ActivityScreen({ navigation }) {
             />
           }
         />
+      ) : (
+        /* ── Events tab ── */
+        <FlatList
+          key="events"
+          data={events}
+          keyExtractor={(ev) => ev.event_id}
+          ListHeaderComponent={EventsHeader}
+          ListEmptyComponent={EventsEmpty}
+          renderItem={renderEventItem}
+          contentContainerStyle={styles.list}
+          ItemSeparatorComponent={Separator}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => load({ isRefresh: true })}
+              tintColor={COLORS.textTertiary}
+            />
+          }
+        />
       )}
+
+      {/* Dropdown portal — always on top of everything */}
+      {DropdownPortal}
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.bg },
+  container: { flex: 1, backgroundColor: COLORS.bg, position: 'relative' },
 
   pageHeader: {
     paddingHorizontal: SPACING.lg,
@@ -844,15 +1122,13 @@ const styles = StyleSheet.create({
     fontSize: 9,
     letterSpacing: 1.4,
     color: COLORS.textTertiary,
-    paddingHorizontal: SPACING.lg,
     marginBottom: SPACING.sm,
   },
   eventsScroll: {
-    paddingHorizontal: SPACING.lg,
     gap: SPACING.sm,
-    paddingRight: SPACING.xl,
+    paddingRight: SPACING.lg,
   },
-  // Each card is a fixed-width vertical tile
+  // Each card is a fixed-width vertical tile (horizontal scroll)
   eventCard: {
     width: 160,
     backgroundColor: COLORS.white,
@@ -862,6 +1138,11 @@ const styles = StyleSheet.create({
     padding: SPACING.md,
     gap: 5,
     ...SHADOW.sm,
+  },
+  // Full-width card for the Events tab (single column)
+  eventCardFull: {
+    width: '100%',
+    flex: undefined,
   },
   eventCardTitle: {
     fontFamily: FONT.semiBold,
@@ -1046,7 +1327,6 @@ const styles = StyleSheet.create({
 
   // ── Connected tab controls ───────────────────────────────────────
   connControls: {
-    paddingHorizontal: SPACING.lg,
     gap: SPACING.sm,
     marginBottom: SPACING.sm,
   },
@@ -1095,6 +1375,157 @@ const styles = StyleSheet.create({
     color: COLORS.white,
   },
 
+  // ── Filter dropdown pills ────────────────────────────────────────
+  filterRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  filterPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  filterPillActive: {
+    backgroundColor: COLORS.text,
+    borderColor: COLORS.text,
+  },
+  filterPillText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 13,
+    color: COLORS.textSecondary,
+  },
+  filterPillTextActive: {
+    color: COLORS.white,
+  },
+  dropdownMenu: {
+    minWidth: 180,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 20,
+    zIndex: 9999,
+    overflow: 'hidden',
+  },
+  dropdownItem: {
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: COLORS.border,
+    backgroundColor: COLORS.surface,
+  },
+  dropdownItemActive: {
+    backgroundColor: COLORS.surfaceAlt,
+  },
+  dropdownItemText: {
+    fontFamily: FONT.regular,
+    fontSize: 14,
+    color: COLORS.text,
+  },
+  dropdownItemTextActive: {
+    fontFamily: FONT.semiBold,
+    color: COLORS.text,
+  },
+  dropdownItemClear: {
+    fontFamily: FONT.semiBold,
+    fontSize: 13,
+    color: COLORS.textTertiary,
+  },
+  clearAllBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  clearAllText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 13,
+    color: COLORS.textTertiary,
+  },
+
+  // ── Select toggle ────────────────────────────────────────────────
+  selectToggleBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  selectToggleBtnActive: {
+    backgroundColor: COLORS.text,
+    borderColor: COLORS.text,
+  },
+  selectToggleText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 13,
+    color: COLORS.textSecondary,
+  },
+  selectToggleTextActive: {
+    color: COLORS.white,
+  },
+
+  // ── Bulk action bar ──────────────────────────────────────────────
+  bulkBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: COLORS.bg,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+    paddingHorizontal: SPACING.lg,
+    paddingTop: SPACING.md,
+    paddingBottom: 24,
+    gap: SPACING.md,
+  },
+  bulkCount: {
+    fontFamily: FONT.semiBold,
+    fontSize: 14,
+    color: COLORS.text,
+  },
+  bulkActions: { flexDirection: 'row', gap: 10 },
+  bulkBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.text,
+  },
+  bulkBtnDisabled: { backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border },
+  bulkBtnText: { fontFamily: FONT.semiBold, fontSize: 13, color: COLORS.white },
+
+  // ── Checkbox (select mode) ────────────────────────────────────────
+  connCheckbox: {
+    width: 26, height: 26,
+    borderRadius: 13,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  connCheckboxOn: {
+    backgroundColor: COLORS.text,
+    borderColor: COLORS.text,
+  },
+
   // ── Connection row ───────────────────────────────────────────────
   connRow: {
     flexDirection: 'row',
@@ -1105,7 +1536,20 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
     padding: SPACING.md,
+    overflow: 'hidden',
     ...SHADOW.sm,
+  },
+  connRowPinned: {
+    borderColor: COLORS.clay,
+  },
+  // Left peach stripe on saved/pinned rows
+  pinnedStripe: {
+    position: 'absolute',
+    left: 0, top: 0, bottom: 0,
+    width: 4,
+    backgroundColor: COLORS.clay,
+    borderTopLeftRadius: RADIUS.xl,
+    borderBottomLeftRadius: RADIUS.xl,
   },
   connBody: { flex: 1, gap: 3 },
   connTopLine: {

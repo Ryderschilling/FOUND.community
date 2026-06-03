@@ -382,7 +382,7 @@ function StepPoliticalLean({ value, onChange }) {
   const hasVal = displayValue !== null;
 
   const label = !hasVal
-    ? 'Drag to set your lean'
+    ? 'Not set — drag left or right to answer'
     : absPct < 0.12
       ? 'Centrist / Moderate'
       : isLeft
@@ -584,16 +584,75 @@ function StepDenomination({ selection, onSelect }) {
 // Church step — ChurchPicker handles search, home-church, and requests.
 // Commits to DB immediately; onboarding just passes p_church_id: null to
 // complete_onboarding (coalesce preserves whatever ChurchPicker already set).
-function StepChurch() {
+function StepChurch({ lookingForChurch, setLookingForChurch }) {
   return (
     <>
       <Text style={styles.stepTitle}>Your church community</Text>
       <Text style={styles.stepSub}>Optional — helps us connect you with your congregation.</Text>
       <View style={{ marginTop: SPACING.md }}>
-        <ChurchPicker />
+        <ChurchPicker
+          lookingForChurch={lookingForChurch}
+          onLookingChange={setLookingForChurch}
+        />
       </View>
       <Text style={styles.optionalNote}>Optional — you can skip this step.</Text>
     </>
+  );
+}
+
+// ─── Looking for a church step ────────────────────────────────────────────
+function StepLookingForChurch({ value, onChange }) {
+  const options = [
+    {
+      id: true,
+      label: "Yes, I'm looking",
+      sub:  'Help me find a church community nearby.',
+      icon: 'search-outline',
+    },
+    {
+      id: false,
+      label: "No, I have one",
+      sub:  "I'm already connected to a church.",
+      icon: 'checkmark-circle-outline',
+    },
+    {
+      id: null,
+      label: 'Skip for now',
+      sub:  "I'll decide later.",
+      icon: 'close-outline',
+    },
+  ];
+
+  return (
+    <View style={styles.stepContent}>
+      <Text style={styles.stepTitle}>Looking for a church?</Text>
+      <Text style={styles.stepSub}>
+        We'll connect you with others who are also searching for a church home nearby.
+      </Text>
+      <View style={{ gap: 12, marginTop: 8 }}>
+        {options.map((opt) => {
+          const isSelected = value === opt.id;
+          return (
+            <TouchableOpacity
+              key={String(opt.id)}
+              style={[styles.churchLookingCard, isSelected && styles.churchLookingCardSelected]}
+              onPress={() => onChange(opt.id === value ? null : opt.id)}
+              activeOpacity={0.85}
+            >
+              <View style={[styles.churchLookingIcon, isSelected && styles.churchLookingIconSelected]}>
+                <Ionicons name={opt.icon} size={22} color={isSelected ? COLORS.white : COLORS.textSecondary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.churchLookingLabel, isSelected && styles.churchLookingLabelSelected]}>
+                  {opt.label}
+                </Text>
+                <Text style={styles.churchLookingSub}>{opt.sub}</Text>
+              </View>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
   );
 }
 
@@ -762,7 +821,8 @@ export default function OnboardingScreen({ navigation }) {
   const [initiator, setInitiator]           = useState(null);
   const [outgoing, setOutgoing]             = useState(null);
   const [politicalLean, setPoliticalLean]   = useState(null); // null = skipped
-  const [denomination, setDenomination]     = useState(null); // null = skipped
+  const [denomination, setDenomination]       = useState(null); // null = skipped
+  const [lookingForChurch, setLookingForChurch] = useState(null); // null | boolean
   const [communityGoals, setCommunityGoals] = useState([]);
   // Free-text church name (was a picker; we don't have a curated directory yet).
   // Church is committed to DB immediately by ChurchPicker — no local state needed.
@@ -827,9 +887,9 @@ export default function OnboardingScreen({ navigation }) {
       case 'personality':     return initiator !== null && outgoing !== null;
       case 'political-lean':  return true; // optional
       case 'community-goals': return communityGoals.length >= 1;
-      case 'denomination':    return true; // optional
-      case 'church':          return true; // optional
-      default:                return true;
+      case 'denomination':  return true; // optional
+      case 'church':        return true; // optional
+      default:              return true;
     }
   };
 
@@ -864,19 +924,20 @@ export default function OnboardingScreen({ navigation }) {
       // geocoded PostGIS `location` point is set at signup / self-healed by
       // AuthContext — nothing to do here.
       const { error } = await supabase.rpc('complete_onboarding', {
-        p_life_stage:    lifeStage,
-        p_school_type:   schoolType,
-        p_love_language: loveLanguage,
-        p_church_id:     null,                    // curated directory not live yet
-        p_city:          profile?.city ?? null,
-        p_state:         profile?.state ?? null,
-        p_is_initiator:   initiator,
-        p_is_outgoing:    outgoing,
-        p_political_lean:  politicalLean,
-        p_denomination_id: denomination,
-        p_activities:      activities,
-        p_goals:          communityGoals,
-        p_values:         familyValues,
+        p_life_stage:         lifeStage,
+        p_school_type:        schoolType,
+        p_love_language:      loveLanguage,
+        p_church_id:          null,                    // curated directory not live yet
+        p_city:               profile?.city ?? null,
+        p_state:              profile?.state ?? null,
+        p_is_initiator:       initiator,
+        p_is_outgoing:        outgoing,
+        p_political_lean:     politicalLean,
+        p_denomination_id:    denomination,
+        p_looking_for_church: lookingForChurch,
+        p_activities:         activities,
+        p_goals:              communityGoals,
+        p_values:             familyValues,
       });
       if (error) throw error;
 
@@ -958,7 +1019,7 @@ export default function OnboardingScreen({ navigation }) {
           <StepCommunityGoals selections={communityGoals} onToggle={toggle(setCommunityGoals)} />
         )}
         {currentStepId === 'church' && (
-          <StepChurch />
+          <StepChurch lookingForChurch={lookingForChurch} setLookingForChurch={setLookingForChurch} />
         )}
         {currentStepId === 'denomination' && (
           <StepDenomination selection={denomination} onSelect={setDenomination} />
@@ -971,6 +1032,18 @@ export default function OnboardingScreen({ navigation }) {
       {/* Footer CTA */}
       {currentStepId !== 'reveal' && (
         <View style={styles.footer}>
+          {/* Skip button — only on optional free-response steps where the
+              default state could be mistaken for a real answer (e.g. political
+              lean slider sitting at center = looks like "Centrist" was chosen) */}
+          {currentStepId === 'political-lean' ? (
+            <TouchableOpacity
+              style={styles.skipBtn}
+              onPress={() => { setPoliticalLean(null); handleContinue(); }}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.skipBtnText}>Skip this question</Text>
+            </TouchableOpacity>
+          ) : null}
           <PrimaryButton
             label="Continue"
             onPress={handleContinue}
@@ -1056,6 +1129,73 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     marginBottom: SPACING.lg,
   },
+  // "Still searching" button on church step
+  stillSearchingBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: SPACING.lg,
+    paddingVertical: 14,
+    paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.xl,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surface,
+  },
+  stillSearchingBtnActive: {
+    backgroundColor: COLORS.text,
+    borderColor: COLORS.text,
+  },
+  stillSearchingText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 15,
+    color: COLORS.textSecondary,
+  },
+  stillSearchingTextActive: {
+    color: COLORS.white,
+  },
+
+  // Looking-for-church step cards
+  churchLookingCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.xl,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    padding: SPACING.md,
+  },
+  churchLookingCardSelected: {
+    borderColor: COLORS.accent,
+    backgroundColor: COLORS.surfaceAlt,
+  },
+  churchLookingIcon: {
+    width: 44, height: 44,
+    borderRadius: 22,
+    backgroundColor: COLORS.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  churchLookingIconSelected: {
+    backgroundColor: COLORS.accent,
+  },
+  churchLookingLabel: {
+    fontFamily: FONT.semiBold,
+    fontSize: 15,
+    color: COLORS.textSecondary,
+    marginBottom: 2,
+  },
+  churchLookingLabelSelected: {
+    color: COLORS.text,
+  },
+  churchLookingSub: {
+    fontFamily: FONT.regular,
+    fontSize: 13,
+    color: COLORS.textTertiary,
+    lineHeight: 18,
+  },
+
   subQuestion: {
     fontFamily: FONT.semiBold,
     fontSize: 15,
@@ -1265,6 +1405,16 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.bg,
     borderTopWidth: 1,
     borderTopColor: COLORS.borderLight,
+    gap: SPACING.sm,
+  },
+  skipBtn: {
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  skipBtnText: {
+    fontFamily: FONT.medium,
+    fontSize: 14,
+    color: COLORS.textTertiary,
   },
 
   // Request interest button (bottom of activities step)

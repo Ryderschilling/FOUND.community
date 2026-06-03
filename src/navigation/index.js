@@ -124,7 +124,7 @@ function TabItem({ tab, focused, badgeCount, onPress }) {
     >
       <Animated.View style={iconBounce}>
         {tab.icon === null ? (
-          // FOUND tab — "F." text mark, sized to match Ionicons visually
+          // FOUND tab — "F." text mark, enlarged per Sam 6-2-26 review
           <Text style={{
             fontFamily: FONT.bold,
             fontSize: 22,
@@ -173,10 +173,10 @@ function FloatingTabBar({ state, descriptors, navigation }) {
   // both platforms, offset the pill's `left` by paddingHorizontal on web so
   // it anchors at the content edge just like native.
   const INNER_PAD  = 4;  // tabBarInner paddingHorizontal — must stay in sync
-  const PILL_INSET = 4;  // breathing room trimmed from each side of a tab slot
-  // On web the pill starts at the padding edge; shift it right by INNER_PAD so
-  // it aligns with the content edge where the flex tabs live.
-  const pillBaseLeft = Platform.OS === 'web' ? INNER_PAD : 0;
+  const PILL_INSET = 2;  // breathing room on each side of tab slot (reduced for better alignment)
+  // Both native and web: absolute `left: 0` starts at the padding edge, not content edge.
+  // Offset by INNER_PAD so the pill anchors at the same content edge as the flex tabs.
+  const pillBaseLeft = INNER_PAD;
 
   const [barWidth, setBarWidth] = useState(0);
   const numTabs     = state.routes.length;
@@ -348,6 +348,20 @@ function AppStack({ needsOnboarding }) {
 }
 
 // ── Root: gate on auth ─────────────────────────────────────────────
+// Defined outside the component so the object reference is stable — prevents
+// NavigationContainer from re-initializing on every AppNavigator render.
+const NAV_THEME = {
+  dark: false,
+  colors: {
+    primary:      COLORS.accent,
+    background:   COLORS.bg,
+    card:         COLORS.bg,
+    text:         COLORS.text,
+    border:       COLORS.border,
+    notification: COLORS.clay,
+  },
+};
+
 export default function AppNavigator() {
   const { session, profile, loading, profileLoading, recoveryMode } = useAuth();
 
@@ -443,7 +457,7 @@ export default function AppNavigator() {
   const needsOnboarding = !!session && !profile?.onboarding_complete;
 
   return (
-    <NavigationContainer ref={navigationRef}>
+    <NavigationContainer ref={navigationRef} theme={NAV_THEME}>
       {session ? <AppStack needsOnboarding={needsOnboarding} /> : <AuthStack />}
     </NavigationContainer>
   );
@@ -475,7 +489,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 6,
-    gap: 3,
+    gap: 4,       // increased from 3 → pushes labels down to align with larger F.
     position: 'relative',
   },
   tabPill: {

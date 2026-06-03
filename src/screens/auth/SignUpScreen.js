@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View, Text, TextInput, StyleSheet, KeyboardAvoidingView, Platform,
   TouchableOpacity, ActivityIndicator, ScrollView, Pressable, Linking,
@@ -8,7 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, TYPE, SPACING, RADIUS } from '../../theme';
 import { PrimaryButton } from '../../components/Atoms';
 import { useAuth } from '../../auth/AuthContext';
-import { geocodeZip } from '../../lib/geocode';
+import { geocodeZip, geocode } from '../../lib/geocode';
 
 // Terms / Privacy live on the marketing site — same docs the website signup links to.
 const TERMS_URL   = 'https://found.community/terms.html';
@@ -34,10 +34,22 @@ export default function SignUpScreen({ navigation }) {
   const [fullName, setFullName] = useState('');
   const [email, setEmail]       = useState('');
   const [phone, setPhone]       = useState('');
+  // Address autocomplete fields
+  const [addressQuery, setAddressQuery] = useState('');    // what the user types
+  const [suggestions, setSuggestions]   = useState([]);    // Photon results
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [resolvedCoords, setResolvedCoords]   = useState(null); // { lat, lng } from selection
+
+  // Stored fields
   const [zip, setZip]           = useState('');
   const [city, setCity]         = useState('');
   const [state, setState]       = useState('');
-  const [hometown, setHometown] = useState('');
+  // Up to 3 structured hometown city rows for matching
+  const [hometownCities, setHometownCities] = useState([
+    { city: '', state: '' },
+    { city: '', state: '' },
+    { city: '', state: '' },
+  ]);
   const [password, setPassword] = useState('');
   const [agree, setAgree]       = useState(false);
 
@@ -45,11 +57,92 @@ export default function SignUpScreen({ navigation }) {
   const [busy, setBusy]         = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
   const [infoMsg, setInfoMsg]   = useState(null);
-  const [zipHint, setZipHint]   = useState('We use your ZIP to match you with community nearby.');
-  const [zipHintError, setZipHintError] = useState(false);
 
-  // Guards against a stale ZIP lookup overwriting a newer one.
-  const zipTokenRef = useRef(0);
+  const debounceRef    = useRef(null);
+  const skipFetchRef   = useRef(false); // true while/after a suggestion is selected
+
+  // ── Nominatim autocomplete (free OSM, no API key, better US coverage) ────────
+  const fetchSuggestions = useCallback(async (q) => {
+    if (!q || q.trim().length < 3) { setSuggestions([]); return; }
+    try {
+      const url =
+        'https://nominatim.openstreetmap.org/search' +
+        '?format=json&addressdetails=1&limit=6&countrycodes=us' +
+        '&q=' + encodeURIComponent(q.trim());
+      const res = await fetch(url, {
+        headers: {
+          'Accept': 'application/json',
+          'User-Agent': 'FOUND-community-app/1.0 (found.community)',
+        },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      // Filter to US results and dedupe by display_name
+      const seen = new Set();
+      const results = (data ?? []).filter((r) => {
+        const key = r.display_name;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      setSuggestions(results);
+    } catch {
+      setSuggestions([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    clearTimeout(debounceRef.current);
+    if (!addressQuery.trim()) { setSuggestions([]); setShowSuggestions(false); return; }
+    // Skip re-fetching when the query was set programmatically by selectSuggestion
+    if (skipFetchRef.current) { skipFetchRef.current = false; return; }
+    debounceRef.current = setTimeout(() => {
+      fetchSuggestions(addressQuery);
+      setShowSuggestions(true);
+    }, 400);
+    return () => clearTimeout(debounceRef.current);
+  }, [addressQuery, fetchSuggestions]);
+
+  function selectSuggestion(result) {
+    skipFetchRef.current = true; // prevent the query change from re-triggering fetch
+    clearTimeout(debounceRef.current);
+    const a = result.address ?? {};
+
+    // Build readable label from the address parts
+    const streetNum  = a.house_number || '';
+    const street     = a.road || a.pedestrian || '';
+    const streetLine = [streetNum, street].filter(Boolean).join(' ');
+    const detectedCity  = a.city || a.town || a.village || a.hamlet || a.suburb || a.county || '';
+    const detectedState = (a.state_code || a.state || '').slice(0, 2).toUpperCase();
+    const detectedZip   = a.postcode || '';
+
+    const label = streetLine || detectedCity;
+    setAddressQuery(label);
+    setCity(detectedCity);
+    setState(detectedState);
+    setZip(detectedZip);
+
+    const lat = parseFloat(result.lat);
+    const lng = parseFloat(result.lon);
+    if (Number.isFinite(lat) && Number.isFinite(lng)) setResolvedCoords({ lat, lng });
+
+    setSuggestions([]);
+    setShowSuggestions(false);
+  }
+
+  function formatSuggestionLabel(result) {
+    const a = result.address ?? {};
+    const streetNum = a.house_number || '';
+    const street    = a.road || a.pedestrian || '';
+    const streetLine = [streetNum, street].filter(Boolean).join(' ');
+    const city   = a.city || a.town || a.village || a.hamlet || a.suburb || '';
+    const state  = (a.state_code || a.state || '').slice(0, 2).toUpperCase();
+    const zip    = a.postcode ? `  ${a.postcode}` : '';
+    if (streetLine && city) return `${streetLine},  ${city}, ${state}${zip}`;
+    if (city)               return `${city}, ${state}${zip}`;
+    // Fall back to Nominatim display name trimmed to US portion
+    return (result.display_name || '').split(', United States')[0];
+  }
 
   function friendlySignUpError(raw) {
     const msg = (raw || '').toLowerCase();
@@ -65,28 +158,6 @@ export default function SignUpScreen({ navigation }) {
     return raw || 'Sign up failed. Try again.';
   }
 
-  // ZIP validation only — we no longer auto-fill city/state. Many users live
-  // in named subareas (e.g. "Inlet Beach", "Seacrest", "Rosemary") that don't
-  // match the ZIP's official city. ZIP drives the location/geocoding under
-  // the hood; the city name is the display label others see, so the user
-  // types whatever they actually call home.
-  async function lookupZip() {
-    const z = zip.trim();
-    if (!/^\d{5}$/.test(z)) return;
-
-    const token = ++zipTokenRef.current;
-    try {
-      const res = await fetch(`https://api.zippopotam.us/us/${z}`);
-      if (token !== zipTokenRef.current) return;
-      if (!res.ok) throw new Error('not found');
-      setZipHint('We use your ZIP to match you with community nearby.');
-      setZipHintError(false);
-    } catch {
-      if (token !== zipTokenRef.current) return;
-      setZipHint("That ZIP didn't look right — double-check it.");
-      setZipHintError(true);
-    }
-  }
 
   async function openLink(url) {
     try { await Linking.openURL(url); } catch { /* no-op */ }
@@ -107,70 +178,69 @@ export default function SignUpScreen({ navigation }) {
     const zipVal    = zip.trim();
     const cityVal   = city.trim();
     const stateVal  = state.trim().toUpperCase();
-    const homeVal   = hometown.trim();
+    // Derive hometown from primary city row
+    const primaryRow = hometownCities[0];
+    const homeVal = primaryRow.city.trim()
+      ? primaryRow.state.trim()
+        ? `${primaryRow.city.trim()}, ${primaryRow.state.trim().toUpperCase().slice(0, 2)}`
+        : primaryRow.city.trim()
+      : '';
 
-    // Client-side validation — instant feedback, no API roundtrip.
-    if (!name) {
-      setErrorMsg('Please enter your name.');
-      return;
-    }
+    if (!name)    { setErrorMsg('Please enter your name.');       return; }
     if (!isValidEmail(emailVal)) {
-      setErrorMsg("That doesn't look like a valid email. Make sure it has an @ and a domain.");
-      return;
+      setErrorMsg("That doesn't look like a valid email.");       return;
     }
     if (digitsOnly(phoneVal).length < 10) {
-      setErrorMsg('Please enter a valid phone number.');
-      return;
+      setErrorMsg('Please enter a valid phone number.');          return;
     }
-    if (!/^\d{5}$/.test(zipVal)) {
-      setErrorMsg('Please enter a valid 5-digit ZIP code.');
-      return;
+    const hometownMissingState = hometownCities.some((r) => r.city.trim() && !r.state.trim());
+    if (hometownMissingState) {
+      setErrorMsg('Please add a state abbreviation next to each city you entered (e.g. IL).'); return;
     }
-    if (!cityVal) {
-      setErrorMsg('Please enter your city.');
-      return;
-    }
+    if (!cityVal) { setErrorMsg('Please enter your city.');       return; }
     if (!/^[A-Z]{2}$/.test(stateVal)) {
-      setErrorMsg('Please enter your 2-letter state (e.g. FL).');
-      return;
+      setErrorMsg('Please enter your 2-letter state (e.g. FL).'); return;
     }
     if (password.length < 8) {
-      setErrorMsg('Password must be at least 8 characters.');
-      return;
+      setErrorMsg('Password must be at least 8 characters.');    return;
     }
     if (!agree) {
-      setErrorMsg('Please agree to the Terms of Use and Privacy Policy to continue.');
-      return;
+      setErrorMsg('Please agree to the Terms of Use and Privacy Policy to continue.'); return;
     }
 
     setBusy(true);
     try {
-      // Resolve coordinates from the ZIP so the account is geocoded the moment
-      // it's created — this is the ONLY place location is captured. Done here
-      // (not relying on the on-blur lookup) so a fast "Create account" tap
-      // can't race past it. Non-fatal: if the ZIP can't be resolved we sign
-      // up without coords and AuthContext heals the location on first load.
-      let lat = null;
-      let lng = null;
-      try {
-        const geo = await geocodeZip(zipVal);
-        if (geo.lat != null && geo.lng != null) {
-          lat = geo.lat;
-          lng = geo.lng;
-        }
-      } catch {
-        // ignore — covered by the AuthContext self-heal
+      // Use already-resolved coords from autocomplete selection if available.
+      // Fall back to geocoding from zip or city+state. Non-fatal.
+      let lat = resolvedCoords?.lat ?? null;
+      let lng = resolvedCoords?.lng ?? null;
+      if (lat == null) {
+        try {
+          const q = zipVal || `${cityVal}, ${stateVal}`;
+          const geo = /^\d{5}$/.test(q) ? await geocodeZip(q) : await geocode(q);
+          if (geo.lat != null) { lat = geo.lat; lng = geo.lng; }
+        } catch { /* non-fatal */ }
       }
 
+      // Build hometown_cities array from structured rows
+      const hometownCitiesArr = hometownCities
+        .filter((r) => r.city.trim())
+        .map((r) => {
+          const c = r.city.trim();
+          const st = r.state.trim().toUpperCase().slice(0, 2);
+          return st ? `${c}, ${st}` : c;
+        });
+
       const { session } = await signUpWithPassword({
-        email:    emailVal,
+        email:         emailVal,
         password,
-        fullName: name,
-        phone:    phoneVal,
-        zip:      zipVal,
-        city:     cityVal,
-        state:    stateVal,
-        hometown: homeVal,
+        fullName:      name,
+        phone:         phoneVal,
+        zip:           zipVal || addressQuery.trim(),
+        city:          cityVal,
+        state:         stateVal,
+        hometown:      homeVal,
+        hometown_cities: hometownCitiesArr.length > 0 ? hometownCitiesArr : null,
         lat,
         lng,
       });
@@ -240,22 +310,49 @@ export default function SignUpScreen({ navigation }) {
               style={s.input}
             />
 
-            <Text style={[s.label, { marginTop: SPACING.md }]}>ZIP code</Text>
+            <Text style={[s.label, { marginTop: SPACING.md }]}>Address</Text>
             <TextInput
-              value={zip}
-              onChangeText={(v) => setZip(v.replace(/\D/g, '').slice(0, 5))}
-              onBlur={lookupZip}
-              keyboardType="number-pad"
-              autoComplete="postal-code"
-              textContentType="postalCode"
-              maxLength={5}
-              placeholder="30A area — e.g. 32461"
+              value={addressQuery}
+              onChangeText={(v) => { skipFetchRef.current = false; setAddressQuery(v); setResolvedCoords(null); }}
+              onFocus={() => addressQuery.trim().length >= 3 && setShowSuggestions(true)}
+              onBlur={() => setTimeout(() => setShowSuggestions(false), 400)}
+              keyboardType="default"
+              autoCapitalize="words"
+              autoComplete="street-address"
+              textContentType="fullStreetAddress"
+              placeholder="Start typing your address…"
               placeholderTextColor={COLORS.textTertiary}
-              style={s.input}
+              style={[s.input, showSuggestions && suggestions.length > 0 && s.inputDropdownOpen]}
             />
-            <Text style={[s.hint, zipHintError && s.hintError]}>{zipHint}</Text>
 
-            <View style={s.row}>
+            {/* Suggestions render inline — avoids ScrollView clipping on web */}
+            {showSuggestions && suggestions.length > 0 ? (
+              <View style={s.dropdown}>
+                {suggestions.map((feat, i) => (
+                  <TouchableOpacity
+                    key={i}
+                    style={[s.suggestionRow, i < suggestions.length - 1 && s.suggestionDivider]}
+                    onPress={() => selectSuggestion(feat)}
+                    activeOpacity={0.75}
+                  >
+                    <Ionicons name="location-outline" size={14} color={COLORS.clay} style={{ marginTop: 2 }} />
+                    <Text style={s.suggestionText} numberOfLines={2}>
+                      {formatSuggestionLabel(feat)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ) : null}
+
+            <Text style={[s.hint, resolvedCoords && s.hintConfirmed]}>
+              {resolvedCoords
+                ? '✓ Location confirmed'
+                : suggestions.length === 0 && addressQuery.length >= 3
+                  ? 'No results — try a different address or enter city below manually.'
+                  : 'Type your address for better connections on FOUND, or fill in city/state/ZIP below.'}
+            </Text>
+
+            <View style={[s.row, { zIndex: 1 }]}>
               <View style={s.rowCol}>
                 <Text style={s.label}>City</Text>
                 <TextInput
@@ -279,18 +376,85 @@ export default function SignUpScreen({ navigation }) {
                   style={s.input}
                 />
               </View>
+              <View style={s.rowColZip}>
+                <Text style={s.label}>ZIP</Text>
+                <TextInput
+                  value={zip}
+                  onChangeText={(v) => setZip(v.replace(/\D/g, '').slice(0, 5))}
+                  keyboardType="number-pad"
+                  maxLength={5}
+                  placeholder="00000"
+                  placeholderTextColor={COLORS.textTertiary}
+                  style={s.input}
+                />
+              </View>
             </View>
 
-            <Text style={[s.label, { marginTop: SPACING.md }]}>Where you're from <Text style={s.optional}>(optional)</Text></Text>
-            <TextInput
-              value={hometown}
-              onChangeText={setHometown}
-              autoCapitalize="words"
-              placeholder="Hometown — e.g. Nashville, TN"
-              placeholderTextColor={COLORS.textTertiary}
-              style={s.input}
-            />
-            <Text style={s.hint}>We use this to connect you with people from the same place.</Text>
+            {/* Where are you from — primary + add-ons */}
+            <Text style={[s.label, { marginTop: SPACING.md }]}>
+              Where are you from? <Text style={s.optional}>(optional)</Text>
+            </Text>
+            <Text style={s.hometownRowLabel}>Born &amp; raised</Text>
+            <View style={s.hometownRow}>
+              <TextInput
+                value={hometownCities[0].city}
+                onChangeText={(v) => {
+                  const updated = [...hometownCities];
+                  updated[0] = { ...updated[0], city: v };
+                  setHometownCities(updated);
+                }}
+                autoCapitalize="words"
+                placeholder="City (e.g. Charleston)"
+                placeholderTextColor={COLORS.textTertiary}
+                style={[s.input, s.hometownCity]}
+                maxLength={60}
+              />
+              <TextInput
+                value={hometownCities[0].state}
+                onChangeText={(v) => {
+                  const updated = [...hometownCities];
+                  updated[0] = { ...updated[0], state: v.replace(/[^a-zA-Z]/g, '').toUpperCase().slice(0, 2) };
+                  setHometownCities(updated);
+                }}
+                autoCapitalize="characters"
+                placeholder="ST"
+                placeholderTextColor={COLORS.textTertiary}
+                style={[s.input, s.hometownState]}
+                maxLength={2}
+              />
+            </View>
+
+            <Text style={[s.hometownRowLabel, { marginTop: SPACING.sm }]}>Also from</Text>
+            {[1, 2].map((i) => (
+              <View key={i} style={s.hometownRow}>
+                <TextInput
+                  value={hometownCities[i].city}
+                  onChangeText={(v) => {
+                    const updated = [...hometownCities];
+                    updated[i] = { ...updated[i], city: v };
+                    setHometownCities(updated);
+                  }}
+                  autoCapitalize="words"
+                  placeholder={`City ${i} (optional)`}
+                  placeholderTextColor={COLORS.textTertiary}
+                  style={[s.input, s.hometownCity]}
+                  maxLength={60}
+                />
+                <TextInput
+                  value={hometownCities[i].state}
+                  onChangeText={(v) => {
+                    const updated = [...hometownCities];
+                    updated[i] = { ...updated[i], state: v.replace(/[^a-zA-Z]/g, '').toUpperCase().slice(0, 2) };
+                    setHometownCities(updated);
+                  }}
+                  autoCapitalize="characters"
+                  placeholder="ST"
+                  placeholderTextColor={COLORS.textTertiary}
+                  style={[s.input, s.hometownState]}
+                  maxLength={2}
+                />
+              </View>
+            ))}
 
             <Text style={[s.label, { marginTop: SPACING.md }]}>Password</Text>
             <View style={s.inputWrap}>
@@ -379,17 +543,62 @@ const s = StyleSheet.create({
     borderColor: COLORS.border, paddingHorizontal: SPACING.md, paddingVertical: 14,
     fontFamily: FONT.regular, fontSize: 15, color: COLORS.text,
   },
-  hint:      { ...TYPE.caption, color: COLORS.textTertiary, marginTop: 6 },
+  hint:          { ...TYPE.caption, color: COLORS.textTertiary, marginTop: 6, marginBottom: 2 },
+  hintConfirmed: { color: COLORS.sage },
   inputWrap: { position: 'relative' },
   inputFlex: { paddingRight: 44 },
   eyeBtn:    { position: 'absolute', right: 12, top: 0, bottom: 0, justifyContent: 'center' },
   optional:  { ...TYPE.label, color: COLORS.textTertiary, fontStyle: 'italic' },
   hintError: { color: '#8A2D2D' },
 
-  // City / State two-column row
+  // Hometown city rows
+  hometownRowLabel: { fontSize: 11, fontWeight: '600', color: COLORS.textSecondary, marginTop: 10, marginBottom: 2, textTransform: 'uppercase', letterSpacing: 0.6 },
+  hometownRow:   { flexDirection: 'row', gap: 8, marginTop: 4 },
+  hometownCity:  { flex: 1 },
+  hometownState: { width: 64 },
+
+  // City / State / ZIP row
   row:         { flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.md },
   rowCol:      { flex: 1 },
-  rowColState: { width: 88 },
+  rowColState: { width: 64 },
+  rowColZip:   { width: 80 },
+
+  // Input open state — bottom corners flatten to join the dropdown visually
+  inputDropdownOpen: {
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+    borderBottomColor: COLORS.borderLight,
+  },
+
+  // Autocomplete dropdown — inline (no absolute), works in ScrollView on web
+  dropdown: {
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderTopWidth: 0,
+    borderColor: COLORS.border,
+    borderBottomLeftRadius: RADIUS.md,
+    borderBottomRightRadius: RADIUS.md,
+    marginBottom: 4,
+    overflow: 'hidden',
+  },
+  suggestionRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  suggestionDivider: {
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  suggestionText: {
+    flex: 1,
+    fontFamily: FONT.regular,
+    fontSize: 14,
+    color: COLORS.text,
+    lineHeight: 20,
+  },
 
   // Terms block
   termsBlock:   { marginTop: SPACING.lg },

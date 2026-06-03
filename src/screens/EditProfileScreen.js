@@ -13,7 +13,7 @@
 // On save, calls refreshProfile() so the rest of the app picks up the change.
 // ─────────────────────────────────────────────────────────────────────────
 
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -28,6 +28,7 @@ import {
   Platform,
   Modal,
   KeyboardAvoidingView,
+  PanResponder,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
@@ -77,8 +78,12 @@ export default function EditProfileScreen({ navigation }) {
   // Form state — initialized from current profile once loaded.
   const [fullName, setFullName]         = useState('');
   const [bio, setBio]                   = useState('');
-  const [hometown, setHometown]         = useState('');
-  const [hometownCitiesText, setHometownCitiesText] = useState(''); // comma-separated display
+  // Up to 3 structured hometown city rows: [{ city, state }, ...]
+  const [hometownCities, setHometownCities] = useState([
+    { city: '', state: '' },
+    { city: '', state: '' },
+    { city: '', state: '' },
+  ]);
   const [locationText, setLocationText] = useState('');
   const [lifeStage, setLifeStage]     = useState(null);
   const [activities, setActivities]   = useState([]);    // array of activity ids
@@ -95,8 +100,9 @@ export default function EditProfileScreen({ navigation }) {
   const [allGoals, setAllGoals]       = useState([]);
   const [taxLoading, setTaxLoading]   = useState(true);
 
-  const [politicalLean, setPoliticalLean] = useState(null); // null | integer -100..100
-  const [saving, setSaving]           = useState(false);
+  const [politicalLean, setPoliticalLean]       = useState(null); // null | integer -100..100
+  const [lookingForChurch, setLookingForChurch] = useState(null); // null | boolean
+  const [saving, setSaving]                     = useState(false);
 
   // Interests search + request-modal state
   const [interestsQuery, setInterestsQuery] = useState('');
@@ -158,7 +164,7 @@ export default function EditProfileScreen({ navigation }) {
         supabase.from('community_goals').select('id,label,icon,icon_color').order('sort_order'),
         user
           ? supabase.from('profiles')
-              .select('full_name,bio,hometown,hometown_cities,city,state,life_stage_id,church_id,is_home_church,political_lean,church:churches(name),profile_activities(activity_id),profile_goals(goal_id)')
+              .select('full_name,bio,hometown,hometown_cities,city,state,life_stage_id,church_id,is_home_church,political_lean,looking_for_church,church:churches(name),profile_activities(activity_id),profile_goals(goal_id)')
               .eq('id', user.id)
               .maybeSingle()
           : Promise.resolve({ data: null, error: null }),
@@ -171,8 +177,31 @@ export default function EditProfileScreen({ navigation }) {
       if (p) {
         setFullName(p.full_name ?? '');
         setBio(p.bio ?? '');
-        setHometown(p.hometown ?? '');
-        setHometownCitiesText((p.hometown_cities ?? []).join(', '));
+        // hometown derived from hometownCities[0] on save
+        // Parse existing hometown_cities array → structured rows
+        // Handles "Miami, FL", "Miami FL", or plain "Miami" gracefully
+        const parsedRows = (p.hometown_cities ?? []).slice(0, 3).map((raw) => {
+          const trimmed = (raw || '').trim();
+          const commaIdx = trimmed.lastIndexOf(',');
+          if (commaIdx > 0) {
+            return {
+              city:  trimmed.slice(0, commaIdx).trim(),
+              state: trimmed.slice(commaIdx + 1).trim().toUpperCase().slice(0, 2),
+            };
+          }
+          // "Miami FL" — last word might be state abbreviation
+          const parts = trimmed.split(/\s+/);
+          if (parts.length >= 2 && /^[A-Z]{2}$/.test(parts[parts.length - 1].toUpperCase())) {
+            return {
+              city:  parts.slice(0, -1).join(' '),
+              state: parts[parts.length - 1].toUpperCase(),
+            };
+          }
+          return { city: trimmed, state: '' };
+        });
+        // Pad to 3 rows
+        while (parsedRows.length < 3) parsedRows.push({ city: '', state: '' });
+        setHometownCities(parsedRows);
         setLocationText([p.city, p.state].filter(Boolean).join(', '));
         setLifeStage(p.life_stage_id ?? null);
         setProfileChurchId(p.church_id ?? null);
@@ -181,6 +210,7 @@ export default function EditProfileScreen({ navigation }) {
         setActivities((p.profile_activities ?? []).map((r) => r.activity_id));
         setGoals((p.profile_goals ?? []).map((r) => r.goal_id));
         setPoliticalLean(p.political_lean ?? null);
+        setLookingForChurch(p.looking_for_church ?? null);
       } else if (profile) {
         setFullName(profile.full_name ?? '');
       }
@@ -198,7 +228,6 @@ export default function EditProfileScreen({ navigation }) {
     const violation = firstViolation([
       { text: fullName, label: 'name' },
       { text: bio,      label: 'bio' },
-      { text: hometown, label: 'hometown' },
     ]);
     if (!violation.ok) {
       toast({ title: 'Check your wording', message: violation.message, type: 'info' });
@@ -209,42 +238,41 @@ export default function EditProfileScreen({ navigation }) {
     const { city, state } = parseLocation(locationText);
 
     // 1) Persist core profile fields
-    // Parse hometown_cities from comma-separated input → trimmed array
-    const parsedHometownCities = hometownCitiesText
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
+    // Convert structured rows → "City, ST" canonical strings, skip blank rows
+    const parsedHometownCities = hometownCities
+      .filter((r) => r.city.trim())
+      .map((r) => {
+        const c = r.city.trim();
+        const s = r.state.trim().toUpperCase().slice(0, 2);
+        return s ? `${c}, ${s}` : c;
+      });
+
+    // Derive hometown from primary city row
+    const primaryRow = hometownCities[0];
+    const derivedHometown = primaryRow.city.trim()
+      ? primaryRow.state.trim()
+        ? `${primaryRow.city.trim()}, ${primaryRow.state.trim().toUpperCase().slice(0, 2)}`
+        : primaryRow.city.trim()
+      : null;
 
     const { error } = await supabase.rpc('update_profile', {
-      p_full_name:       fullName.trim() || null,
-      p_bio:             bio.trim() || null,
-      p_hometown:        hometown.trim() || null,
-      p_city:            city || null,
-      p_state:           state || null,
-      p_life_stage:      lifeStage,
-      p_church_id:       null,                  // structured directory not live yet
-      p_activities:      activities,            // pass array → REPLACE
-      p_goals:           goals,
-      p_hometown_cities: parsedHometownCities.length > 0 ? parsedHometownCities : null,
+      p_full_name:           fullName.trim() || null,
+      p_bio:                 bio.trim() || null,
+      p_hometown:            derivedHometown,
+      p_city:                city || null,
+      p_state:               state || null,
+      p_life_stage:          lifeStage,
+      p_church_id:           null,
+      p_activities:          activities,
+      p_goals:               goals,
+      p_hometown_cities:     parsedHometownCities.length > 0 ? parsedHometownCities : null,
+      p_looking_for_church:  lookingForChurch,
+      p_political_lean:      politicalLean ?? null,
     });
     if (error) {
       setSaving(false);
       toast({ title: 'Could not save', message: error.message, type: 'error' });
       return;
-    }
-
-    // Save political_lean separately (not in update_profile RPC)
-    if (politicalLean !== null) {
-      await supabase
-        .from('profiles')
-        .update({ political_lean: politicalLean })
-        .eq('id', user.id);
-    } else {
-      // Explicitly clear it if the user deselected
-      await supabase
-        .from('profiles')
-        .update({ political_lean: null })
-        .eq('id', user.id);
     }
 
     // Church is committed immediately by ChurchPicker — nothing to do here.
@@ -271,7 +299,7 @@ export default function EditProfileScreen({ navigation }) {
     await refreshProfile();
     setSaving(false);
     navigation?.goBack();
-  }, [saving, fullName, bio, hometown, locationText, lifeStage, activities, goals, refreshProfile, navigation]);
+  }, [saving, fullName, bio, locationText, lifeStage, activities, goals, politicalLean, lookingForChurch, hometownCities, refreshProfile, navigation]);
 
   if (taxLoading) {
     return (
@@ -326,45 +354,87 @@ export default function EditProfileScreen({ navigation }) {
           <Text style={styles.counter}>{bio.length}/500</Text>
         </View>
 
-        {/* Where you're from — journey string */}
+        {/* Where you're from — primary + add-ons */}
         <View style={styles.section}>
-          <SectionHeader label="Where you're from" />
-          <TextInput
-            style={styles.input}
-            value={hometown}
-            onChangeText={setHometown}
-            placeholder="e.g. Nashville, TN or Miami → Dallas → Pensacola"
-            placeholderTextColor={COLORS.textTertiary}
-            autoCapitalize="words"
-            maxLength={120}
-          />
+          <SectionHeader label="Where are you from?" />
+
+
+          {/* Row 0 — Born & raised / primary */}
+          <Text style={styles.hometownRowLabel}>Born &amp; raised</Text>
+          <View style={styles.hometownRow}>
+            <TextInput
+              style={[styles.input, styles.hometownCity]}
+              value={hometownCities[0].city}
+              onChangeText={(v) => {
+                const updated = [...hometownCities];
+                updated[0] = { ...updated[0], city: v };
+                setHometownCities(updated);
+              }}
+              placeholder="City (e.g. Charleston)"
+              placeholderTextColor={COLORS.textTertiary}
+              autoCapitalize="words"
+              maxLength={60}
+            />
+            <TextInput
+              style={[styles.input, styles.hometownState]}
+              value={hometownCities[0].state}
+              onChangeText={(v) => {
+                const updated = [...hometownCities];
+                updated[0] = { ...updated[0], state: v.replace(/[^a-zA-Z]/g, '').toUpperCase().slice(0, 2) };
+                setHometownCities(updated);
+              }}
+              placeholder="ST"
+              placeholderTextColor={COLORS.textTertiary}
+              autoCapitalize="characters"
+              maxLength={2}
+            />
+          </View>
+
+          {/* Rows 1 & 2 — Also from */}
+          <Text style={[styles.hometownRowLabel, { marginTop: 12 }]}>Also from</Text>
+          {[1, 2].map((i) => (
+            <View key={i} style={styles.hometownRow}>
+              <TextInput
+                style={[styles.input, styles.hometownCity]}
+                value={hometownCities[i].city}
+                onChangeText={(v) => {
+                  const updated = [...hometownCities];
+                  updated[i] = { ...updated[i], city: v };
+                  setHometownCities(updated);
+                }}
+                placeholder={`City ${i} (optional)`}
+                placeholderTextColor={COLORS.textTertiary}
+                autoCapitalize="words"
+                maxLength={60}
+              />
+              <TextInput
+                style={[styles.input, styles.hometownState]}
+                value={hometownCities[i].state}
+                onChangeText={(v) => {
+                  const updated = [...hometownCities];
+                  updated[i] = { ...updated[i], state: v.replace(/[^a-zA-Z]/g, '').toUpperCase().slice(0, 2) };
+                  setHometownCities(updated);
+                }}
+                placeholder="ST"
+                placeholderTextColor={COLORS.textTertiary}
+                autoCapitalize="characters"
+                maxLength={2}
+              />
+            </View>
+          ))}
         </View>
 
-        {/* Cities lived in — for matching */}
+        {/* Address */}
         <View style={styles.section}>
-          <SectionHeader label="Cities you've lived in (Optional)" />
+          <SectionHeader label="Address" />
           <Text style={styles.fieldHint}>
-            Separate with commas. Used to match you with people who share a hometown.
+            By putting in your address you're helping us find people nearby in your community. Not shown publicly.
           </Text>
-          <TextInput
-            style={styles.input}
-            value={hometownCitiesText}
-            onChangeText={setHometownCitiesText}
-            placeholder="e.g. Pensacola FL, Miami FL, Frisco TX"
-            placeholderTextColor={COLORS.textTertiary}
-            autoCapitalize="words"
-            maxLength={200}
-          />
-        </View>
-
-        {/* Location */}
-        <View style={styles.section}>
-          <SectionHeader label="Location" />
           <TextInput
             style={styles.input}
             value={locationText}
             onChangeText={setLocationText}
-            placeholder="City, State"
+            placeholder="City, State  or  ZIP code"
             placeholderTextColor={COLORS.textTertiary}
             autoCapitalize="words"
           />
@@ -443,44 +513,49 @@ export default function EditProfileScreen({ navigation }) {
         </View>
 
         {/* Political Lean — optional */}
-        {(() => {
-          const POLITICAL_OPTIONS = [
-            { label: 'Conservative',    value: 80  },
-            { label: 'Center-Right',    value: 40  },
-            { label: 'Moderate',        value: 0   },
-            { label: 'Center-Left',     value: -40 },
-            { label: 'Liberal',         value: -80 },
-          ];
-          return (
-            <View style={styles.section}>
-              <SectionHeader label="Political Views  ·  Optional" />
-              <Text style={styles.sectionHint}>
-                Only used to find people with similar views. Never shown publicly.
+        <View style={styles.section}>
+          <SectionHeader label="Political Views  ·  Optional" />
+          <Text style={styles.sectionHint}>
+            Only used to find people with similar views. Never shown publicly.{'\n'}
+            You only match with others on the same side. Moderate matches no one.
+          </Text>
+          <PoliticalSlider value={politicalLean} onChange={setPoliticalLean} />
+          {politicalLean !== null ? (
+            <TouchableOpacity onPress={() => setPoliticalLean(null)} style={styles.clearSlider}>
+              <Text style={styles.clearSliderText}>Clear</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+
+        {/* Looking for a church */}
+        <View style={styles.section}>
+          <SectionHeader label="Looking for a Church?" />
+          <Text style={styles.sectionHint}>
+            We'll help you find people who are also searching for a church community.
+          </Text>
+          <View style={styles.churchToggleRow}>
+            <TouchableOpacity
+              style={[styles.churchToggleBtn, lookingForChurch === true && styles.churchToggleActive]}
+              onPress={() => setLookingForChurch(lookingForChurch === true ? null : true)}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="search" size={16} color={lookingForChurch === true ? COLORS.white : COLORS.textSecondary} />
+              <Text style={[styles.churchToggleText, lookingForChurch === true && styles.churchToggleTextActive]}>
+                Yes, looking
               </Text>
-              <View style={styles.politicalRow}>
-                {POLITICAL_OPTIONS.map((opt) => (
-                  <Pressable
-                    key={opt.value}
-                    style={[
-                      styles.politicalChip,
-                      politicalLean === opt.value && styles.politicalChipActive,
-                    ]}
-                    onPress={() => setPoliticalLean(
-                      politicalLean === opt.value ? null : opt.value
-                    )}
-                  >
-                    <Text style={[
-                      styles.politicalChipText,
-                      politicalLean === opt.value && styles.politicalChipTextActive,
-                    ]}>
-                      {opt.label}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-            </View>
-          );
-        })()}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.churchToggleBtn, lookingForChurch === false && styles.churchToggleActive]}
+              onPress={() => setLookingForChurch(lookingForChurch === false ? null : false)}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="checkmark-circle-outline" size={16} color={lookingForChurch === false ? COLORS.white : COLORS.textSecondary} />
+              <Text style={[styles.churchToggleText, lookingForChurch === false && styles.churchToggleTextActive]}>
+                Already have one
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
 
         {/* Church — search + request via ChurchPicker */}
         <View style={styles.section}>
@@ -489,6 +564,8 @@ export default function EditProfileScreen({ navigation }) {
             churchId={profileChurchId}
             isHomeChurch={profileIsHome}
             churchName={profileChurchName}
+            lookingForChurch={lookingForChurch}
+            onLookingChange={setLookingForChurch}
             onSaved={({ churchId, isHomeChurch }) => {
               setProfileChurchId(churchId);
               setProfileIsHome(isHomeChurch);
@@ -567,6 +644,122 @@ export default function EditProfileScreen({ navigation }) {
   );
 }
 
+// ─── PoliticalSlider — pure-JS, no native module ──────────────────────────
+// Supports iOS, Android, and web via PanResponder (react-native-web wraps
+// mouse events automatically). Value range: -100 to 100.
+const THUMB_R = 14;
+function PoliticalSlider({ value, onChange }) {
+  const [trackW, setTrackW] = useState(0);
+  const trackWRef = useRef(0);
+
+  useEffect(() => { trackWRef.current = trackW; }, [trackW]);
+
+  const toPos = (v) => ((v ?? 0) + 100) / 200;       // -100→0, 0→0.5, 100→1
+  const toVal = (pos) => Math.round(Math.max(0, Math.min(1, pos)) * 200 - 100);
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: (e) => {
+        const w = trackWRef.current;
+        if (!w) return;
+        const x = e.nativeEvent.locationX ?? 0;
+        onChange(toVal(x / w));
+      },
+      onPanResponderMove: (e) => {
+        const w = trackWRef.current;
+        if (!w) return;
+        const x = e.nativeEvent.locationX ?? 0;
+        onChange(toVal(x / w));
+      },
+    })
+  ).current;
+
+  const v    = value ?? 0;
+  const pos  = toPos(v);
+  const isRight = v > 0;
+  const fillColor = isRight ? COLORS.clay : COLORS.sage;
+  const thumbLeft = trackW > 0 ? pos * trackW - THUMB_R : 0;
+
+  const labelText = value === null || value === undefined
+    ? 'Not set'
+    : v === 0 ? 'Moderate (no match)'
+    : v > 0   ? `Conservative  +${v}`
+    : `Liberal  ${v}`;
+
+  return (
+    <View style={{ gap: 10 }}>
+      {/* Row labels */}
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+        <Text style={sliderLabel}>Liberal</Text>
+        <Text style={[sliderLabel, { color: COLORS.textTertiary }]}>Moderate</Text>
+        <Text style={sliderLabel}>Conservative</Text>
+      </View>
+
+      {/* Track — full width touch target */}
+      <View
+        style={{ height: THUMB_R * 2, justifyContent: 'center' }}
+        onLayout={(e) => setTrackW(e.nativeEvent.layout.width)}
+        {...panResponder.panHandlers}
+      >
+        {/* Gray base track */}
+        <View style={{
+          position: 'absolute', left: 0, right: 0,
+          height: 5, borderRadius: 3,
+          backgroundColor: COLORS.border,
+        }} />
+
+        {/* Colored fill from center toward thumb */}
+        {trackW > 0 && v !== 0 && (
+          <View style={{
+            position: 'absolute',
+            height: 5, borderRadius: 3,
+            backgroundColor: fillColor,
+            left:  v < 0 ? pos * trackW : trackW / 2,
+            width: Math.abs(pos * trackW - trackW / 2),
+          }} />
+        )}
+
+        {/* Center tick */}
+        {trackW > 0 && (
+          <View style={{
+            position: 'absolute',
+            left: trackW / 2 - 1,
+            top: THUMB_R - 7,
+            width: 2, height: 14,
+            borderRadius: 1,
+            backgroundColor: COLORS.textTertiary,
+          }} />
+        )}
+
+        {/* Thumb */}
+        {trackW > 0 && (
+          <View style={{
+            position: 'absolute',
+            left: thumbLeft,
+            top: 0,
+            width: THUMB_R * 2, height: THUMB_R * 2,
+            borderRadius: THUMB_R,
+            backgroundColor: value === null ? COLORS.surfaceAlt : fillColor,
+            borderWidth: 2.5, borderColor: COLORS.white,
+            shadowColor: '#000',
+            shadowOpacity: 0.15, shadowRadius: 4,
+            shadowOffset: { width: 0, height: 2 },
+            elevation: 3,
+          }} />
+        )}
+      </View>
+
+      {/* Current value label */}
+      <Text style={{ fontFamily: FONT.semiBold, fontSize: 13, color: COLORS.textSecondary, textAlign: 'center' }}>
+        {labelText}
+      </Text>
+    </View>
+  );
+}
+const sliderLabel = { fontFamily: FONT.mono, fontSize: 10, letterSpacing: 0.8, color: COLORS.textSecondary };
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   centered:  { alignItems: 'center', justifyContent: 'center' },
@@ -609,6 +802,12 @@ const styles = StyleSheet.create({
   textarea: { minHeight: 100, textAlignVertical: 'top' },
   counter: { fontFamily: FONT.mono, fontSize: 10, color: COLORS.textTertiary, alignSelf: 'flex-end' },
   fieldHint: { fontFamily: FONT.body, fontSize: 12, color: COLORS.textTertiary, marginBottom: 8, lineHeight: 17 },
+
+  // Hometown city rows
+  hometownRowLabel: { fontSize: 11, fontWeight: '600', color: COLORS.textSecondary, marginTop: 10, marginBottom: 2, textTransform: 'uppercase', letterSpacing: 0.6 },
+  hometownRow:  { flexDirection: 'row', gap: 8, marginBottom: 6 },
+  hometownCity: { flex: 1 },
+  hometownState: { width: 64 },
 
   // Option grid
   optGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
@@ -699,6 +898,47 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: COLORS.textTertiary,
     marginBottom: SPACING.md,
+  },
+
+  // Slider clear + church toggle
+  clearSlider: {
+    alignSelf: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    marginTop: 2,
+  },
+  clearSliderText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 13,
+    color: COLORS.textTertiary,
+  },
+  churchToggleRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  churchToggleBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surface,
+  },
+  churchToggleActive: {
+    backgroundColor: COLORS.text,
+    borderColor: COLORS.text,
+  },
+  churchToggleText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 13,
+    color: COLORS.textSecondary,
+  },
+  churchToggleTextActive: {
+    color: COLORS.white,
   },
 
   // Political lean picker

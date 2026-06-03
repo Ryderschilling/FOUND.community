@@ -128,10 +128,13 @@ export default function GroupDetailScreen({ route, navigation }) {
   const [lightbox, setLightbox]               = useState(null);
   const [membersModalOpen, setMembersModalOpen] = useState(false);
 
-  // Pending requests state
+  // Pending join requests state
   const [joinRequests, setJoinRequests] = useState([]);
   const [loadingRequests, setLoadingRequests] = useState(false);
   const [requestsOpen, setRequestsOpen] = useState(false);
+
+  // Pending invites (invited but not yet accepted) — visible to owner/admin only
+  const [pendingInvites, setPendingInvites] = useState([]);
 
   // Invite sheet state
   const [inviteSheetOpen, setInviteSheetOpen]     = useState(false);
@@ -165,11 +168,12 @@ export default function GroupDetailScreen({ route, navigation }) {
     if (!groupId) { setLoading(false); return; }
     if (isRefresh) setRefreshing(true); else setLoading(true);
     try {
-      const [dRes, mRes, pRes, postRes] = await Promise.all([
+      const [dRes, mRes, pRes, postRes, invRes] = await Promise.all([
         supabase.rpc('group_detail', { p_group: groupId }),
         supabase.rpc('group_members_list', { p_group: groupId }),
         fetchGroupPhotos(groupId),
         fetchGroupPosts(groupId),
+        supabase.rpc('list_group_pending_invites', { p_group: groupId }),
       ]);
       if (dRes.error) console.warn('[group] detail failed', dRes.error.message);
       else setDetail((dRes.data ?? [])[0] ?? null);
@@ -179,6 +183,8 @@ export default function GroupDetailScreen({ route, navigation }) {
       else setPhotos(pRes.photos ?? []);
       if (postRes.error) console.warn('[group] posts failed', postRes.error.message);
       else setPosts(postRes.posts ?? []);
+      // Non-fatal — only populated for owner/admin; empty array for regular members
+      setPendingInvites(invRes.data ?? []);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -936,6 +942,29 @@ export default function GroupDetailScreen({ route, navigation }) {
                   </View>
                 );
               })}
+
+              {/* Pending invites — owner/admin only */}
+              {isAdmin && pendingInvites.length > 0 ? pendingInvites.map((inv) => (
+                <View key={inv.invite_id} style={styles.memberRow}>
+                  <Avatar
+                    uri={inv.avatar_url || undefined}
+                    initials={initialsFor(inv.full_name)}
+                    size={40}
+                    gradientColors={gradientFor(inv.profile_id)}
+                  />
+                  <View style={styles.memberInfo}>
+                    <Text style={styles.memberName} numberOfLines={1}>
+                      {inv.full_name || 'Invited User'}
+                    </Text>
+                    {inv.handle ? (
+                      <Text style={styles.memberHandle} numberOfLines={1}>@{inv.handle}</Text>
+                    ) : null}
+                  </View>
+                  <View style={[styles.roleBadge, { backgroundColor: '#F5F0EB', borderColor: '#D9CFC7' }]}>
+                    <Text style={[styles.roleBadgeText, { color: '#8A7D6E' }]}>invited</Text>
+                  </View>
+                </View>
+              )) : null}
             </View>
           </View>
         </View>
@@ -944,7 +973,41 @@ export default function GroupDetailScreen({ route, navigation }) {
       {/* Sticky action bar */}
       <View style={styles.ctaBar}>
         {!isMember ? (
-          detail?.has_pending_request ? (
+          detail?.has_pending_invite ? (
+            // User was invited — show Accept / Decline
+            <View style={{ flex: 1, flexDirection: 'row', gap: 10 }}>
+              <PrimaryButton
+                label={busy ? 'Accepting…' : 'Accept Invite'}
+                onPress={async () => {
+                  if (busy) return;
+                  setBusy(true);
+                  try {
+                    // Fetch the invite id for this group
+                    const { data: invites, error: fetchErr } = await supabase.rpc('my_group_invites');
+                    if (fetchErr) throw fetchErr;
+                    const inv = (invites ?? []).find((i) => String(i.group_id) === String(groupId));
+                    if (!inv) {
+                      toast({ title: 'Invite not found', message: 'Could not find your invite — it may have already been used.', type: 'error' });
+                      return;
+                    }
+                    const { error } = await supabase.rpc('respond_to_group_invite', {
+                      p_invite: inv.id, p_accept: true,
+                    });
+                    if (error) throw error;
+                    await Promise.all([refreshDetail(), refreshMembers()]);
+                    toast({ title: 'Joined!', message: 'You\'re now a member of this group.', type: 'success' });
+                  } catch (e) {
+                    toast({ title: 'Could not accept', message: e?.message ?? 'Something went wrong.', type: 'error' });
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+                disabled={busy}
+                loading={busy}
+                style={{ flex: 1 }}
+              />
+            </View>
+          ) : detail?.has_pending_request ? (
             <PrimaryButton
               label={busy ? 'Canceling…' : 'Request Pending'}
               onPress={handleCancelJoinRequest}
