@@ -1,4 +1,4 @@
-import './src/lib/sentry';
+import { Sentry } from './src/lib/sentry';
 
 import React, { useEffect } from 'react';
 import { View, ActivityIndicator, Platform, StyleSheet } from 'react-native';
@@ -18,6 +18,7 @@ import AppNavigator from './src/navigation';
 import { AuthProvider } from './src/auth/AuthContext';
 import { ConfirmProvider } from './src/components/ConfirmProvider';
 import { ToastProvider }   from './src/components/ToastProvider';
+import ErrorBoundary       from './src/components/ErrorBoundary';
 
 // On web, lock the viewport so pinch-zoom and double-tap-zoom can't kick in.
 // Without this, mobile Safari/Chrome will zoom into inputs on focus and let
@@ -69,7 +70,7 @@ function lockWebViewport() {
   );
 }
 
-export default function App() {
+function App() {
   useEffect(() => { lockWebViewport(); }, []);
 
   const [fontsLoaded] = useFonts({
@@ -97,21 +98,27 @@ export default function App() {
   // frame instead of stretching edge-to-edge on desktop. On native this is a
   // no-op — `maxWidth` is undefined so the app fills the screen as normal.
   return (
-    <SafeAreaProvider>
-      <View style={styles.backdrop}>
-        <View style={styles.phone}>
-          <AuthProvider>
-            <ConfirmProvider>
-              <ToastProvider>
-                <AppNavigator />
-              </ToastProvider>
-            </ConfirmProvider>
-          </AuthProvider>
+    <ErrorBoundary>
+      <SafeAreaProvider>
+        <View style={styles.backdrop}>
+          <View style={styles.phone}>
+            <AuthProvider>
+              <ConfirmProvider>
+                <ToastProvider>
+                  <AppNavigator />
+                </ToastProvider>
+              </ConfirmProvider>
+            </AuthProvider>
+          </View>
         </View>
-      </View>
-    </SafeAreaProvider>
+      </SafeAreaProvider>
+    </ErrorBoundary>
   );
 }
+
+// Sentry.wrap captures native + JS crashes and adds touch/nav breadcrumbs.
+// No-op passthrough if Sentry isn't initialized (no DSN), so dev is unaffected.
+export default Sentry?.wrap ? Sentry.wrap(App) : App;
 
 const IS_WEB = Platform.OS === 'web';
 
