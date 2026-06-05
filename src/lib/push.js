@@ -150,7 +150,9 @@ export function routeFromNotificationData(navigationRef, data) {
 
   const { type, entity_id } = data;
 
-  if (type === 'direct_message' && entity_id) {
+  if (type === 'event_reminder' && entity_id) {
+    navigationRef.navigate('EventDetail', { eventId: entity_id });
+  } else if (type === 'direct_message' && entity_id) {
     navigationRef.navigate('Chat', {
       thread_id: entity_id,
       other: {

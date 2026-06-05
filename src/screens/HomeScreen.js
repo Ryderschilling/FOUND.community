@@ -36,17 +36,15 @@ import TutorialOverlay from '../components/TutorialOverlay';
 import { checkAndClearTutorial } from '../lib/tutorial';
 
 // Filter chips (non-location). Location lives in the dedicated pill above.
-// "All" + every discovery filter (saved/stage/church/new) hides existing
-// connections so Discover stays a feed of *new* people to meet. "Connections"
-// is the inverse — only people you're mutually matched with.
+// Discover is purely a feed of new people to meet — connections live in the
+// FOUND tab. All filters here hide existing connections by default.
 const FILTERS = [
-  { id: 'all',         label: 'All'           },
-  { id: 'connections', label: 'Connections'   },
-  { id: 'pending',     label: 'Pending'       },
-  { id: 'saved',       label: 'Connect Later' },
-  { id: 'stage',       label: 'Life Stage'    },
-  { id: 'interests',   label: 'Interests'     },
-  { id: 'new',         label: 'New'           },
+  { id: 'all',       label: 'All'           },
+  { id: 'stage',     label: 'Life Stage'    },
+  { id: 'church',    label: 'My Church'     },
+  { id: 'interests', label: 'Interests'     },
+  { id: 'new',       label: 'New'           },
+  { id: 'saved',     label: 'Connect Later' },
 ];
 
 // Height of the FOUND + bell header block
@@ -498,31 +496,24 @@ export default function HomeScreen({ navigation }) {
   const visibleMatches = useMemo(() => {
     let list = matches;
 
-    if (activeFilter === 'connections') {
-      list = list.filter((m) => m.isMatch);
-    } else if (activeFilter === 'pending') {
-      // Sent a request but not yet mutual.
-      list = list.filter((m) => m.connected && !m.isMatch);
-    } else {
-      // Discovery views — hide matches AND people I've already sent a request to.
-      list = list.filter((m) => !m.isMatch && !m.connected);
+    // Discover always hides existing connections — they live in the FOUND tab.
+    list = list.filter((m) => !m.isMatch && !m.connected);
 
-      if (activeFilter === 'saved') {
-        list = list.filter((m) => m.saved);
-      } else if (activeFilter === 'stage' && profile?.life_stage_id) {
-        list = list.filter((m) => m.lifeStageId === profile.life_stage_id);
-      } else if (activeFilter === 'church' && profile?.church_id) {
-        list = list.filter((m) => m.churchId === profile.church_id);
-      } else if (activeFilter === 'interests' && myActivityIds.length > 0) {
-        const mine = new Set(myActivityIds);
-        list = list.filter((m) => (m.interests ?? []).some((i) => mine.has(i.id)));
-      } else if (activeFilter === 'new') {
-        const cutoff = Date.now() - NEW_WINDOW_DAYS * 24 * 60 * 60 * 1000;
-        list = list.filter((m) => {
-          const t = m.createdAt ? new Date(m.createdAt).getTime() : NaN;
-          return Number.isFinite(t) && t >= cutoff;
-        });
-      }
+    if (activeFilter === 'saved') {
+      list = list.filter((m) => m.saved);
+    } else if (activeFilter === 'stage' && profile?.life_stage_id) {
+      list = list.filter((m) => m.lifeStageId === profile.life_stage_id);
+    } else if (activeFilter === 'church' && profile?.church_id) {
+      list = list.filter((m) => m.churchId === profile.church_id);
+    } else if (activeFilter === 'interests' && myActivityIds.length > 0) {
+      const mine = new Set(myActivityIds);
+      list = list.filter((m) => (m.interests ?? []).some((i) => mine.has(i.id)));
+    } else if (activeFilter === 'new') {
+      const cutoff = Date.now() - NEW_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+      list = list.filter((m) => {
+        const t = m.createdAt ? new Date(m.createdAt).getTime() : NaN;
+        return Number.isFinite(t) && t >= cutoff;
+      });
     }
 
     const q = query.trim().toLowerCase();

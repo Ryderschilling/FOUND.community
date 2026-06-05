@@ -31,6 +31,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../auth/AuthContext';
+import { scheduleEventReminder } from '../lib/eventReminders';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 const AVATAR_GRADIENTS = [
@@ -96,15 +97,19 @@ function ConnectionRow({ conn, selected, onToggle }) {
 }
 
 // ─── Screen ───────────────────────────────────────────────────────────────
-export default function CreateEventScreen({ navigation }) {
+export default function CreateEventScreen({ navigation, route }) {
   const { user } = useAuth();
+  // When launched from a group, skip the connections picker and link the event to that group
+  const groupId   = route?.params?.groupId   ?? null;
+  const groupName = route?.params?.groupName ?? null;
 
   // titleRef captures the raw input value on web — React's reconciliation
   // can reset controlled TextInput state when native HTML inputs (date/time)
   // trigger re-renders. The ref is always current regardless.
-  const titleRef = useRef('');
-  const [title, setTitle]         = useState('');
+  const titleRef = useRef(route?.params?.initialTitle ?? '');
+  const [title, setTitle]         = useState(route?.params?.initialTitle ?? '');
   const [eventDate, setEventDate] = useState(() => {
+    if (route?.params?.initialDate) return new Date(route.params.initialDate);
     // Default to tomorrow at noon
     const d = new Date();
     d.setDate(d.getDate() + 1);
@@ -113,14 +118,16 @@ export default function CreateEventScreen({ navigation }) {
   });
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
-  const [locationName, setLocationName]     = useState('');
-  const [description, setDescription]       = useState('');
+  const [locationName, setLocationName]     = useState(route?.params?.initialLocation ?? '');
+  const [description, setDescription]       = useState(route?.params?.initialDesc ?? '');
 
   const [connections, setConnections]   = useState([]);
   const [connLoading, setConnLoading]   = useState(true);
   // Plain object { [profileId]: true } instead of Set — avoids React Native Web
   // quirks where Set state updates don't always trigger reliable re-renders.
   const [selectedIds, setSelectedIds]   = useState({});
+
+  const [recurrence, setRecurrence] = useState(route?.params?.recurrence ?? null);
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError]           = useState(null);
@@ -180,7 +187,9 @@ export default function CreateEventScreen({ navigation }) {
       p_location_lat:  null,
       p_location_lng:  null,
       p_description:   description.trim() || null,
-      p_invitee_ids:   Object.keys(selectedIds).length > 0 ? Object.keys(selectedIds) : null,
+      p_invitee_ids:   groupId ? null : (Object.keys(selectedIds).length > 0 ? Object.keys(selectedIds) : null),
+      p_group_id:      groupId ?? null,
+      p_recurrence:    recurrence ?? null,
     });
 
     setSubmitting(null);
@@ -193,6 +202,13 @@ export default function CreateEventScreen({ navigation }) {
       setError('Event was not saved. Try again.');
       return;
     }
+
+    // Schedule a local reminder for the creator (they're always going)
+    scheduleEventReminder({
+      id:         eventId,
+      title:      effectiveTitle,
+      event_time: eventDate.toISOString(),
+    });
 
     // navigate (not replace) so back button returns here
     navigation.navigate('EventDetail', { eventId, isCreator: true });
@@ -215,7 +231,7 @@ export default function CreateEventScreen({ navigation }) {
           >
             <Ionicons name="arrow-back" size={22} color={COLORS.text} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>New Invite</Text>
+          <Text style={styles.headerTitle}>{groupName ? `Event for ${groupName}` : 'New Invite'}</Text>
           <View style={{ width: 36 }} />
         </View>
 
@@ -368,36 +384,75 @@ export default function CreateEventScreen({ navigation }) {
                 textAlignVertical="top"
               />
             </View>
+
+            {/* Recurrence */}
+            <View style={styles.fieldRow}>
+              <Ionicons name="repeat-outline" size={18} color={COLORS.sage} />
+              <View style={styles.recurrenceChips}>
+                {[
+                  { label: 'Once', value: null },
+                  { label: 'Weekly', value: 'weekly' },
+                  { label: 'Bi-weekly', value: 'biweekly' },
+                  { label: 'Monthly', value: 'monthly' },
+                ].map((opt) => (
+                  <TouchableOpacity
+                    key={String(opt.value)}
+                    activeOpacity={0.7}
+                    style={[
+                      styles.recurrenceChip,
+                      recurrence === opt.value && styles.recurrenceChipActive,
+                    ]}
+                    onPress={() => setRecurrence(opt.value)}
+                  >
+                    <Text style={[
+                      styles.recurrenceChipText,
+                      recurrence === opt.value && styles.recurrenceChipTextActive,
+                    ]}>
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
           </View>
 
-          {/* Connection picker */}
-          <View style={styles.card}>
-            <View style={styles.sectionRow}>
-              <Text style={styles.sectionLabel}>INVITE YOUR CONNECTIONS</Text>
-              {Object.keys(selectedIds).length > 0 && (
-                <View style={styles.countBadge}>
-                  <Text style={styles.countBadgeText}>{Object.keys(selectedIds).length}</Text>
-                </View>
+          {/* Connection picker — hidden when creating from a group (all members auto-invited) */}
+          {groupId ? (
+            <View style={styles.card}>
+              <Text style={styles.sectionLabel}>INVITES</Text>
+              <Text style={styles.emptyConn}>
+                All members of {groupName || 'this group'} will be automatically invited.
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.card}>
+              <View style={styles.sectionRow}>
+                <Text style={styles.sectionLabel}>INVITE YOUR CONNECTIONS</Text>
+                {Object.keys(selectedIds).length > 0 && (
+                  <View style={styles.countBadge}>
+                    <Text style={styles.countBadgeText}>{Object.keys(selectedIds).length}</Text>
+                  </View>
+                )}
+              </View>
+
+              {connLoading ? (
+                <ActivityIndicator color={COLORS.textTertiary} style={{ paddingVertical: 24 }} />
+              ) : connections.length === 0 ? (
+                <Text style={styles.emptyConn}>
+                  Connect with people on FOUND first — they'll show up here.
+                </Text>
+              ) : (
+                connections.map((conn) => (
+                  <ConnectionRow
+                    key={conn.profile_id}
+                    conn={conn}
+                    selected={!!selectedIds[conn.profile_id]}
+                    onToggle={toggleConnection}
+                  />
+                ))
               )}
             </View>
-
-            {connLoading ? (
-              <ActivityIndicator color={COLORS.textTertiary} style={{ paddingVertical: 24 }} />
-            ) : connections.length === 0 ? (
-              <Text style={styles.emptyConn}>
-                Connect with people on FOUND first — they'll show up here.
-              </Text>
-            ) : (
-              connections.map((conn) => (
-                <ConnectionRow
-                  key={conn.profile_id}
-                  conn={conn}
-                  selected={!!selectedIds[conn.profile_id]}
-                  onToggle={toggleConnection}
-                />
-              ))
-            )}
-          </View>
+          )}
 
           {/* Error */}
           {error ? (
@@ -532,6 +587,32 @@ const styles = StyleSheet.create({
     paddingVertical: 0,
   },
 
+  recurrenceChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    flex: 1,
+  },
+  recurrenceChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surface,
+  },
+  recurrenceChipActive: {
+    borderColor: COLORS.sage,
+    backgroundColor: '#F0F7F0',
+  },
+  recurrenceChipText: {
+    fontFamily: FONT.medium,
+    fontSize: 13,
+    color: COLORS.textSecondary,
+  },
+  recurrenceChipTextActive: {
+    color: COLORS.sage,
+  },
   inlinePicker: {
     borderTopWidth: 1,
     borderTopColor: COLORS.borderLight,

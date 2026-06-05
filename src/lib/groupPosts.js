@@ -65,7 +65,7 @@ async function pickImage(source) {
       if (result.canceled) return null;
       const asset = result.assets?.[0];
       if (!asset) return null;
-      const sanitized = await stripExif(asset.uri, { maxWidth: 2048, compress: 0.85 });
+      const sanitized = await stripExif(asset.uri, { maxWidth: 1200, compress: 0.72 });
       return { uri: sanitized.uri, base64: sanitized.base64 };
 }
 

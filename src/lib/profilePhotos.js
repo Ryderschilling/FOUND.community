@@ -67,7 +67,7 @@ async function pickImage(source) {
       if (result.canceled) return null;
       const asset = result.assets?.[0];
       if (!asset) return null;
-      const sanitized = await stripExif(asset.uri, { maxWidth: 2048, compress: 0.85 });
+      const sanitized = await stripExif(asset.uri, { maxWidth: 1200, compress: 0.72 });
       return { uri: sanitized.uri, base64: sanitized.base64 };
     }
 
@@ -85,7 +85,7 @@ async function pickMultipleImages(maxCount) {
   if (result.canceled || !result.assets?.length) return null;
   const picked = [];
   for (const asset of result.assets) {
-    const sanitized = await stripExif(asset.uri, { maxWidth: 2048, compress: 0.85 });
+    const sanitized = await stripExif(asset.uri, { maxWidth: 1200, compress: 0.72 });
     picked.push({ uri: sanitized.uri, base64: sanitized.base64 });
   }
   return picked;

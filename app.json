@@ -21,6 +21,7 @@
       },
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
+        "NSCalendarsUsageDescription": "FOUND adds events to your calendar so you never miss a gathering.",
         "NSCameraUsageDescription": "FOUND uses your camera so you can take a profile photo.",
         "NSPhotoLibraryUsageDescription": "FOUND uses your photo library so you can choose a profile photo.",
         "NSPhotoLibraryAddUsageDescription": "FOUND saves photos you take in the app to your photo library.",
@@ -153,13 +154,17 @@
         "backgroundColor": "#F7F4EF"
       },
       "package": "com.found.community",
-      "permissions": []
+      "permissions": [
+        "android.permission.READ_CALENDAR",
+        "android.permission.WRITE_CALENDAR"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
       "expo-font",
+      "expo-calendar",
       "expo-notifications",
       [
         "expo-image-picker",

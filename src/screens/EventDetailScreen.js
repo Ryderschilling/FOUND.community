@@ -34,6 +34,7 @@ import {
   Alert,
   Platform,
   KeyboardAvoidingView,
+  Linking,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
@@ -42,6 +43,8 @@ import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../auth/AuthContext';
 import { useConfirm } from '../components/ConfirmProvider';
+import { scheduleEventReminder, cancelEventReminder } from '../lib/eventReminders';
+import { addEventToCalendar } from '../lib/calendarIntegration';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 const AVATAR_GRADIENTS = [
@@ -144,6 +147,7 @@ export default function EventDetailScreen({ navigation, route }) {
 
   // ── Delete state
   const [deleting, setDeleting]           = useState(false);
+  const [calendarAdding, setCalendarAdding] = useState(false);
 
   const isCreator = event?.creator_id === user?.id;
 
@@ -306,6 +310,12 @@ export default function EventDetailScreen({ navigation, route }) {
       setAttendees((prev) =>
         prev.map((a) => a.invitee?.id === user?.id ? { ...a, status } : a),
       );
+      // Schedule or cancel the local reminder
+      if (status === 'accepted' && event) {
+        scheduleEventReminder(event);
+      } else {
+        cancelEventReminder(eventId);
+      }
     }
   };
 
@@ -460,14 +470,27 @@ export default function EventDetailScreen({ navigation, route }) {
             <Text style={styles.detailText}>{formatEventDateTime(event.event_time)}</Text>
           </View>
 
-          {/* Location */}
+          {/* Location — tappable, opens native map app */}
           {event.location_name ? (
-            <View style={styles.detailRow}>
+            <TouchableOpacity
+              style={styles.detailRow}
+              activeOpacity={0.7}
+              onPress={() => {
+                const encoded = encodeURIComponent(event.location_name);
+                const url = Platform.OS === 'ios'
+                  ? `maps://0,0?q=${encoded}`
+                  : `geo:0,0?q=${encoded}`;
+                Linking.openURL(url).catch(() =>
+                  Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encoded}`)
+                );
+              }}
+            >
               <View style={styles.detailIcon}>
                 <Ionicons name="location-outline" size={16} color={COLORS.sage} />
               </View>
-              <Text style={styles.detailText}>{event.location_name}</Text>
-            </View>
+              <Text style={[styles.detailText, styles.detailTextLink]}>{event.location_name}</Text>
+              <Ionicons name="chevron-forward" size={14} color={COLORS.textTertiary} style={{ marginTop: 3 }} />
+            </TouchableOpacity>
           ) : null}
 
           {/* Description */}
@@ -479,7 +502,71 @@ export default function EventDetailScreen({ navigation, route }) {
               <Text style={styles.detailText}>{event.description}</Text>
             </View>
           ) : null}
+
+          {/* Recurrence badge */}
+          {event.recurrence ? (
+            <View style={styles.detailRow}>
+              <View style={styles.detailIcon}>
+                <Ionicons name="repeat-outline" size={16} color={COLORS.sage} />
+              </View>
+              <Text style={styles.detailText}>
+                Repeats {event.recurrence === 'biweekly' ? 'bi-weekly' : event.recurrence}
+              </Text>
+            </View>
+          ) : null}
         </View>
+
+        {/* Schedule next occurrence — creator only, recurring events only */}
+        {isCreator && event.recurrence ? (() => {
+          const nextDate = new Date(event.event_time);
+          if (event.recurrence === 'weekly')   nextDate.setDate(nextDate.getDate() + 7);
+          if (event.recurrence === 'biweekly') nextDate.setDate(nextDate.getDate() + 14);
+          if (event.recurrence === 'monthly')  nextDate.setMonth(nextDate.getMonth() + 1);
+          return (
+            <TouchableOpacity
+              style={styles.nextOccurrenceBtn}
+              activeOpacity={0.8}
+              onPress={() => navigation.navigate('CreateEvent', {
+                groupId:         event.group_id ?? null,
+                groupName:       null,
+                initialTitle:    event.title,
+                initialLocation: event.location_name ?? '',
+                initialDesc:     event.description ?? '',
+                initialDate:     nextDate.toISOString(),
+                recurrence:      event.recurrence,
+              })}
+            >
+              <Ionicons name="add-circle-outline" size={18} color={COLORS.sage} />
+              <Text style={styles.nextOccurrenceBtnText}>Schedule Next Occurrence</Text>
+            </TouchableOpacity>
+          );
+        })() : null}
+
+        {/* Add to Calendar — shown to creator and anyone going */}
+        {(isCreator || myInvite?.status === 'accepted') && event ? (
+          <TouchableOpacity
+            style={[styles.calendarBtn, calendarAdding && { opacity: 0.6 }]}
+            activeOpacity={0.8}
+            disabled={calendarAdding}
+            onPress={async () => {
+              setCalendarAdding(true);
+              const { success, error: calErr } = await addEventToCalendar(event);
+              setCalendarAdding(false);
+              if (!success) {
+                Alert.alert('Could not add to calendar', calErr ?? 'Please try again.');
+              }
+            }}
+          >
+            {calendarAdding ? (
+              <ActivityIndicator size="small" color={COLORS.sage} />
+            ) : (
+              <>
+                <Ionicons name="calendar-outline" size={18} color={COLORS.sage} />
+                <Text style={styles.calendarBtnText}>Add to Calendar</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        ) : null}
 
         {/* ── Invitee: RSVP buttons ───────────────────────────── */}
         {!isCreator && (
@@ -967,6 +1054,45 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: COLORS.text,
     lineHeight: 22,
+  },
+  detailTextLink: {
+    color: COLORS.sage,
+    textDecorationLine: 'underline',
+  },
+  calendarBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: COLORS.white,
+    borderRadius: RADIUS.md,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: COLORS.sage,
+    ...SHADOW.card,
+  },
+  calendarBtnText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 14,
+    color: COLORS.sage,
+  },
+  nextOccurrenceBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: COLORS.white,
+    borderRadius: RADIUS.md,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: COLORS.sage,
+    ...SHADOW.card,
+  },
+  nextOccurrenceBtnText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 14,
+    color: COLORS.sage,
   },
 
   // RSVP

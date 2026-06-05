@@ -202,7 +202,7 @@ export default function PersonCard({ match, index = 0, onConnect, onSave, onCanc
             <Ionicons
               name={match.saved ? 'bookmark' : 'bookmark-outline'}
               size={18}
-              color={match.saved ? COLORS.sage : COLORS.textSecondary}
+              color={match.saved ? COLORS.text : COLORS.textSecondary}
             />
           </TouchableOpacity>
         ) : null}

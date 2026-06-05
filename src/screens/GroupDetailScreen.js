@@ -133,6 +133,9 @@ export default function GroupDetailScreen({ route, navigation }) {
   const [loadingRequests, setLoadingRequests] = useState(false);
   const [requestsOpen, setRequestsOpen] = useState(false);
 
+  // Group events
+  const [groupEvents, setGroupEvents] = useState([]);
+
   // Pending invites (invited but not yet accepted) — visible to owner/admin only
   const [pendingInvites, setPendingInvites] = useState([]);
 
@@ -168,12 +171,13 @@ export default function GroupDetailScreen({ route, navigation }) {
     if (!groupId) { setLoading(false); return; }
     if (isRefresh) setRefreshing(true); else setLoading(true);
     try {
-      const [dRes, mRes, pRes, postRes, invRes] = await Promise.all([
+      const [dRes, mRes, pRes, postRes, invRes, evRes] = await Promise.all([
         supabase.rpc('group_detail', { p_group: groupId }),
         supabase.rpc('group_members_list', { p_group: groupId }),
         fetchGroupPhotos(groupId),
         fetchGroupPosts(groupId),
         supabase.rpc('list_group_pending_invites', { p_group: groupId }),
+        supabase.rpc('group_events_list', { p_group: groupId }),
       ]);
       if (dRes.error) console.warn('[group] detail failed', dRes.error.message);
       else setDetail((dRes.data ?? [])[0] ?? null);
@@ -185,6 +189,7 @@ export default function GroupDetailScreen({ route, navigation }) {
       else setPosts(postRes.posts ?? []);
       // Non-fatal — only populated for owner/admin; empty array for regular members
       setPendingInvites(invRes.data ?? []);
+      if (!evRes.error) setGroupEvents(evRes.data ?? []);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -883,6 +888,95 @@ export default function GroupDetailScreen({ route, navigation }) {
             </View>
           ) : null}
 
+          {/* Events */}
+          {(isMember || groupEvents.length > 0) ? (
+            <View style={styles.section}>
+              <View style={styles.sectionHeadRow}>
+                <Text style={styles.sectionLabel}>EVENTS</Text>
+                {isAdmin ? (
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    style={styles.memberAddBtn}
+                    onPress={() => navigation.navigate('CreateEvent', {
+                      groupId,
+                      groupName: name,
+                    })}
+                  >
+                    <Text style={styles.memberAddBtnText}>+ Create</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+
+              {groupEvents.length === 0 ? (
+                <Text style={styles.emptyText}>No upcoming events</Text>
+              ) : (
+                groupEvents.map((ev) => {
+                  const evDate = new Date(ev.event_time);
+                  const dateStr = evDate.toLocaleDateString('en-US', {
+                    weekday: 'short', month: 'short', day: 'numeric',
+                  });
+                  const timeStr = evDate.toLocaleTimeString('en-US', {
+                    hour: 'numeric', minute: '2-digit', hour12: true,
+                  });
+                  const myStatus = ev.my_status;
+                  return (
+                    <TouchableOpacity
+                      key={ev.id}
+                      activeOpacity={0.75}
+                      style={styles.eventCard}
+                      onPress={() => navigation.navigate('EventDetail', { eventId: ev.id })}
+                    >
+                      <View style={styles.eventCardLeft}>
+                        <Text style={styles.eventTitle} numberOfLines={1}>{ev.title}</Text>
+                        <View style={styles.eventMeta}>
+                          <Ionicons name="calendar-outline" size={12} color={COLORS.textSecondary} />
+                          <Text style={styles.eventMetaText}>{dateStr} · {timeStr}</Text>
+                        </View>
+                        {ev.location_name ? (
+                          <View style={styles.eventMeta}>
+                            <Ionicons name="location-outline" size={12} color={COLORS.textSecondary} />
+                            <Text style={styles.eventMetaText} numberOfLines={1}>{ev.location_name}</Text>
+                          </View>
+                        ) : null}
+                        <View style={styles.eventMeta}>
+                          <Text style={styles.eventMetaText}>
+                            {ev.going_count} going · {ev.pending_count} pending
+                          </Text>
+                        </View>
+                        {ev.recurrence ? (
+                          <View style={styles.eventMeta}>
+                            <Ionicons name="repeat-outline" size={11} color={COLORS.textTertiary} />
+                            <Text style={[styles.eventMetaText, { color: COLORS.textTertiary }]}>
+                              Repeats {ev.recurrence === 'biweekly' ? 'bi-weekly' : ev.recurrence}
+                            </Text>
+                          </View>
+                        ) : null}
+                      </View>
+                      {myStatus ? (
+                        <View style={[
+                          styles.eventStatusPill,
+                          myStatus === 'accepted' ? styles.eventStatusGoing :
+                          myStatus === 'declined' ? styles.eventStatusDeclined :
+                          styles.eventStatusPending,
+                        ]}>
+                          <Text style={[
+                            styles.eventStatusText,
+                            myStatus === 'accepted' ? { color: COLORS.sage } :
+                            myStatus === 'declined' ? { color: '#D24A4A' } :
+                            { color: COLORS.textTertiary },
+                          ]}>
+                            {myStatus === 'accepted' ? 'Going' :
+                             myStatus === 'declined' ? 'Can\'t go' : 'Pending'}
+                          </Text>
+                        </View>
+                      ) : null}
+                    </TouchableOpacity>
+                  );
+                })
+              )}
+            </View>
+          ) : null}
+
           {/* Members */}
           <View style={styles.section}>
             <View style={styles.sectionHeadRow}>
@@ -897,6 +991,8 @@ export default function GroupDetailScreen({ route, navigation }) {
               {members.map((m) => {
                 const canManage =
                   isAdmin && m.profile_id !== user?.id && m.role !== 'owner';
+                const canRemove =
+                  isOwner && m.profile_id !== user?.id && m.role !== 'owner';
                 const canBlockOrReport = m.profile_id !== user?.id;
                 return (
                   <View key={m.profile_id} style={styles.memberRow}>
@@ -928,10 +1024,11 @@ export default function GroupDetailScreen({ route, navigation }) {
                         </Text>
                       </View>
                     ) : null}
-                    {canManage || canBlockOrReport ? (
+                    {canManage || canRemove || canBlockOrReport ? (
                       <MemberActionsMenu
                         member={m}
                         canManage={canManage}
+                        canRemove={canRemove}
                         canBlockOrReport={canBlockOrReport}
                         onSetRole={handleSetRole}
                         onRemove={handleRemoveMember}
@@ -1592,11 +1689,11 @@ function Field({ label, value, onChange, placeholder, multiline }) {
 }
 
 // ─── Member actions menu ──────────────────────────────────────────────────
-function MemberActionsMenu({ member, canManage, canBlockOrReport, onSetRole, onRemove, onBlock, onReport }) {
+function MemberActionsMenu({ member, canManage, canRemove, canBlockOrReport, onSetRole, onRemove, onBlock, onReport }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const isAdminRole = member.role === 'admin';
 
-  if (!canManage && !canBlockOrReport) return null;
+  if (!canManage && !canRemove && !canBlockOrReport) return null;
 
   return (
     <>
@@ -1636,7 +1733,7 @@ function MemberActionsMenu({ member, canManage, canBlockOrReport, onSetRole, onR
               </TouchableOpacity>
             ) : null}
 
-            {canManage ? (
+            {canRemove ? (
               <TouchableOpacity
                 style={modalStyles.actionRow}
                 activeOpacity={0.7}
@@ -1853,6 +1950,53 @@ const styles = StyleSheet.create({
     fontFamily: FONT.semiBold,
     fontSize: 12,
     color: COLORS.sage,
+  },
+  emptyText: {
+    fontFamily: FONT.regular,
+    fontSize: 13,
+    color: COLORS.textTertiary,
+    paddingVertical: 8,
+  },
+  eventCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.white,
+    borderRadius: RADIUS.md,
+    padding: 12,
+    marginBottom: 8,
+    ...SHADOW.card,
+  },
+  eventCardLeft: { flex: 1 },
+  eventTitle: {
+    fontFamily: FONT.semiBold,
+    fontSize: 14,
+    color: COLORS.text,
+    marginBottom: 4,
+  },
+  eventMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
+  },
+  eventMetaText: {
+    fontFamily: FONT.regular,
+    fontSize: 12,
+    color: COLORS.textSecondary,
+  },
+  eventStatusPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginLeft: 8,
+  },
+  eventStatusGoing: { borderColor: COLORS.sage, backgroundColor: '#F0F7F0' },
+  eventStatusDeclined: { borderColor: '#D24A4A', backgroundColor: '#FDF0F0' },
+  eventStatusPending: { borderColor: COLORS.border, backgroundColor: COLORS.surface },
+  eventStatusText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 11,
   },
   memberAddBtn: {
     backgroundColor: COLORS.sage,

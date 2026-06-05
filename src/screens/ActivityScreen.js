@@ -1540,14 +1540,14 @@ const styles = StyleSheet.create({
     ...SHADOW.sm,
   },
   connRowPinned: {
-    borderColor: COLORS.clay,
+    borderColor: COLORS.text,
   },
-  // Left peach stripe on saved/pinned rows
+  // Left black stripe on saved/pinned rows
   pinnedStripe: {
     position: 'absolute',
     left: 0, top: 0, bottom: 0,
     width: 4,
-    backgroundColor: COLORS.clay,
+    backgroundColor: COLORS.text,
     borderTopLeftRadius: RADIUS.xl,
     borderBottomLeftRadius: RADIUS.xl,
   },
