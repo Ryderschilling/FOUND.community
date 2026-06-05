@@ -820,22 +820,22 @@ export default function EventDetailScreen({ navigation, route }) {
           ) : (
             <FlatList
               data={allConnections}
-              keyExtractor={(c) => c.id}
+              keyExtractor={(c) => c.profile_id}
               contentContainerStyle={{ padding: SPACING.md }}
               ItemSeparatorComponent={() => <View style={{ height: 1, backgroundColor: COLORS.borderLight }} />}
               renderItem={({ item }) => {
-                const selected = inviteSelected.has(item.id);
-                const alreadyInvited = attendees.some((a) => a.invitee?.id === item.id);
+                const selected = inviteSelected.has(item.profile_id);
+                const alreadyInvited = attendees.some((a) => a.invitee?.id === item.profile_id);
                 return (
                   <TouchableOpacity
                     style={[styles.modalRow, alreadyInvited && { opacity: 0.4 }]}
                     activeOpacity={alreadyInvited ? 1 : 0.7}
-                    onPress={() => { if (!alreadyInvited) toggleInvitee(item.id); }}
+                    onPress={() => { if (!alreadyInvited) toggleInvitee(item.profile_id); }}
                   >
                     <View style={styles.modalAvatar}>
                       {item.avatar_url
                         ? <Image source={{ uri: item.avatar_url }} style={styles.modalAvatarImg} />
-                        : <LinearGradient colors={gradientFor(item.id)} style={styles.modalAvatarImg}>
+                        : <LinearGradient colors={gradientFor(item.profile_id)} style={styles.modalAvatarImg}>
                             <Text style={styles.modalInitials}>{initialsFor(item.full_name)}</Text>
                           </LinearGradient>
                       }
