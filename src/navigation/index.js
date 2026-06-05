@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform, ActivityIndicator, AppState, Animated, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
+import { NavigationContainer, createNavigationContainerRef, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -350,9 +350,13 @@ function AppStack({ needsOnboarding }) {
 // ── Root: gate on auth ─────────────────────────────────────────────
 // Defined outside the component so the object reference is stable — prevents
 // NavigationContainer from re-initializing on every AppNavigator render.
+// React Navigation v7 added a `fonts` key to the theme shape.
+// Spread DefaultTheme so we inherit any new required keys automatically.
 const NAV_THEME = {
+  ...DefaultTheme,
   dark: false,
   colors: {
+    ...DefaultTheme.colors,
     primary:      COLORS.accent,
     background:   COLORS.bg,
     card:         COLORS.bg,
