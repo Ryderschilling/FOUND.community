@@ -283,16 +283,206 @@ function StepSchoolType({ selection, onSelect }) {
   );
 }
 
-function StepLoveLanguage({ selection, onSelect }) {
+// ─── Love Language Quiz ───────────────────────────────────────────────────────
+const LL_QUIZ = [
+  {
+    q: 'After a long week, what helps you feel most recharged by someone you care about?',
+    answers: [
+      { label: 'They take something off my plate without being asked', lang: 'acts-of-service' },
+      { label: 'They bring me a little treat or gift', lang: 'receiving-gifts' },
+      { label: 'They set aside time to just be with me, no distractions', lang: 'quality-time' },
+      { label: 'They send a heartfelt message telling me how much I mean to them', lang: 'words' },
+      { label: 'A long hug when I get home', lang: 'physical-touch' },
+    ],
+  },
+  {
+    q: 'What usually makes you feel most appreciated in a relationship?',
+    answers: [
+      { label: 'When they remember something and bring it as a surprise', lang: 'receiving-gifts' },
+      { label: 'When they say "I\'m really proud of you"', lang: 'words' },
+      { label: 'When they drop everything to spend the afternoon with me', lang: 'quality-time' },
+      { label: 'When they handle a task I\'ve been dreading', lang: 'acts-of-service' },
+      { label: 'When they reach for my hand in public', lang: 'physical-touch' },
+    ],
+  },
+  {
+    q: 'What kind of gesture would move you most if a close friend did it?',
+    answers: [
+      { label: 'Showed up to help me move or fix something', lang: 'acts-of-service' },
+      { label: 'Planned a whole day around something I love', lang: 'quality-time' },
+      { label: 'Mailed me something personal they picked just for me', lang: 'receiving-gifts' },
+      { label: 'Texted "thinking of you" out of nowhere', lang: 'words' },
+      { label: 'Greeted me with a genuine, warm embrace', lang: 'physical-touch' },
+    ],
+  },
+  {
+    q: 'When you\'re going through something hard, what do you most want from someone close?',
+    answers: [
+      { label: 'For them to sit with me and really listen', lang: 'quality-time' },
+      { label: 'To hear "I\'m here for you, I love you"', lang: 'words' },
+      { label: 'For them to handle something practical so I don\'t have to', lang: 'acts-of-service' },
+      { label: 'A thoughtful gift that shows they were paying attention', lang: 'receiving-gifts' },
+      { label: 'Their presence — a hand on my shoulder, a hug', lang: 'physical-touch' },
+    ],
+  },
+  {
+    q: 'On your birthday, which would mean the most to you?',
+    answers: [
+      { label: 'A heartfelt note listing exactly why they love me', lang: 'words' },
+      { label: 'A full day planned around my favorite things', lang: 'quality-time' },
+      { label: 'Something I\'ve wanted but would never buy myself', lang: 'receiving-gifts' },
+      { label: 'They handled all the logistics so I could just enjoy it', lang: 'acts-of-service' },
+      { label: 'A big warm hug from the people who matter most', lang: 'physical-touch' },
+    ],
+  },
+];
+
+const LL_LABELS = {
+  'acts-of-service': 'Acts of Service',
+  'receiving-gifts': 'Receiving Gifts',
+  'quality-time':    'Quality Time',
+  'words':           'Words of Affirmation',
+  'physical-touch':  'Physical Touch',
+};
+
+function LoveLanguageQuizModal({ visible, onClose, onResult }) {
+  // answers: array of lang strings, one per question answered so far
+  const [answers, setAnswers] = useState([]);
+  const [result, setResult]   = useState(null);
+
+  const qIndex = answers.length; // current question index
+
+  function reset() {
+    setAnswers([]);
+    setResult(null);
+  }
+
+  function handleClose() {
+    reset();
+    onClose();
+  }
+
+  function goBack() {
+    if (result) {
+      setResult(null); // go back from result to last question
+    } else if (qIndex > 0) {
+      setAnswers((prev) => prev.slice(0, -1));
+    }
+  }
+
+  function pickAnswer(lang) {
+    const next = [...answers, lang];
+    if (next.length < LL_QUIZ.length) {
+      setAnswers(next);
+    } else {
+      // tally scores
+      const tally = {};
+      next.forEach((l) => { tally[l] = (tally[l] || 0) + 1; });
+      const winner = Object.entries(tally).sort((a, b) => b[1] - a[1])[0][0];
+      setAnswers(next);
+      setResult(winner);
+    }
+  }
+
+  function confirm() {
+    onResult(result);
+    reset();
+  }
+
+  const current = LL_QUIZ[result ? LL_QUIZ.length - 1 : qIndex];
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={handleClose}>
+      <View style={styles.modalBackdrop}>
+        <View style={styles.quizSheet}>
+          {/* ── Fixed header (never scrolls) ── */}
+          <View style={styles.quizSheetHandle} />
+          <View style={styles.modalHeader}>
+            {/* Back button — visible on q2+ and on result screen */}
+            {(qIndex > 0 || result) ? (
+              <TouchableOpacity onPress={goBack} hitSlop={12} style={styles.quizBackBtn}>
+                <Ionicons name="chevron-back" size={20} color={COLORS.text} />
+                <Text style={styles.quizBackText}>Back</Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.quizBackBtn} />
+            )}
+            <Text style={styles.quizHeaderTitle}>
+              {result ? 'Your Result' : `${qIndex + 1} of ${LL_QUIZ.length}`}
+            </Text>
+            <TouchableOpacity onPress={handleClose} hitSlop={12}>
+              <Ionicons name="close" size={22} color={COLORS.textSecondary} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Progress bar */}
+          {!result && (
+            <View style={styles.quizProgressTrack}>
+              <View style={[styles.quizProgressFill, { width: `${(qIndex / LL_QUIZ.length) * 100}%` }]} />
+            </View>
+          )}
+
+          {/* ── Scrollable body ── */}
+          <ScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={styles.quizScrollContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            {result ? (
+              /* Result screen */
+              <View style={styles.quizResultWrap}>
+                <Ionicons name="heart" size={48} color={COLORS.accent} style={{ marginBottom: SPACING.md }} />
+                <Text style={styles.quizResultLabel}>{LL_LABELS[result]}</Text>
+                <Text style={styles.quizResultSub}>
+                  Based on your answers, this is likely your primary love language. You can always change it.
+                </Text>
+                <PrimaryButton label="Sounds right — select it" onPress={confirm} style={{ marginTop: SPACING.lg, alignSelf: 'stretch' }} />
+                <TouchableOpacity onPress={reset} style={styles.quizRetakeWrap}>
+                  <Text style={styles.quizRetakeLink}>Retake the quiz</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              /* Question screen */
+              <>
+                <Text style={styles.quizQuestion}>{current.q}</Text>
+                <View style={styles.quizAnswerList}>
+                  {current.answers.map((a, i) => (
+                    <TouchableOpacity
+                      key={i}
+                      style={styles.quizAnswerRow}
+                      onPress={() => pickAnswer(a.lang)}
+                      activeOpacity={0.65}
+                    >
+                      <Text style={styles.quizAnswerText}>{a.label}</Text>
+                      <Ionicons name="chevron-forward" size={16} color={COLORS.textSecondary} />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </>
+            )}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function StepLoveLanguage({ selection, onSelect, onNotSure }) {
+  const realOptions = LOVE_LANGUAGES.filter((l) => l.id !== 'not-sure');
   return (
     <>
       <Text style={styles.stepTitle}>What's your love language?</Text>
       <Text style={styles.stepSub}>Helps us match you with compatible people.</Text>
       <View style={styles.optGrid}>
-        {LOVE_LANGUAGES.map((item) => (
+        {realOptions.map((item) => (
           <OptionCard key={item.id} item={item} selected={selection === item.id} onPress={() => onSelect(item.id)} />
         ))}
       </View>
+      <TouchableOpacity style={styles.notSureBtn} onPress={onNotSure} activeOpacity={0.7}>
+        <Ionicons name="help-circle-outline" size={16} color={COLORS.accent} />
+        <Text style={styles.notSureBtnText}>Not sure? Take a quick quiz</Text>
+      </TouchableOpacity>
     </>
   );
 }
@@ -818,6 +1008,7 @@ export default function OnboardingScreen({ navigation }) {
   const [familyValues, setFamilyValues]     = useState([]);
   const [schoolType, setSchoolType]         = useState(null);
   const [loveLanguage, setLoveLanguage]     = useState(null);
+  const [llQuizVisible, setLlQuizVisible]   = useState(false);
   const [initiator, setInitiator]           = useState(null);
   const [outgoing, setOutgoing]             = useState(null);
   const [politicalLean, setPoliticalLean]   = useState(null); // null = skipped
@@ -1002,8 +1193,17 @@ export default function OnboardingScreen({ navigation }) {
           <StepSchoolType selection={schoolType} onSelect={setSchoolType} />
         )}
         {currentStepId === 'love-language' && (
-          <StepLoveLanguage selection={loveLanguage} onSelect={setLoveLanguage} />
+          <StepLoveLanguage
+            selection={loveLanguage}
+            onSelect={setLoveLanguage}
+            onNotSure={() => setLlQuizVisible(true)}
+          />
         )}
+        <LoveLanguageQuizModal
+          visible={llQuizVisible}
+          onClose={() => setLlQuizVisible(false)}
+          onResult={(lang) => { setLoveLanguage(lang); setLlQuizVisible(false); }}
+        />
         {currentStepId === 'personality' && (
           <StepPersonality
             initiator={initiator}
@@ -1481,5 +1681,132 @@ const styles = StyleSheet.create({
     fontFamily: FONT.regular,
     fontSize: 13,
     color: COLORS.text,
+  },
+
+  // Quiz sheet (replaces generic modalSheet for the quiz)
+  quizSheet: {
+    backgroundColor: COLORS.bg,
+    borderTopLeftRadius: RADIUS.xl,
+    borderTopRightRadius: RADIUS.xl,
+    maxHeight: '88%',
+    paddingHorizontal: SPACING.lg,
+    paddingTop: SPACING.sm,
+    // bottom padding handled by scrollContent so safe-area gap is inside the scroll
+  },
+  quizSheetHandle: {
+    width: 36,
+    height: 4,
+    backgroundColor: COLORS.border,
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: SPACING.sm,
+  },
+  quizHeaderTitle: {
+    fontFamily: FONT.semiBold,
+    fontSize: 15,
+    color: COLORS.textSecondary,
+    flex: 1,
+    textAlign: 'center',
+  },
+  quizBackBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: 64,
+    gap: 2,
+  },
+  quizBackText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 14,
+    color: COLORS.text,
+  },
+  quizScrollContent: {
+    paddingTop: SPACING.md,
+    paddingBottom: 40, // safe-area buffer for home indicator
+  },
+  quizAnswerList: {
+    marginTop: SPACING.md,
+    gap: 10,
+  },
+  quizResultWrap: {
+    alignItems: 'center',
+    paddingTop: SPACING.lg,
+  },
+  quizRetakeWrap: {
+    marginTop: SPACING.md,
+    alignItems: 'center',
+    paddingVertical: SPACING.sm,
+  },
+
+  // Not sure button
+  notSureBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: SPACING.md,
+    alignSelf: 'center',
+  },
+  notSureBtnText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 14,
+    color: COLORS.accent,
+  },
+
+  // Love language quiz modal
+  quizProgressTrack: {
+    height: 4,
+    backgroundColor: COLORS.border,
+    borderRadius: 2,
+    overflow: 'hidden',
+    marginBottom: SPACING.sm,
+  },
+  quizProgressFill: {
+    height: '100%',
+    backgroundColor: COLORS.accent,
+    borderRadius: 2,
+  },
+  quizQuestion: {
+    fontFamily: FONT.semiBold,
+    fontSize: 16,
+    color: COLORS.text,
+    lineHeight: 24,
+  },
+  quizAnswerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  quizAnswerText: {
+    fontFamily: FONT.regular,
+    fontSize: 14,
+    color: COLORS.text,
+    flex: 1,
+    marginRight: 8,
+    lineHeight: 20,
+  },
+  quizResultLabel: {
+    fontFamily: FONT.bold,
+    fontSize: 26,
+    color: COLORS.accent,
+    textAlign: 'center',
+    marginBottom: SPACING.sm,
+  },
+  quizResultSub: {
+    fontFamily: FONT.regular,
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    lineHeight: 21,
+    paddingHorizontal: SPACING.sm,
+  },
+  quizRetakeLink: {
+    fontFamily: FONT.semiBold,
+    fontSize: 14,
+    color: COLORS.textSecondary,
   },
 });

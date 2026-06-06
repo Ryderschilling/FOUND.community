@@ -337,6 +337,7 @@ export default function GroupsScreen({ navigation }) {
       ) : (
         <SectionList
           sections={sections}
+          keyboardShouldPersistTaps="handled"
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
             <View style={styles.cardWrap}>

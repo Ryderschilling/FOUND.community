@@ -725,6 +725,7 @@ export default function HomeScreen({ navigation }) {
             />
           )
         )}
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={[styles.list, { paddingTop: HEADER_HEIGHT }]}
         ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
         showsVerticalScrollIndicator={false}
