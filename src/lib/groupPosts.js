@@ -25,7 +25,7 @@ import { checkText } from './contentFilter';
 import { stripExif } from './imageSanitize';
 
 const BUCKET = 'group-post-photos';
-export const MAX_POST_BODY = 1000;
+export const MAX_POST_BODY = 3000;
 
 // Simple uuid v4 generator — avoids pulling in a dep just for this.
 function uuid() {

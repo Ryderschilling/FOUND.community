@@ -506,15 +506,34 @@ function CreateGroupModal({ visible, onClose, onCreated }) {
   const [desc, setDesc]         = useState('');
   const [city, setCity]         = useState('');
   const [state, setState]       = useState('');
-  const [address, setAddress]   = useState('');
-  const [schedule, setSchedule] = useState('');
-  const [cover, setCover]       = useState(null);   // { uri, base64 } picked, not yet uploaded
-  const [isPublic, setIsPublic] = useState(true);   // Public by default
-  const [busy, setBusy]         = useState(false);
+  const [address, setAddress]         = useState('');
+  // Schedule picker state
+  const [schedFreq, setSchedFreq]     = useState('');     // 'weekly'|'biweekly'|'monthly'|'custom'
+  const [schedDay, setSchedDay]       = useState('');     // 'Mon'|'Tue'|...|'Sun'
+  const [schedOrdinal, setSchedOrdinal] = useState('');   // '1st'|'2nd'|'3rd'|'4th'|'Last'
+  const [schedTime, setSchedTime]     = useState('');     // '7pm', '6:30pm', etc.
+  const [schedCustom, setSchedCustom] = useState('');     // free text when freq='custom'
+  const [cover, setCover]             = useState(null);   // { uri, base64 } picked, not yet uploaded
+  const [isPublic, setIsPublic]       = useState(true);   // Public by default
+  const [busy, setBusy]               = useState(false);
+
+  // Builds the human-readable schedule string stored in the DB.
+  function buildScheduleText() {
+    if (schedFreq === 'custom') return schedCustom.trim();
+    if (!schedFreq || !schedDay) return '';
+    let base = '';
+    if (schedFreq === 'weekly')    base = `${schedDay}s`;
+    if (schedFreq === 'biweekly')  base = `Every other ${schedDay}`;
+    if (schedFreq === 'monthly')   base = `${schedOrdinal || '1st'} ${schedDay} of the month`;
+    return schedTime.trim() ? `${base} at ${schedTime.trim()}` : base;
+  }
 
   const reset = () => {
     setName(''); setDesc(''); setCity(''); setState('');
-    setAddress(''); setSchedule(''); setCover(null);
+    setAddress('');
+    setSchedFreq(''); setSchedDay(''); setSchedOrdinal('');
+    setSchedTime(''); setSchedCustom('');
+    setCover(null);
     setIsPublic(true);
   };
 
@@ -566,7 +585,7 @@ function CreateGroupModal({ visible, onClose, onCreated }) {
       p_city:          city,
       p_state:         state,
       p_address:       address,
-      p_schedule_text: schedule,
+      p_schedule_text: buildScheduleText(),
       p_lat:           lat,
       p_lng:           lng,
     });
@@ -668,7 +687,86 @@ function CreateGroupModal({ visible, onClose, onCreated }) {
               onChange={setAddress}
               placeholder="Street address — shown to members only"
             />
-            <Field label="Schedule" value={schedule} onChange={setSchedule} placeholder="Tuesdays 7pm" />
+            {/* Schedule picker */}
+            <View style={modalStyles.field}>
+              <Text style={modalStyles.fieldLabel}>Schedule</Text>
+              {/* Frequency row */}
+              <View style={modalStyles.chipRow}>
+                {['weekly', 'biweekly', 'monthly', 'custom'].map((f) => (
+                  <TouchableOpacity
+                    key={f}
+                    style={[modalStyles.chip, schedFreq === f && modalStyles.chipActive]}
+                    onPress={() => { setSchedFreq(schedFreq === f ? '' : f); setSchedDay(''); setSchedOrdinal(''); }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[modalStyles.chipText, schedFreq === f && modalStyles.chipTextActive]}>
+                      {f === 'biweekly' ? 'Bi-weekly' : f.charAt(0).toUpperCase() + f.slice(1)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* Ordinal row — monthly only */}
+              {schedFreq === 'monthly' && (
+                <View style={[modalStyles.chipRow, { marginTop: 8 }]}>
+                  {['1st', '2nd', '3rd', '4th', 'Last'].map((o) => (
+                    <TouchableOpacity
+                      key={o}
+                      style={[modalStyles.chip, schedOrdinal === o && modalStyles.chipActive]}
+                      onPress={() => setSchedOrdinal(schedOrdinal === o ? '' : o)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[modalStyles.chipText, schedOrdinal === o && modalStyles.chipTextActive]}>{o}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
+              {/* Day of week row */}
+              {(schedFreq === 'weekly' || schedFreq === 'biweekly' || schedFreq === 'monthly') && (
+                <View style={[modalStyles.chipRow, { marginTop: 8 }]}>
+                  {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
+                    <TouchableOpacity
+                      key={d}
+                      style={[modalStyles.chip, schedDay === d && modalStyles.chipActive]}
+                      onPress={() => setSchedDay(schedDay === d ? '' : d)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[modalStyles.chipText, schedDay === d && modalStyles.chipTextActive]}>{d}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
+              {/* Time input — shown for structured frequencies */}
+              {(schedFreq === 'weekly' || schedFreq === 'biweekly' || schedFreq === 'monthly') && (
+                <TextInput
+                  style={[modalStyles.input, { marginTop: 8 }]}
+                  value={schedTime}
+                  onChangeText={setSchedTime}
+                  placeholder="Time — e.g. 7pm or 6:30pm"
+                  placeholderTextColor={COLORS.textTertiary}
+                  maxLength={20}
+                />
+              )}
+
+              {/* Custom free text */}
+              {schedFreq === 'custom' && (
+                <TextInput
+                  style={[modalStyles.input, { marginTop: 8 }]}
+                  value={schedCustom}
+                  onChangeText={setSchedCustom}
+                  placeholder="e.g. 1st & 3rd Wednesday at 7pm"
+                  placeholderTextColor={COLORS.textTertiary}
+                  maxLength={80}
+                />
+              )}
+
+              {/* Preview */}
+              {buildScheduleText() ? (
+                <Text style={modalStyles.schedulePreview}>{buildScheduleText()}</Text>
+              ) : null}
+            </View>
 
             {/* Privacy toggle */}
             <View style={modalStyles.field}>
@@ -1022,6 +1120,40 @@ const modalStyles = StyleSheet.create({
     fontFamily: FONT.semiBold,
     fontSize: 12,
     color: COLORS.white,
+  },
+
+  // Schedule picker chips
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  chip: {
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surface,
+  },
+  chipActive: {
+    backgroundColor: COLORS.accent,
+    borderColor: COLORS.accent,
+  },
+  chipText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 13,
+    color: COLORS.text,
+  },
+  chipTextActive: {
+    color: COLORS.white,
+  },
+  schedulePreview: {
+    fontFamily: FONT.regular,
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginTop: 8,
+    fontStyle: 'italic',
   },
 
   // Privacy toggle
