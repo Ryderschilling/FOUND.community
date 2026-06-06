@@ -36,19 +36,29 @@ import { PrimaryButton, SectionHeader } from '../components/Atoms';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../auth/AuthContext';
 import { useToast } from '../components/ToastProvider';
-import { geocode } from '../lib/geocode';
+import { geocode, geocodeZip } from '../lib/geocode';
 import { firstViolation } from '../lib/contentFilter';
 import ChurchPicker from '../components/ChurchPicker';
+import {
+  FAMILY_VALUES,
+  SCHOOL_TYPES,
+  LOVE_LANGUAGES,
+  DENOMINATIONS,
+  HAS_KIDS_STAGES,
+} from '../data/mock';
 
-function parseLocation(text) {
-  if (!text || !text.trim()) return { city: '', state: '' };
-  const trimmed = text.trim();
-  const idx = trimmed.lastIndexOf(',');
-  if (idx < 0) return { city: trimmed, state: '' };
-  return {
-    city:  trimmed.slice(0, idx).trim(),
-    state: trimmed.slice(idx + 1).trim(),
-  };
+function BinaryCard({ label, subLabel, selected, onPress }) {
+  return (
+    <Pressable
+      style={[styles.binaryCard, selected && styles.binaryCardSelected]}
+      onPress={onPress}
+    >
+      <Text style={[styles.binaryLabel, selected && styles.binaryLabelSelected]}>{label}</Text>
+      {subLabel ? (
+        <Text style={[styles.binarySubLabel, selected && styles.binarySubLabelSelected]}>{subLabel}</Text>
+      ) : null}
+    </Pressable>
+  );
 }
 
 function OptionCard({ item, selected, onPress }) {
@@ -84,7 +94,16 @@ export default function EditProfileScreen({ navigation }) {
     { city: '', state: '' },
     { city: '', state: '' },
   ]);
-  const [locationText, setLocationText] = useState('');
+  // Address fields (mirrors SignUpScreen)
+  const [addressQuery, setAddressQuery] = useState('');
+  const [suggestions, setSuggestions]   = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [resolvedCoords, setResolvedCoords]   = useState(null);
+  const [city, setCity]   = useState('');
+  const [state, setState] = useState('');
+  const [zip, setZip]     = useState('');
+  const debounceRef  = useRef(null);
+  const skipFetchRef = useRef(false);
   const [lifeStage, setLifeStage]     = useState(null);
   const [activities, setActivities]   = useState([]);    // array of activity ids
   const [goals, setGoals]             = useState([]);
@@ -100,9 +119,16 @@ export default function EditProfileScreen({ navigation }) {
   const [allGoals, setAllGoals]       = useState([]);
   const [taxLoading, setTaxLoading]   = useState(true);
 
-  const [politicalLean, setPoliticalLean]       = useState(null); // null | integer -100..100
-  const [lookingForChurch, setLookingForChurch] = useState(null); // null | boolean
+  const [politicalLean, setPoliticalLean]       = useState(null);
+  const [lookingForChurch, setLookingForChurch] = useState(null);
+  const [loveLanguage, setLoveLanguage]         = useState(null);
+  const [familyValues, setFamilyValues]         = useState([]);
+  const [schoolType, setSchoolType]             = useState(null);
+  const [isInitiator, setIsInitiator]           = useState(null); // null | boolean
+  const [isOutgoing, setIsOutgoing]             = useState(null); // null | boolean
+  const [denomination, setDenomination]         = useState(null);
   const [saving, setSaving]                     = useState(false);
+  const [scrollEnabled, setScrollEnabled]       = useState(true);
 
   // Interests search + request-modal state
   const [interestsQuery, setInterestsQuery] = useState('');
@@ -118,6 +144,74 @@ export default function EditProfileScreen({ navigation }) {
     if (!q) return allActivities;
     return allActivities.filter((a) => (a.label || '').toLowerCase().includes(q));
   }, [interestsQuery, allActivities]);
+
+  // ── Address autocomplete (Nominatim, same as SignUpScreen) ────────────────
+  const fetchSuggestions = useCallback(async (q) => {
+    if (!q || q.trim().length < 3) { setSuggestions([]); return; }
+    try {
+      const url =
+        'https://nominatim.openstreetmap.org/search' +
+        '?format=json&addressdetails=1&limit=6&countrycodes=us' +
+        '&q=' + encodeURIComponent(q.trim());
+      const res = await fetch(url, {
+        headers: { 'Accept': 'application/json', 'User-Agent': 'FOUND-community-app/1.0 (found.community)' },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const seen = new Set();
+      const results = (data ?? []).filter((r) => {
+        if (seen.has(r.display_name)) return false;
+        seen.add(r.display_name);
+        return true;
+      });
+      setSuggestions(results);
+    } catch { setSuggestions([]); }
+  }, []);
+
+  useEffect(() => {
+    clearTimeout(debounceRef.current);
+    if (!addressQuery.trim()) { setSuggestions([]); setShowSuggestions(false); return; }
+    if (skipFetchRef.current) { skipFetchRef.current = false; return; }
+    debounceRef.current = setTimeout(() => {
+      fetchSuggestions(addressQuery);
+      setShowSuggestions(true);
+    }, 400);
+    return () => clearTimeout(debounceRef.current);
+  }, [addressQuery, fetchSuggestions]);
+
+  function selectSuggestion(result) {
+    skipFetchRef.current = true;
+    clearTimeout(debounceRef.current);
+    const a = result.address ?? {};
+    const streetNum  = a.house_number || '';
+    const street     = a.road || a.pedestrian || '';
+    const streetLine = [streetNum, street].filter(Boolean).join(' ');
+    const detectedCity  = a.city || a.town || a.village || a.hamlet || a.suburb || a.county || '';
+    const detectedState = (a.state_code || a.state || '').slice(0, 2).toUpperCase();
+    const detectedZip   = a.postcode || '';
+    setAddressQuery(streetLine || detectedCity);
+    setCity(detectedCity);
+    setState(detectedState);
+    setZip(detectedZip);
+    const lat = parseFloat(result.lat);
+    const lng = parseFloat(result.lon);
+    if (Number.isFinite(lat) && Number.isFinite(lng)) setResolvedCoords({ lat, lng });
+    setSuggestions([]);
+    setShowSuggestions(false);
+  }
+
+  function formatSuggestionLabel(result) {
+    const a = result.address ?? {};
+    const streetNum  = a.house_number || '';
+    const street     = a.road || a.pedestrian || '';
+    const streetLine = [streetNum, street].filter(Boolean).join(' ');
+    const c  = a.city || a.town || a.village || a.hamlet || a.suburb || '';
+    const st = (a.state_code || a.state || '').slice(0, 2).toUpperCase();
+    const zp = a.postcode ? `  ${a.postcode}` : '';
+    if (streetLine && c) return `${streetLine},  ${c}, ${st}${zp}`;
+    if (c)               return `${c}, ${st}${zp}`;
+    return (result.display_name || '').split(', United States')[0];
+  }
 
   function closeRequestModal() {
     if (requestBusy) return;
@@ -164,7 +258,7 @@ export default function EditProfileScreen({ navigation }) {
         supabase.from('community_goals').select('id,label,icon,icon_color').order('sort_order'),
         user
           ? supabase.from('profiles')
-              .select('full_name,bio,hometown,hometown_cities,city,state,life_stage_id,church_id,is_home_church,political_lean,looking_for_church,church:churches(name),profile_activities(activity_id),profile_goals(goal_id)')
+              .select('full_name,bio,hometown,hometown_cities,city,state,zip,life_stage_id,church_id,is_home_church,political_lean,looking_for_church,love_language_id,school_type_id,is_initiator,is_outgoing,denomination_id,church:churches(name),profile_activities(activity_id),profile_goals(goal_id),profile_values(value_id)')
               .eq('id', user.id)
               .maybeSingle()
           : Promise.resolve({ data: null, error: null }),
@@ -180,7 +274,12 @@ export default function EditProfileScreen({ navigation }) {
         // hometown derived from hometownCities[0] on save
         // Parse existing hometown_cities array → structured rows
         // Handles "Miami, FL", "Miami FL", or plain "Miami" gracefully
-        const parsedRows = (p.hometown_cities ?? []).slice(0, 3).map((raw) => {
+        // Use hometown_cities array; fall back to legacy hometown string if empty
+        const rawCities = (p.hometown_cities ?? []).filter(Boolean);
+        const sourceList = rawCities.length > 0
+          ? rawCities
+          : (p.hometown ? [p.hometown] : []);
+        const parsedRows = sourceList.slice(0, 3).map((raw) => {
           const trimmed = (raw || '').trim();
           const commaIdx = trimmed.lastIndexOf(',');
           if (commaIdx > 0) {
@@ -202,7 +301,9 @@ export default function EditProfileScreen({ navigation }) {
         // Pad to 3 rows
         while (parsedRows.length < 3) parsedRows.push({ city: '', state: '' });
         setHometownCities(parsedRows);
-        setLocationText([p.city, p.state].filter(Boolean).join(', '));
+        setCity(p.city ?? '');
+        setState(p.state ?? '');
+        setZip(p.zip ?? '');
         setLifeStage(p.life_stage_id ?? null);
         setProfileChurchId(p.church_id ?? null);
         setProfileIsHome(p.is_home_church ?? false);
@@ -211,6 +312,12 @@ export default function EditProfileScreen({ navigation }) {
         setGoals((p.profile_goals ?? []).map((r) => r.goal_id));
         setPoliticalLean(p.political_lean ?? null);
         setLookingForChurch(p.looking_for_church ?? null);
+        setLoveLanguage(p.love_language_id ?? null);
+        setSchoolType(p.school_type_id ?? null);
+        setIsInitiator(p.is_initiator ?? null);
+        setIsOutgoing(p.is_outgoing ?? null);
+        setDenomination(p.denomination_id ?? null);
+        setFamilyValues((p.profile_values ?? []).map((r) => r.value_id));
       } else if (profile) {
         setFullName(profile.full_name ?? '');
       }
@@ -265,9 +372,14 @@ export default function EditProfileScreen({ navigation }) {
       p_church_id:           null,
       p_activities:          activities,
       p_goals:               goals,
+      p_values:              familyValues,
+      p_love_language:       loveLanguage,
+      p_school_type:         schoolType,
+      p_is_initiator:        isInitiator,
+      p_is_outgoing:         isOutgoing,
       p_hometown_cities:     parsedHometownCities.length > 0 ? parsedHometownCities : null,
       p_looking_for_church:  lookingForChurch,
-      p_political_lean:      politicalLean ?? -999, // -999 = sentinel "not passed" — keeps existing value
+      p_political_lean:      politicalLean ?? -999,
     });
     if (error) {
       setSaving(false);
@@ -277,29 +389,39 @@ export default function EditProfileScreen({ navigation }) {
 
     // Church is committed immediately by ChurchPicker — nothing to do here.
 
-    // 2) Geocode City, State → lat/lng → PostGIS point.
-    //    Failures here are non-fatal: profile text fields still saved,
-    //    we just log and move on. Worst case = no proximity score.
-    if (locationText.trim()) {
-      const { lat, lng, error: geoErr } = await geocode(locationText);
-      if (geoErr) {
-        console.warn('[edit-profile] geocode failed', geoErr.message);
-      } else if (lat != null && lng != null) {
-        const { error: locErr } = await supabase.rpc('set_profile_location', {
-          p_lat: lat,
-          p_lng: lng,
-        });
+    // 2) Persist denomination + zip (not in update_profile RPC)
+    await supabase.from('profiles')
+      .update({ denomination_id: denomination ?? null })
+      .eq('id', user.id);
+    // 3) Persist zip separately (not in update_profile RPC)
+    if (zip.trim()) {
+      await supabase.from('profiles').update({ zip: zip.trim() }).eq('id', user.id);
+    }
+
+    // 3) Geocode → PostGIS point. Non-fatal.
+    const hasLocation = city.trim() || zip.trim();
+    if (hasLocation) {
+      let lat = resolvedCoords?.lat ?? null;
+      let lng = resolvedCoords?.lng ?? null;
+      if (lat == null) {
+        try {
+          const q = /^\d{5}$/.test(zip.trim()) ? zip.trim() : `${city.trim()}, ${state.trim()}`;
+          const geo = /^\d{5}$/.test(q) ? await geocodeZip(q) : await geocode(q);
+          if (geo.lat != null) { lat = geo.lat; lng = geo.lng; }
+        } catch { /* non-fatal */ }
+      }
+      if (lat != null && lng != null) {
+        const { error: locErr } = await supabase.rpc('set_profile_location', { p_lat: lat, p_lng: lng });
         if (locErr) console.warn('[edit-profile] set location failed', locErr.message);
       }
     } else {
-      // Empty location field → clear the PostGIS point too
       await supabase.rpc('set_profile_location', { p_lat: null, p_lng: null });
     }
 
     await refreshProfile();
     setSaving(false);
     navigation?.goBack();
-  }, [saving, fullName, bio, locationText, lifeStage, activities, goals, politicalLean, lookingForChurch, hometownCities, refreshProfile, navigation]);
+  }, [saving, fullName, bio, city, state, zip, resolvedCoords, lifeStage, activities, goals, familyValues, loveLanguage, schoolType, isInitiator, isOutgoing, denomination, politicalLean, lookingForChurch, hometownCities, refreshProfile, navigation, user]);
 
   if (taxLoading) {
     return (
@@ -325,6 +447,7 @@ export default function EditProfileScreen({ navigation }) {
       <ScrollView
         contentContainerStyle={{ paddingBottom: 140 }}
         showsVerticalScrollIndicator={false}
+        scrollEnabled={scrollEnabled}
         keyboardShouldPersistTaps="handled"
       >
         {/* Name */}
@@ -354,45 +477,11 @@ export default function EditProfileScreen({ navigation }) {
           <Text style={styles.counter}>{bio.length}/500</Text>
         </View>
 
-        {/* Where you're from — primary + add-ons */}
+        {/* Where you're from */}
         <View style={styles.section}>
-          <SectionHeader label="Where are you from?" />
+          <SectionHeader label="From" />
 
-
-          {/* Row 0 — Born & raised / primary */}
-          <Text style={styles.hometownRowLabel}>Born &amp; raised</Text>
-          <View style={styles.hometownRow}>
-            <TextInput
-              style={[styles.input, styles.hometownCity]}
-              value={hometownCities[0].city}
-              onChangeText={(v) => {
-                const updated = [...hometownCities];
-                updated[0] = { ...updated[0], city: v };
-                setHometownCities(updated);
-              }}
-              placeholder="City (e.g. Charleston)"
-              placeholderTextColor={COLORS.textTertiary}
-              autoCapitalize="words"
-              maxLength={60}
-            />
-            <TextInput
-              style={[styles.input, styles.hometownState]}
-              value={hometownCities[0].state}
-              onChangeText={(v) => {
-                const updated = [...hometownCities];
-                updated[0] = { ...updated[0], state: v.slice(0, 30) };
-                setHometownCities(updated);
-              }}
-              placeholder="ST / Country"
-              placeholderTextColor={COLORS.textTertiary}
-              autoCapitalize="words"
-              maxLength={30}
-            />
-          </View>
-
-          {/* Rows 1 & 2 — Also from */}
-          <Text style={[styles.hometownRowLabel, { marginTop: 12 }]}>Also from</Text>
-          {[1, 2].map((i) => (
+          {[0, 1, 2].map((i) => (
             <View key={i} style={styles.hometownRow}>
               <TextInput
                 style={[styles.input, styles.hometownCity]}
@@ -402,7 +491,7 @@ export default function EditProfileScreen({ navigation }) {
                   updated[i] = { ...updated[i], city: v };
                   setHometownCities(updated);
                 }}
-                placeholder={`City ${i} (optional)`}
+                placeholder={i === 0 ? 'City (e.g. Charleston)' : `City ${i + 1} (optional)`}
                 placeholderTextColor={COLORS.textTertiary}
                 autoCapitalize="words"
                 maxLength={60}
@@ -415,7 +504,7 @@ export default function EditProfileScreen({ navigation }) {
                   updated[i] = { ...updated[i], state: v.slice(0, 30) };
                   setHometownCities(updated);
                 }}
-                placeholder="ST / Country"
+                placeholder="ST / Cou..."
                 placeholderTextColor={COLORS.textTertiary}
                 autoCapitalize="words"
                 maxLength={30}
@@ -428,16 +517,87 @@ export default function EditProfileScreen({ navigation }) {
         <View style={styles.section}>
           <SectionHeader label="Address" />
           <Text style={styles.fieldHint}>
-            By putting in your address you're helping us find people nearby in your community. Not shown publicly.
+            Helps us find people nearby. Not shown publicly.
           </Text>
+
+          {/* Autocomplete search */}
           <TextInput
-            style={styles.input}
-            value={locationText}
-            onChangeText={setLocationText}
-            placeholder="City, State  or  ZIP code"
+            style={[styles.input, showSuggestions && suggestions.length > 0 && styles.inputDropdownOpen]}
+            value={addressQuery}
+            onChangeText={(v) => { skipFetchRef.current = false; setAddressQuery(v); setResolvedCoords(null); }}
+            onFocus={() => addressQuery.trim().length >= 3 && setShowSuggestions(true)}
+            onBlur={() => setTimeout(() => setShowSuggestions(false), 400)}
+            placeholder="Start typing your address…"
             placeholderTextColor={COLORS.textTertiary}
             autoCapitalize="words"
+            autoComplete="street-address"
+            textContentType="fullStreetAddress"
           />
+
+          {showSuggestions && suggestions.length > 0 ? (
+            <View style={styles.dropdown}>
+              {suggestions.map((feat, i) => (
+                <TouchableOpacity
+                  key={i}
+                  style={[styles.suggestionRow, i < suggestions.length - 1 && styles.suggestionDivider]}
+                  onPress={() => selectSuggestion(feat)}
+                  activeOpacity={0.75}
+                >
+                  <Ionicons name="location-outline" size={14} color={COLORS.clay} style={{ marginTop: 2 }} />
+                  <Text style={styles.suggestionText} numberOfLines={2}>
+                    {formatSuggestionLabel(feat)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          ) : null}
+
+          <Text style={[styles.hint, resolvedCoords && styles.hintConfirmed]}>
+            {resolvedCoords
+              ? '✓ Location confirmed'
+              : suggestions.length === 0 && addressQuery.length >= 3
+                ? 'No results — try a different address or fill in below.'
+                : 'Type for autocomplete, or fill in city / state / ZIP below.'}
+          </Text>
+
+          {/* City / State / ZIP row */}
+          <View style={[styles.addressRow, { zIndex: 1 }]}>
+            <View style={styles.addressColCity}>
+              <Text style={styles.addressLabel}>City</Text>
+              <TextInput
+                style={styles.input}
+                value={city}
+                onChangeText={setCity}
+                autoCapitalize="words"
+                placeholder="City"
+                placeholderTextColor={COLORS.textTertiary}
+              />
+            </View>
+            <View style={styles.addressColState}>
+              <Text style={styles.addressLabel}>State</Text>
+              <TextInput
+                style={styles.input}
+                value={state}
+                onChangeText={(v) => setState(v.replace(/[^a-zA-Z]/g, '').toUpperCase().slice(0, 2))}
+                autoCapitalize="characters"
+                maxLength={2}
+                placeholder="ST"
+                placeholderTextColor={COLORS.textTertiary}
+              />
+            </View>
+            <View style={styles.addressColZip}>
+              <Text style={styles.addressLabel}>ZIP</Text>
+              <TextInput
+                style={styles.input}
+                value={zip}
+                onChangeText={(v) => setZip(v.replace(/\D/g, '').slice(0, 5))}
+                keyboardType="number-pad"
+                maxLength={5}
+                placeholder="00000"
+                placeholderTextColor={COLORS.textTertiary}
+              />
+            </View>
+          </View>
         </View>
 
         {/* Life stage */}
@@ -452,6 +612,36 @@ export default function EditProfileScreen({ navigation }) {
                 onPress={() => setLifeStage(item.id)}
               />
             ))}
+          </View>
+        </View>
+
+        {/* Love Language */}
+        <View style={styles.section}>
+          <SectionHeader label="Love Language" />
+          <View style={styles.optGrid}>
+            {LOVE_LANGUAGES.filter((l) => l.id !== 'not-sure').map((item) => (
+              <OptionCard
+                key={item.id}
+                item={item}
+                selected={loveLanguage === item.id}
+                onPress={() => setLoveLanguage(loveLanguage === item.id ? null : item.id)}
+              />
+            ))}
+          </View>
+        </View>
+
+        {/* Personality */}
+        <View style={styles.section}>
+          <SectionHeader label="Personality" />
+          <Text style={styles.sectionHint}>Are you an initiator?</Text>
+          <View style={styles.binaryRow}>
+            <BinaryCard label="Yes" selected={isInitiator === true} onPress={() => setIsInitiator(isInitiator === true ? null : true)} />
+            <BinaryCard label="Not Really" selected={isInitiator === false} onPress={() => setIsInitiator(isInitiator === false ? null : false)} />
+          </View>
+          <Text style={[styles.sectionHint, { marginTop: SPACING.md }]}>How would you describe yourself?</Text>
+          <View style={styles.binaryRow}>
+            <BinaryCard label="Outgoing" subLabel="I'll talk to anybody!" selected={isOutgoing === true} onPress={() => setIsOutgoing(isOutgoing === true ? null : true)} />
+            <BinaryCard label="More Reserved" subLabel="Once I get to know you." selected={isOutgoing === false} onPress={() => setIsOutgoing(isOutgoing === false ? null : false)} />
           </View>
         </View>
 
@@ -512,6 +702,40 @@ export default function EditProfileScreen({ navigation }) {
           </View>
         </View>
 
+        {/* Family Values */}
+        <View style={styles.section}>
+          <SectionHeader label="Home Values  ·  Optional" />
+          <Text style={styles.sectionHint}>Select all that apply.</Text>
+          <View style={styles.optGrid}>
+            {FAMILY_VALUES.map((item) => (
+              <OptionCard
+                key={item.id}
+                item={item}
+                selected={familyValues.includes(item.id)}
+                onPress={() => toggle(setFamilyValues)(item.id)}
+              />
+            ))}
+          </View>
+        </View>
+
+        {/* School Type — only if user has kids */}
+        {HAS_KIDS_STAGES.includes(lifeStage) ? (
+          <View style={styles.section}>
+            <SectionHeader label="School Type  ·  Optional" />
+            <Text style={styles.sectionHint}>What type of school are your kids in?</Text>
+            <View style={styles.optGrid}>
+              {SCHOOL_TYPES.map((item) => (
+                <OptionCard
+                  key={item.id}
+                  item={item}
+                  selected={schoolType === item.id}
+                  onPress={() => setSchoolType(schoolType === item.id ? null : item.id)}
+                />
+              ))}
+            </View>
+          </View>
+        ) : null}
+
         {/* Political Lean — optional */}
         <View style={styles.section}>
           <SectionHeader label="Political Views  ·  Optional" />
@@ -519,7 +743,7 @@ export default function EditProfileScreen({ navigation }) {
             Only used to find people with similar views. Never shown publicly.{'\n'}
             You only match with others on the same side. Moderate matches no one.
           </Text>
-          <PoliticalSlider value={politicalLean} onChange={setPoliticalLean} />
+          <PoliticalSlider value={politicalLean} onChange={setPoliticalLean} setScrollEnabled={setScrollEnabled} />
           {politicalLean !== null ? (
             <TouchableOpacity onPress={() => setPoliticalLean(null)} style={styles.clearSlider}>
               <Text style={styles.clearSliderText}>Clear</Text>
@@ -572,6 +796,21 @@ export default function EditProfileScreen({ navigation }) {
             }}
           />
         </View>
+        {/* Denomination */}
+        <View style={styles.section}>
+          <SectionHeader label="Denomination  ·  Optional" />
+          <View style={styles.optGrid}>
+            {DENOMINATIONS.map((item) => (
+              <OptionCard
+                key={item.id}
+                item={item}
+                selected={denomination === item.id}
+                onPress={() => setDenomination(denomination === item.id ? null : item.id)}
+              />
+            ))}
+          </View>
+        </View>
+
       </ScrollView>
 
       {/* Sticky save */}
@@ -648,9 +887,10 @@ export default function EditProfileScreen({ navigation }) {
 // Supports iOS, Android, and web via PanResponder (react-native-web wraps
 // mouse events automatically). Value range: -100 to 100.
 const THUMB_R = 14;
-function PoliticalSlider({ value, onChange }) {
+function PoliticalSlider({ value, onChange, setScrollEnabled }) {
   const [trackW, setTrackW] = useState(0);
   const trackWRef = useRef(0);
+  const startXRef = useRef(0);
 
   useEffect(() => { trackWRef.current = trackW; }, [trackW]);
 
@@ -660,18 +900,27 @@ function PoliticalSlider({ value, onChange }) {
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponderCapture: () => true,
       onMoveShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponderCapture: () => true,
       onPanResponderGrant: (e) => {
+        startXRef.current = e.nativeEvent.locationX ?? 0;
+        setScrollEnabled?.(false);
         const w = trackWRef.current;
         if (!w) return;
-        const x = e.nativeEvent.locationX ?? 0;
-        onChange(toVal(x / w));
+        onChange(toVal((e.nativeEvent.locationX ?? 0) / w));
       },
       onPanResponderMove: (e) => {
         const w = trackWRef.current;
         if (!w) return;
         const x = e.nativeEvent.locationX ?? 0;
         onChange(toVal(x / w));
+      },
+      onPanResponderRelease: () => {
+        setScrollEnabled?.(true);
+      },
+      onPanResponderTerminate: () => {
+        setScrollEnabled?.(true);
       },
     })
   ).current;
@@ -808,6 +1057,36 @@ const styles = StyleSheet.create({
   hometownRow:  { flexDirection: 'row', gap: 8, marginBottom: 6 },
   hometownCity: { flex: 1 },
   hometownState: { width: 110 },
+
+  // Address autocomplete
+  hint:          { fontFamily: FONT.body, fontSize: 12, color: COLORS.textTertiary, marginTop: 6, marginBottom: 2 },
+  hintConfirmed: { color: COLORS.sage },
+  inputDropdownOpen: { borderBottomLeftRadius: 0, borderBottomRightRadius: 0, borderBottomColor: COLORS.borderLight },
+  dropdown: {
+    backgroundColor: COLORS.surface,
+    borderWidth: 1, borderTopWidth: 0, borderColor: COLORS.border,
+    borderBottomLeftRadius: RADIUS.lg, borderBottomRightRadius: RADIUS.lg,
+    marginBottom: 4, overflow: 'hidden',
+  },
+  suggestionRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, paddingHorizontal: 14, paddingVertical: 12 },
+  suggestionDivider: { borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  suggestionText: { flex: 1, fontFamily: FONT.regular, fontSize: 14, color: COLORS.text, lineHeight: 20 },
+
+  // City / State / ZIP row
+  addressRow:      { flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.sm },
+  addressColCity:  { flex: 1 },
+  addressColState: { width: 64 },
+  addressColZip:   { width: 80 },
+  addressLabel:    { fontFamily: FONT.medium, fontSize: 12, color: COLORS.textSecondary, marginBottom: 4 },
+
+  // Binary card (personality)
+  binaryRow:             { flexDirection: 'row', gap: 10 },
+  binaryCard:            { flex: 1, backgroundColor: COLORS.surface, borderRadius: RADIUS.lg, padding: SPACING.md, alignItems: 'center', borderWidth: 1.5, borderColor: COLORS.border, ...SHADOW.sm },
+  binaryCardSelected:    { borderColor: COLORS.accent, backgroundColor: COLORS.surfaceAlt },
+  binaryLabel:           { fontFamily: FONT.medium, fontSize: 14, color: COLORS.textSecondary, textAlign: 'center' },
+  binaryLabelSelected:   { color: COLORS.text },
+  binarySubLabel:        { fontFamily: FONT.body, fontSize: 11, color: COLORS.textTertiary, textAlign: 'center', marginTop: 3 },
+  binarySubLabelSelected:{ color: COLORS.textSecondary },
 
   // Option grid
   optGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },

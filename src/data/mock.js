@@ -56,6 +56,7 @@ export const ACTIVITIES = [
   { id: 'coffee',           label: 'Coffee',              icon: 'cafe-outline',         iconColor: '#A8793A' },
   { id: 'golf',             label: 'Golf',                icon: 'golf-outline',         iconColor: '#5A7A4A' },
   { id: 'tennis-pickleball',label: 'Tennis / Pickleball', icon: 'tennisball-outline',   iconColor: '#4A6FA5' },
+  { id: 'filming-editing',  label: 'Filming & Editing',  icon: 'videocam-outline',      iconColor: '#7A5AA8' },
 ];
 
 // Kept for backward compat with existing match cards that reference interests

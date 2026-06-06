@@ -229,6 +229,32 @@ export default function MatchDetailScreen({ route, navigation }) {
     return () => { cancelled = true; };
   }, [user, initialMatch.id]);
 
+  // ── Auto-fetch score breakdown for inline display ────────────────────────
+  // Fires once when the match score becomes known. The modal (handleScorePress)
+  // shares the same `breakdown` state — whichever runs first wins, the other
+  // short-circuits on the `if (breakdown) return` guard.
+  useEffect(() => {
+    if (profile.matchScore == null || !profile.id || !user || breakdown !== null) return;
+    let cancelled = false;
+    (async () => {
+      setBreakdownLoading(true);
+      try {
+        const { data, error } = await supabase.rpc('get_score_breakdown', {
+          p_viewer:    user.id,
+          p_candidate: profile.id,
+        });
+        if (cancelled || !mountedRef.current) return;
+        if (!error && data) setBreakdown(data);
+      } catch (e) {
+        // non-fatal — inline section just won't render
+      } finally {
+        if (!cancelled && mountedRef.current) setBreakdownLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile.matchScore, profile.id, user]);
+
   // ── CTA state ────────────────────────────────────────────────────────────
   // isInbound: they sent me a request I haven't accepted/matched yet
   const isInbound = (theirKind === 'like' || theirKind === 'wave') && !connected && !isMatch;
@@ -785,6 +811,69 @@ export default function MatchDetailScreen({ route, navigation }) {
             </View>
           ) : null}
 
+          {/* Match Score Breakdown — inline, between reel and bio */}
+          {profile.matchScore != null ? (
+            <View style={styles.section}>
+              <TouchableOpacity
+                onPress={handleScorePress}
+                activeOpacity={0.8}
+                style={styles.inlineBreakdownHeader}
+              >
+                <ScoreRing score={profile.matchScore} size={44} stroke={4} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.inlineBreakdownTitle}>{profile.matchScore}% match</Text>
+                  <Text style={styles.inlineBreakdownSubtitle}>Based on your profile overlap</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={16} color={COLORS.textTertiary} />
+              </TouchableOpacity>
+
+              {breakdownLoading && !breakdown ? (
+                <View style={[styles.inlineBreakdownCard, { alignItems: 'center', paddingVertical: 16 }]}>
+                  <ActivityIndicator size="small" color={COLORS.textTertiary} />
+                </View>
+              ) : breakdown ? (
+                <View style={styles.inlineBreakdownCard}>
+                  {BREAKDOWN_ROWS.map(({ key, label, icon }) => {
+                    const d = breakdown[key];
+                    if (!d) return null;
+                    const pct = d.max > 0 ? d.pts / d.max : 0;
+                    const subtitle = d.shared != null ? `${d.shared} of ${d.total}` : null;
+                    return (
+                      <View key={key} style={styles.inlineBreakdownRow}>
+                        <View style={styles.inlineBreakdownRowLeft}>
+                          <View style={styles.breakdownIconWrap}>
+                            <Ionicons name={icon} size={13} color={COLORS.textSecondary} />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.inlineBreakdownLabel}>{label}</Text>
+                            {subtitle ? (
+                              <Text style={styles.inlineBreakdownSub}>{subtitle}</Text>
+                            ) : null}
+                          </View>
+                        </View>
+                        <View style={styles.breakdownBarWrap}>
+                          <View style={styles.breakdownBarTrack}>
+                            <View style={[
+                              styles.breakdownBarFill,
+                              { width: `${Math.round(pct * 100)}%` },
+                              pct >= 0.7 ? styles.breakdownBarHigh
+                                : pct >= 0.3 ? styles.breakdownBarMid
+                                : styles.breakdownBarLow,
+                            ]} />
+                          </View>
+                          <Text style={styles.breakdownPts}>{d.pts}/{d.max}</Text>
+                        </View>
+                      </View>
+                    );
+                  })}
+                  <Text style={[styles.breakdownNote, { marginTop: 2 }]}>
+                    Tip: add more interests and goals to your profile to improve your score.
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+          ) : null}
+
           {/* About */}
           {profile.bio ? (
             <View style={styles.section}>
@@ -1229,6 +1318,16 @@ export default function MatchDetailScreen({ route, navigation }) {
   );
 }
 
+// ─── Breakdown row config ─────────────────────────────────────────────────
+const BREAKDOWN_ROWS = [
+  { key: 'interests',  label: 'Interests',  icon: 'body-outline'   },
+  { key: 'goals',      label: 'Goals',      icon: 'flag-outline'   },
+  { key: 'life_stage', label: 'Life Stage', icon: 'people-outline' },
+  { key: 'values',     label: 'Values',     icon: 'heart-outline'  },
+  { key: 'hometown',   label: 'Hometown',   icon: 'home-outline'   },
+  { key: 'political',  label: 'Politics',   icon: 'ribbon-outline' },
+];
+
 // ─── Fallback ─────────────────────────────────────────────────────────────
 const FALLBACK_MATCH = {
   id: '0',
@@ -1446,6 +1545,54 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: COLORS.textSecondary,
     marginTop: 2,
+  },
+
+  // Inline match score breakdown
+  inlineBreakdownHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+    marginBottom: SPACING.sm,
+  },
+  inlineBreakdownTitle: {
+    fontFamily: FONT.serifItalic,
+    fontSize: 18,
+    color: COLORS.text,
+  },
+  inlineBreakdownSubtitle: {
+    fontFamily: FONT.regular,
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginTop: 2,
+  },
+  inlineBreakdownCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    gap: 10,
+  },
+  inlineBreakdownRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+  },
+  inlineBreakdownRowLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    width: 110,
+  },
+  inlineBreakdownLabel: {
+    fontFamily: FONT.semiBold,
+    fontSize: 13,
+    color: COLORS.text,
+  },
+  inlineBreakdownSub: {
+    fontFamily: FONT.regular,
+    fontSize: 11,
+    color: COLORS.textTertiary,
   },
 
   rule: { marginBottom: SPACING.sm },

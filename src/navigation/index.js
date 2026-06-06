@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, FONT, SHADOW } from '../theme';
 import { useAuth } from '../auth/AuthContext';
 import { supabase } from '../lib/supabase';
+import * as Notifications from 'expo-notifications';
 import {
   registerForPush,
   unregisterForPush,
@@ -102,7 +103,10 @@ function useUnreadCounts() {
     fetchCounts();
     const id = setInterval(fetchCounts, 45_000);
     const sub = AppState.addEventListener('change', (s) => {
-      if (s === 'active') fetchCounts();
+      if (s === 'active') {
+        fetchCounts();
+        Notifications.setBadgeCountAsync(0).catch(() => {});
+      }
     });
     return () => { clearInterval(id); sub.remove(); };
   }, [fetchCounts]);

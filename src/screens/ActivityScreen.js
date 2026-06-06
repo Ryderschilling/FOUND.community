@@ -284,20 +284,33 @@ export default function ActivityScreen({ navigation }) {
   const [connRefreshing,     setConnRefreshing]     = useState(false);
   const [connSearch,         setConnSearch]         = useState('');
   const [connSort,           setConnSort]           = useState('recent'); // 'recent' | 'score' | 'name'
-  const [connFilter,         setConnFilter]         = useState('all');   // 'all' | 'pending' | 'saved' | stage/interest id
+  const [connFilter,         setConnFilter]         = useState('all');
   const [selectMode,         setSelectMode]         = useState(false);
   const [selected,           setSelected]           = useState({});      // { [profileId]: true }
   // Must be declared before visibleConnections useMemo (TDZ fix)
   const [openDropdown, setOpenDropdown] = useState(null);
-  const [activeFilters, setActiveFilters] = useState({ saved: false, lifeStage: null, interests: null });
+  const [activeFilters, setActiveFilters] = useState({ connectLater: false, myChurch: false, interests: null, isNew: false });
   const [dropdownAnchor, setDropdownAnchor] = useState({ top: 0, left: 0 });
-  const lifeStageRef  = useRef(null);
+  const [myChurchId, setMyChurchId] = useState(null);
   const interestsRef  = useRef(null);
   const containerRef  = useRef(null);
 
   // Guard against setState after unmount / after blur
   const mountedRef = useRef(true);
   useEffect(() => () => { mountedRef.current = false; }, []);
+
+  // Fetch current user's church_id for "My Church" filter
+  useEffect(() => {
+    if (!user) return;
+    supabase
+      .from('profiles')
+      .select('church_id')
+      .eq('id', user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.church_id && mountedRef.current) setMyChurchId(data.church_id);
+      });
+  }, [user]);
 
   const load = useCallback(async ({ isRefresh } = {}) => {
     if (!user || !mountedRef.current) return;
@@ -356,8 +369,12 @@ export default function ActivityScreen({ navigation }) {
       });
     }
     // Category filters
-    if (activeFilters.saved)      list = list.filter((r) => !!r.pinned_at);
-    if (activeFilters.lifeStage)  list = list.filter((r) => r.life_stage_label === activeFilters.lifeStage);
+    if (activeFilters.connectLater) list = list.filter((r) => !!r.pinned_at);
+    if (activeFilters.myChurch && myChurchId) list = list.filter((r) => r.church_id === myChurchId);
+    if (activeFilters.isNew) {
+      const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000; // last 30 days
+      list = list.filter((r) => r.connected_at && new Date(r.connected_at).getTime() > cutoff);
+    }
     if (activeFilters.interests)  list = list.filter((r) => (r.activities ?? []).some((a) => a.label === activeFilters.interests));
     if (connSort === 'score') {
       list.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
@@ -371,26 +388,20 @@ export default function ActivityScreen({ navigation }) {
       return 0;
     });
     return list;
-  }, [connections, connSearch, connSort, activeFilters]);
+  }, [connections, connSearch, connSort, activeFilters, myChurchId]);
 
-  // Derive unique options for each filter category
+  // Derive unique options for the Interests dropdown
   const filterOptions = useMemo(() => {
-    const stages    = new Set();
     const interests = new Set();
     connections.forEach((r) => {
-      if (r.life_stage_label) stages.add(r.life_stage_label);
       (r.activities ?? []).forEach((a) => interests.add(a.label));
     });
-    return {
-      lifeStage:  Array.from(stages),
-      interests:  Array.from(interests),
-    };
+    return { interests: Array.from(interests) };
   }, [connections]);
 
   function toggleDropdown(key) {
     if (openDropdown === key) { setOpenDropdown(null); return; }
-    const ref = key === 'lifeStage' ? lifeStageRef : interestsRef;
-    const pillNode      = ref?.current;
+    const pillNode      = interestsRef?.current;
     const containerNode = containerRef?.current;
     if (pillNode?.getBoundingClientRect) {
       // React Native Web — use DOM rects relative to the root container
@@ -415,7 +426,7 @@ export default function ActivityScreen({ navigation }) {
     setOpenDropdown(null);
   }
 
-  const activeFilterCount = [activeFilters.saved, activeFilters.lifeStage, activeFilters.interests]
+  const activeFilterCount = [activeFilters.connectLater, activeFilters.myChurch, activeFilters.isNew, activeFilters.interests]
     .filter(Boolean).length;
 
   const selectedCount = Object.values(selected).filter(Boolean).length;
@@ -713,37 +724,22 @@ export default function ActivityScreen({ navigation }) {
             </TouchableOpacity>
           </View>
 
-          {/* Filter dropdown pills */}
+          {/* Filter pills: My Church | Interests | New | Connect Later */}
           <View style={styles.filterRow}>
-            {/* Saved toggle */}
+            {/* My Church toggle */}
             <TouchableOpacity
-              style={[styles.filterPill, activeFilters.saved && styles.filterPillActive]}
-              onPress={() => setActiveFilters((p) => ({ ...p, saved: !p.saved }))}
+              style={[styles.filterPill, activeFilters.myChurch && styles.filterPillActive]}
+              onPress={() => setActiveFilters((p) => ({ ...p, myChurch: !p.myChurch }))}
               activeOpacity={0.8}
             >
-              <Ionicons name={activeFilters.saved ? 'bookmark' : 'bookmark-outline'} size={13}
-                color={activeFilters.saved ? COLORS.white : COLORS.textSecondary} />
-              <Text style={[styles.filterPillText, activeFilters.saved && styles.filterPillTextActive]}>
-                Saved
+              <Ionicons name="business-outline" size={13}
+                color={activeFilters.myChurch ? COLORS.white : COLORS.textSecondary} />
+              <Text style={[styles.filterPillText, activeFilters.myChurch && styles.filterPillTextActive]}>
+                My Church
               </Text>
             </TouchableOpacity>
 
-            {/* Life Stage dropdown — pill only; menu portals to root */}
-            <View ref={lifeStageRef} collapsable={false}>
-              <TouchableOpacity
-                style={[styles.filterPill, (activeFilters.lifeStage || openDropdown === 'lifeStage') && styles.filterPillActive]}
-                onPress={() => toggleDropdown('lifeStage')}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.filterPillText, activeFilters.lifeStage && styles.filterPillTextActive]}>
-                  {activeFilters.lifeStage || 'Life Stage'}
-                </Text>
-                <Ionicons name={openDropdown === 'lifeStage' ? 'chevron-up' : 'chevron-down'} size={11}
-                  color={activeFilters.lifeStage ? COLORS.white : COLORS.textSecondary} />
-              </TouchableOpacity>
-            </View>
-
-            {/* Interests dropdown — pill only; menu portals to root */}
+            {/* Interests dropdown */}
             <View ref={interestsRef} collapsable={false}>
               <TouchableOpacity
                 style={[styles.filterPill, (activeFilters.interests || openDropdown === 'interests') && styles.filterPillActive]}
@@ -758,10 +754,36 @@ export default function ActivityScreen({ navigation }) {
               </TouchableOpacity>
             </View>
 
+            {/* New toggle */}
+            <TouchableOpacity
+              style={[styles.filterPill, activeFilters.isNew && styles.filterPillActive]}
+              onPress={() => setActiveFilters((p) => ({ ...p, isNew: !p.isNew }))}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="sparkles-outline" size={13}
+                color={activeFilters.isNew ? COLORS.white : COLORS.textSecondary} />
+              <Text style={[styles.filterPillText, activeFilters.isNew && styles.filterPillTextActive]}>
+                New
+              </Text>
+            </TouchableOpacity>
+
+            {/* Connect Later toggle */}
+            <TouchableOpacity
+              style={[styles.filterPill, activeFilters.connectLater && styles.filterPillActive]}
+              onPress={() => setActiveFilters((p) => ({ ...p, connectLater: !p.connectLater }))}
+              activeOpacity={0.8}
+            >
+              <Ionicons name={activeFilters.connectLater ? 'bookmark' : 'bookmark-outline'} size={13}
+                color={activeFilters.connectLater ? COLORS.white : COLORS.textSecondary} />
+              <Text style={[styles.filterPillText, activeFilters.connectLater && styles.filterPillTextActive]}>
+                Connect Later
+              </Text>
+            </TouchableOpacity>
+
             {/* Clear all */}
             {activeFilterCount > 0 ? (
               <TouchableOpacity style={styles.clearAllBtn}
-                onPress={() => { setActiveFilters({ saved: false, lifeStage: null, interests: null }); setOpenDropdown(null); }}
+                onPress={() => { setActiveFilters({ connectLater: false, myChurch: false, interests: null, isNew: false }); setOpenDropdown(null); }}
                 activeOpacity={0.7}>
                 <Text style={styles.clearAllText}>Clear all</Text>
               </TouchableOpacity>
@@ -775,7 +797,7 @@ export default function ActivityScreen({ navigation }) {
   ), [activeTab, connections.length, rows.length, events.length, markingAll,
       connSearch, selectMode, activeFilters, openDropdown, dropdownAnchor,
       activeFilterCount, handleMarkAllRead, toggleDropdown, setFilter,
-      setActiveFilters, setConnSearch, setSelectMode, setSelected, navigation]);
+      setActiveFilters, setConnSearch, setSelectMode, setSelected, navigation, myChurchId]);
 
   const Empty = () => {
     if (loading) {
@@ -827,14 +849,8 @@ export default function ActivityScreen({ navigation }) {
   };
 
   // ── Dropdown portal — renders at root so FlatList overflow can't clip it ──
-  const activeDropdownOptions = openDropdown === 'lifeStage'
-    ? filterOptions.lifeStage
-    : openDropdown === 'interests'
-    ? filterOptions.interests
-    : [];
-  const activeDropdownValue = openDropdown === 'lifeStage'
-    ? activeFilters.lifeStage
-    : activeFilters.interests;
+  const activeDropdownOptions = openDropdown === 'interests' ? filterOptions.interests : [];
+  const activeDropdownValue   = openDropdown === 'interests' ? activeFilters.interests : null;
 
   const DropdownPortal = openDropdown ? (
     <>
