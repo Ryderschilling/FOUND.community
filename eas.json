@@ -9,7 +9,7 @@
       "developmentClient": true,
       "distribution": "internal",
       "ios": {
-        "simulator": true
+        "simulator": false
       },
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://froqanfagdkjmfrmpfye.supabase.co",

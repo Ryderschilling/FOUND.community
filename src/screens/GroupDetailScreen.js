@@ -31,6 +31,8 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Dimensions,
+  Share,
+  Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
@@ -504,6 +506,21 @@ export default function GroupDetailScreen({ route, navigation }) {
     }
   }
 
+  // ── Share ────────────────────────────────────────────────────────────────
+  async function handleShare() {
+    const url = 'https://found.community';
+    const name = detail?.name || 'this group';
+    try {
+      await Share.share({
+        title: name,
+        message: `Join ${name} on FOUND: ${url}`,
+        url,
+      });
+    } catch (_) {
+      // User cancelled — no-op
+    }
+  }
+
   // ── Render ───────────────────────────────────────────────────────────────
   if (loading) {
     return (
@@ -631,6 +648,23 @@ export default function GroupDetailScreen({ route, navigation }) {
               <Ionicons name="navigate-outline" size={13} color={COLORS.textSecondary} />
               <Text style={styles.metaText}>{detail.address}</Text>
             </View>
+          ) : null}
+
+          {detail?.website_url ? (
+            <TouchableOpacity
+              style={styles.metaRow}
+              onPress={() => Linking.openURL(
+                detail.website_url.startsWith('http')
+                  ? detail.website_url
+                  : `https://${detail.website_url}`
+              )}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="link-outline" size={13} color={COLORS.accent} />
+              <Text style={[styles.metaText, { color: COLORS.accent, textDecorationLine: 'underline' }]} numberOfLines={1}>
+                {detail.website_url.replace(/^https?:\/\//, '')}
+              </Text>
+            </TouchableOpacity>
           ) : null}
 
           {detail?.description ? (
@@ -1064,6 +1098,22 @@ export default function GroupDetailScreen({ route, navigation }) {
               )) : null}
             </View>
           </View>
+
+          {/* Share link — visible to all members */}
+          {isMember ? (
+            <TouchableOpacity style={styles.shareCard} onPress={handleShare} activeOpacity={0.8}>
+              <Ionicons name="share-social-outline" size={20} color={COLORS.sage} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.shareCardTitle}>Share link</Text>
+                <Text style={styles.shareCardSub}>
+                  Anyone can view and join FOUND to join this group.
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={COLORS.textTertiary} />
+            </TouchableOpacity>
+          ) : null}
+
+          <View style={{ height: 40 }} />
         </View>
       </ScrollView>
 
@@ -1490,13 +1540,14 @@ function ManageMemberModal({ member, isOwner, onClose, onSetRole, onRemove }) {
 
 // ─── Edit group modal ─────────────────────────────────────────────────────
 function EditGroupModal({ visible, detail, isOwner, onClose, onSaved, onDelete }) {
-  const [name, setName]         = useState('');
-  const [desc, setDesc]         = useState('');
-  const [city, setCity]         = useState('');
-  const [state, setState]       = useState('');
-  const [schedule, setSchedule] = useState('');
-  const [isPublic, setIsPublic] = useState(true);
-  const [busy, setBusy]         = useState(false);
+  const [name, setName]               = useState('');
+  const [desc, setDesc]               = useState('');
+  const [city, setCity]               = useState('');
+  const [state, setState]             = useState('');
+  const [schedule, setSchedule]       = useState('');
+  const [websiteUrl, setWebsiteUrl]   = useState('');
+  const [isPublic, setIsPublic]       = useState(true);
+  const [busy, setBusy]               = useState(false);
 
   // Seed fields whenever the sheet opens.
   useEffect(() => {
@@ -1506,6 +1557,7 @@ function EditGroupModal({ visible, detail, isOwner, onClose, onSaved, onDelete }
       setCity(detail.city ?? '');
       setState(detail.state ?? '');
       setSchedule(detail.schedule_text ?? '');
+      setWebsiteUrl(detail.website_url ?? '');
       setIsPublic(detail.is_public ?? true);
     }
   }, [visible, detail]);
@@ -1547,6 +1599,7 @@ function EditGroupModal({ visible, detail, isOwner, onClose, onSaved, onDelete }
       p_schedule_text: schedule,
       p_lat:           lat,
       p_lng:           lng,
+      p_website_url:   websiteUrl || null,
     });
     if (error) {
       setBusy(false);
@@ -1587,11 +1640,12 @@ function EditGroupModal({ visible, detail, isOwner, onClose, onSaved, onDelete }
           </View>
 
           <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 16 }}>
-            <Field label="Name *"      value={name}     onChange={setName}     placeholder="Group name" />
-            <Field label="Description" value={desc}     onChange={setDesc}     placeholder="What you do, who it's for" multiline />
-            <Field label="City"        value={city}     onChange={setCity}     placeholder="Santa Rosa Beach" />
-            <Field label="State"       value={state}    onChange={setState}    placeholder="FL" />
-            <Field label="Schedule"    value={schedule} onChange={setSchedule} placeholder="Tuesdays 7pm" />
+            <Field label="Name *"      value={name}       onChange={setName}       placeholder="Group name" />
+            <Field label="Description" value={desc}       onChange={setDesc}       placeholder="What you do, who it's for" multiline />
+            <Field label="City"        value={city}       onChange={setCity}       placeholder="Santa Rosa Beach" />
+            <Field label="State"       value={state}      onChange={setState}      placeholder="FL" />
+            <Field label="Schedule"    value={schedule}   onChange={setSchedule}   placeholder="Tuesdays 7pm" />
+            <Field label="Website URL" value={websiteUrl} onChange={setWebsiteUrl} placeholder="yoursite.com (optional)" autoCapitalize="none" keyboardType="url" />
 
             {isOwner ? (
               <View style={modalStyles.field}>
@@ -1672,7 +1726,7 @@ function EditGroupModal({ visible, detail, isOwner, onClose, onSaved, onDelete }
   );
 }
 
-function Field({ label, value, onChange, placeholder, multiline }) {
+function Field({ label, value, onChange, placeholder, multiline, autoCapitalize, keyboardType }) {
   return (
     <View style={modalStyles.field}>
       <Text style={modalStyles.fieldLabel}>{label}</Text>
@@ -1683,6 +1737,8 @@ function Field({ label, value, onChange, placeholder, multiline }) {
         placeholder={placeholder}
         placeholderTextColor={COLORS.textTertiary}
         multiline={multiline}
+        autoCapitalize={autoCapitalize}
+        keyboardType={keyboardType}
       />
     </View>
   );
@@ -2425,6 +2481,32 @@ const styles = StyleSheet.create({
     height: 50,
   },
   chatBtnText: { fontFamily: FONT.bold, fontSize: 15, color: COLORS.white },
+
+  // Share card
+  shareCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    backgroundColor: COLORS.sageBg,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: COLORS.sageLight,
+    padding: SPACING.md,
+    marginHorizontal: SPACING.lg,
+    marginTop: SPACING.md,
+  },
+  shareCardTitle: {
+    fontFamily: FONT.semiBold,
+    fontSize: 14,
+    color: COLORS.text,
+  },
+  shareCardSub: {
+    fontFamily: FONT.regular,
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    lineHeight: 17,
+    marginTop: 2,
+  },
 
   // Lightbox
   lightboxRoot: {

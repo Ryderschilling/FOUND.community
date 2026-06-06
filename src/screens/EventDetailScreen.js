@@ -329,7 +329,7 @@ export default function EventDetailScreen({ navigation, route }) {
     try {
       await Share.share({
         title: event.title,
-        message: `You're invited to ${event.title}! Check out FOUND: ${url}`,
+        message: `You're invited to ${event.title}! Check it out on FOUND: ${url}`,
         url, // iOS uses url; Android uses message
       });
     } catch (_) {

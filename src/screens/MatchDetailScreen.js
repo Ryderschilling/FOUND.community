@@ -1486,10 +1486,10 @@ const styles = StyleSheet.create({
     flex: 1, backgroundColor: COLORS.accent,
     borderRadius: RADIUS.lg, alignItems: 'center', justifyContent: 'center', height: 50,
   },
-  btnConnectDone:    { backgroundColor: COLORS.sageBg, borderWidth: 1, borderColor: COLORS.sageMid },
+  btnConnectDone:    { backgroundColor: COLORS.bg, borderWidth: 1.5, borderColor: COLORS.text },
   btnConnectPending: { backgroundColor: COLORS.goldBg, borderWidth: 1, borderColor: COLORS.gold },
   btnConnectText:        { fontFamily: FONT.bold, fontSize: 15, color: COLORS.white },
-  btnConnectTextDone:    { color: COLORS.sage },
+  btnConnectTextDone:    { color: COLORS.text },
   btnConnectTextPending: { color: COLORS.gold },
   btnMessage: {
     width: 50, height: 50, borderRadius: RADIUS.lg,
@@ -1519,7 +1519,7 @@ const styles = StyleSheet.create({
   // Score breakdown sheet
   breakdownSheet: {
     paddingTop: SPACING.sm,
-    maxHeight: '88%',
+    maxHeight: Dimensions.get('window').height * 0.88,
   },
   sheetHandle: {
     width: 36,
@@ -1548,7 +1548,8 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   breakdownRowsScroll: {
-    flex: 1,
+    flexGrow: 1,
+    flexShrink: 1,
   },
   breakdownRows: {
     gap: 10,
@@ -1591,6 +1592,7 @@ const styles = StyleSheet.create({
   },
   breakdownBarTrack: {
     flex: 1,
+    maxWidth: 120,
     height: 6,
     borderRadius: 3,
     backgroundColor: COLORS.surfaceAlt,
@@ -1607,7 +1609,7 @@ const styles = StyleSheet.create({
     fontFamily: FONT.mono,
     fontSize: 10,
     color: COLORS.textTertiary,
-    width: 30,
+    width: 44,
     textAlign: 'right',
   },
   breakdownNote: {

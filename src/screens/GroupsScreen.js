@@ -58,11 +58,27 @@ function rowToGroup(row) {
     coverUrl:    row.cover_path ? publicUrlForGroupPhoto(row.cover_path) : null,
     isPublic:    !!row.is_public,
     hasPendingRequest: !!row.has_pending_request,
+    city:  row.city  ?? '',
+    state: row.state ?? '',
+    lat:   row.lat   ?? null,
+    lng:   row.lng   ?? null,
   };
 }
 
+// Haversine distance in miles between two lat/lng points
+function distanceMiles(lat1, lng1, lat2, lng2) {
+  const R = 3958.8;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 export default function GroupsScreen({ navigation }) {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const confirm = useConfirm();
   const toast = useToast();
   const [groups, setGroups]         = useState([]);
@@ -74,7 +90,9 @@ export default function GroupsScreen({ navigation }) {
   // post-create congrats modal can present invite/share actions.
   const [postCreateGroup, setPostCreateGroup] = useState(null); // { id, name } | null
   const [searchText, setSearchText]  = useState('');
-  const [filterType, setFilterType]  = useState('all'); // 'all' | 'joined' | 'public' | 'private'
+  const [filterType, setFilterType]  = useState('all'); // 'all' | 'nearby' | 'joined' | 'public' | 'private'
+  const [nearbyRadius, setNearbyRadius] = useState(25); // miles: 10 | 25 | 50 | 100
+  const [myCoords, setMyCoords]      = useState(null);  // { lat, lng } | null
   const [invites, setInvites]        = useState([]);    // pending group invites
   const [respondingId, setRespondingId] = useState(null); // groupId being accepted/declined
 
@@ -139,6 +157,17 @@ export default function GroupsScreen({ navigation }) {
   }, []);
 
   useEffect(() => { load(); loadInvites(); }, [load, loadInvites]);
+
+  // Load the user's lat/lng once when Near Me is first activated
+  useEffect(() => {
+    if (filterType !== 'nearby' || myCoords) return;
+    supabase.rpc('my_location').then(({ data }) => {
+      const row = data?.[0];
+      if (row?.lat != null && row?.lng != null) {
+        setMyCoords({ lat: row.lat, lng: row.lng });
+      }
+    });
+  }, [filterType, myCoords]);
 
   // Refresh when focused (e.g. after creating a group)
   useEffect(() => {
@@ -237,7 +266,14 @@ export default function GroupsScreen({ navigation }) {
     let result = groups;
 
     // Filter by type
-    if (filterType === 'joined') {
+    if (filterType === 'nearby') {
+      if (myCoords) {
+        result = result.filter((g) =>
+          g.lat != null && g.lng != null &&
+          distanceMiles(myCoords.lat, myCoords.lng, g.lat, g.lng) <= nearbyRadius
+        );
+      }
+    } else if (filterType === 'joined') {
       result = result.filter((g) => g.joined);
     } else if (filterType === 'public') {
       result = result.filter((g) => g.isPublic);
@@ -257,7 +293,7 @@ export default function GroupsScreen({ navigation }) {
     }
 
     return result;
-  }, [groups, searchText, filterType]);
+  }, [groups, searchText, filterType, nearbyRadius, myCoords]);
 
   // Split filtered groups into sections
   const sections = useMemo(() => {
@@ -384,6 +420,11 @@ export default function GroupsScreen({ navigation }) {
                   onPress={() => setFilterType('all')}
                 />
                 <Chip
+                  label="Near Me"
+                  active={filterType === 'nearby'}
+                  onPress={() => setFilterType('nearby')}
+                />
+                <Chip
                   label="Joined"
                   active={filterType === 'joined'}
                   onPress={() => setFilterType('joined')}
@@ -399,6 +440,25 @@ export default function GroupsScreen({ navigation }) {
                   onPress={() => setFilterType('private')}
                 />
               </ScrollView>
+
+              {/* Radius selector — only when Near Me is active */}
+              {filterType === 'nearby' && (
+                <View style={styles.radiusRow}>
+                  <Ionicons name="locate-outline" size={13} color={COLORS.textSecondary} style={{ marginRight: 4 }} />
+                  {[10, 25, 50, 100].map((r) => (
+                    <TouchableOpacity
+                      key={r}
+                      style={[styles.radiusPill, nearbyRadius === r && styles.radiusPillActive]}
+                      onPress={() => setNearbyRadius(r)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.radiusPillText, nearbyRadius === r && styles.radiusPillTextActive]}>
+                        {r} mi
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
             </View>
             </View>
           }
@@ -735,6 +795,35 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: SPACING.sm,
     paddingRight: SPACING.lg, // breathing room at scroll end
+  },
+
+  // Radius selector row (appears below chips when Near Me is active)
+  radiusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: SPACING.sm,
+    paddingHorizontal: SPACING.lg,
+  },
+  radiusPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surface,
+  },
+  radiusPillActive: {
+    backgroundColor: COLORS.text,
+    borderColor: COLORS.text,
+  },
+  radiusPillText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 12,
+    color: COLORS.textSecondary,
+  },
+  radiusPillTextActive: {
+    color: COLORS.white,
   },
 
   sectionHeaderWrap: {

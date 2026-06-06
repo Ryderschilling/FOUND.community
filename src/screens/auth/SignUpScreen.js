@@ -390,43 +390,12 @@ export default function SignUpScreen({ navigation }) {
               </View>
             </View>
 
-            {/* Where are you from — primary + add-ons */}
+            {/* Where are you from */}
             <Text style={[s.label, { marginTop: SPACING.md }]}>
-              Where are you from? <Text style={s.optional}>(optional)</Text>
+              From <Text style={s.optional}>(optional)</Text>
             </Text>
-            <Text style={s.hometownRowLabel}>Born &amp; raised</Text>
-            <View style={s.hometownRow}>
-              <TextInput
-                value={hometownCities[0].city}
-                onChangeText={(v) => {
-                  const updated = [...hometownCities];
-                  updated[0] = { ...updated[0], city: v };
-                  setHometownCities(updated);
-                }}
-                autoCapitalize="words"
-                placeholder="City (e.g. Charleston)"
-                placeholderTextColor={COLORS.textTertiary}
-                style={[s.input, s.hometownCity]}
-                maxLength={60}
-              />
-              <TextInput
-                value={hometownCities[0].state}
-                onChangeText={(v) => {
-                  const updated = [...hometownCities];
-                  updated[0] = { ...updated[0], state: v.replace(/[^a-zA-Z]/g, '').toUpperCase().slice(0, 2) };
-                  setHometownCities(updated);
-                }}
-                autoCapitalize="characters"
-                placeholder="ST"
-                placeholderTextColor={COLORS.textTertiary}
-                style={[s.input, s.hometownState]}
-                maxLength={2}
-              />
-            </View>
-
-            <Text style={[s.hometownRowLabel, { marginTop: SPACING.sm }]}>Also from</Text>
-            {[1, 2].map((i) => (
-              <View key={i} style={s.hometownRow}>
+            {[0, 1, 2].map((i) => (
+              <View key={i} style={[s.hometownRow, i > 0 && { marginTop: 8 }]}>
                 <TextInput
                   value={hometownCities[i].city}
                   onChangeText={(v) => {
@@ -435,7 +404,7 @@ export default function SignUpScreen({ navigation }) {
                     setHometownCities(updated);
                   }}
                   autoCapitalize="words"
-                  placeholder={`City ${i} (optional)`}
+                  placeholder={i === 0 ? 'City (e.g. Charleston)' : `City (optional)`}
                   placeholderTextColor={COLORS.textTertiary}
                   style={[s.input, s.hometownCity]}
                   maxLength={60}
@@ -444,14 +413,14 @@ export default function SignUpScreen({ navigation }) {
                   value={hometownCities[i].state}
                   onChangeText={(v) => {
                     const updated = [...hometownCities];
-                    updated[i] = { ...updated[i], state: v.replace(/[^a-zA-Z]/g, '').toUpperCase().slice(0, 2) };
+                    updated[i] = { ...updated[i], state: v.slice(0, 30) };
                     setHometownCities(updated);
                   }}
-                  autoCapitalize="characters"
-                  placeholder="ST"
+                  autoCapitalize="words"
+                  placeholder="ST / Country"
                   placeholderTextColor={COLORS.textTertiary}
                   style={[s.input, s.hometownState]}
-                  maxLength={2}
+                  maxLength={30}
                 />
               </View>
             ))}
@@ -555,7 +524,7 @@ const s = StyleSheet.create({
   hometownRowLabel: { fontSize: 11, fontWeight: '600', color: COLORS.textSecondary, marginTop: 10, marginBottom: 2, textTransform: 'uppercase', letterSpacing: 0.6 },
   hometownRow:   { flexDirection: 'row', gap: 8, marginTop: 4 },
   hometownCity:  { flex: 1 },
-  hometownState: { width: 64 },
+  hometownState: { width: 110 },
 
   // City / State / ZIP row
   row:         { flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.md },

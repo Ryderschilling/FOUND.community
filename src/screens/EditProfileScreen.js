@@ -267,7 +267,7 @@ export default function EditProfileScreen({ navigation }) {
       p_goals:               goals,
       p_hometown_cities:     parsedHometownCities.length > 0 ? parsedHometownCities : null,
       p_looking_for_church:  lookingForChurch,
-      p_political_lean:      politicalLean ?? null,
+      p_political_lean:      politicalLean ?? -999, // -999 = sentinel "not passed" — keeps existing value
     });
     if (error) {
       setSaving(false);
@@ -380,13 +380,13 @@ export default function EditProfileScreen({ navigation }) {
               value={hometownCities[0].state}
               onChangeText={(v) => {
                 const updated = [...hometownCities];
-                updated[0] = { ...updated[0], state: v.replace(/[^a-zA-Z]/g, '').toUpperCase().slice(0, 2) };
+                updated[0] = { ...updated[0], state: v.slice(0, 30) };
                 setHometownCities(updated);
               }}
-              placeholder="ST"
+              placeholder="ST / Country"
               placeholderTextColor={COLORS.textTertiary}
-              autoCapitalize="characters"
-              maxLength={2}
+              autoCapitalize="words"
+              maxLength={30}
             />
           </View>
 
@@ -412,13 +412,13 @@ export default function EditProfileScreen({ navigation }) {
                 value={hometownCities[i].state}
                 onChangeText={(v) => {
                   const updated = [...hometownCities];
-                  updated[i] = { ...updated[i], state: v.replace(/[^a-zA-Z]/g, '').toUpperCase().slice(0, 2) };
+                  updated[i] = { ...updated[i], state: v.slice(0, 30) };
                   setHometownCities(updated);
                 }}
-                placeholder="ST"
+                placeholder="ST / Country"
                 placeholderTextColor={COLORS.textTertiary}
-                autoCapitalize="characters"
-                maxLength={2}
+                autoCapitalize="words"
+                maxLength={30}
               />
             </View>
           ))}
@@ -807,7 +807,7 @@ const styles = StyleSheet.create({
   hometownRowLabel: { fontSize: 11, fontWeight: '600', color: COLORS.textSecondary, marginTop: 10, marginBottom: 2, textTransform: 'uppercase', letterSpacing: 0.6 },
   hometownRow:  { flexDirection: 'row', gap: 8, marginBottom: 6 },
   hometownCity: { flex: 1 },
-  hometownState: { width: 64 },
+  hometownState: { width: 110 },
 
   // Option grid
   optGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
