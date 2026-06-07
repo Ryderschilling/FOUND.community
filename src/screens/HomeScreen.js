@@ -40,6 +40,7 @@ import { checkAndClearTutorial } from '../lib/tutorial';
 // FOUND tab. All filters here hide existing connections by default.
 const FILTERS = [
   { id: 'all',       label: 'All'           },
+  { id: 'pending',   label: 'Pending'       },
   { id: 'stage',     label: 'Life Stage'    },
   { id: 'church',    label: 'My Church'     },
   { id: 'interests', label: 'Interests'     },
@@ -495,6 +496,21 @@ export default function HomeScreen({ navigation }) {
   // one place they appear.
   const visibleMatches = useMemo(() => {
     let list = matches;
+
+    // Pending filter: show people you sent a request to but haven't heard back from.
+    // Bypasses the "hide connected" gate since pending = connected but not yet mutual.
+    if (activeFilter === 'pending') {
+      list = list.filter((m) => m.connected && !m.isMatch);
+      const q = query.trim().toLowerCase();
+      if (q) {
+        list = list.filter((m) => {
+          const haystack = [m.name, m.handle, m.bio, m.church, m.lifeStage, m.city, m.state, m.distance]
+            .filter(Boolean).join(' ').toLowerCase();
+          return haystack.includes(q);
+        });
+      }
+      return list;
+    }
 
     // Discover always hides existing connections — they live in the FOUND tab.
     list = list.filter((m) => !m.isMatch && !m.connected);

@@ -174,6 +174,28 @@ export default function MatchDetailScreen({ route, navigation }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialMatch.id]);
 
+  // ── Always fetch hometown + love language (lightweight, runs regardless of needsFetch) ──
+  // top_matches_detailed doesn't return hometown; get_profile_detail only runs when
+  // score/interests are missing. This ensures "From" and love language always render.
+  useEffect(() => {
+    if (!initialMatch.id) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from('profiles')
+        .select('hometown, love_language_id')
+        .eq('id', initialMatch.id)
+        .maybeSingle();
+      if (cancelled || !data) return;
+      setTheirLoveLanguage(data.love_language_id ?? null);
+      setProfile((prev) => ({
+        ...prev,
+        hometown: data.hometown ?? prev.hometown,
+      }));
+    })();
+    return () => { cancelled = true; };
+  }, [initialMatch.id]);
+
   // ── Highlight reel ───────────────────────────────────────────────────────
   useEffect(() => {
     if (!initialMatch.id) return;
@@ -793,25 +815,7 @@ export default function MatchDetailScreen({ route, navigation }) {
             );
           })()}
 
-          {/* Highlight Reel */}
-          {photos.length > 0 ? (
-            <View style={styles.section}>
-              <SectionHeader label="Highlight Reel" />
-              <HighlightReelView photos={photos} sideInset={SPACING.lg} />
-            </View>
-          ) : photosLoaded ? (
-            <View style={styles.section}>
-              <SectionHeader label="Highlight Reel" />
-              <View style={styles.reelEmpty}>
-                <Ionicons name="images-outline" size={22} color={COLORS.textTertiary} />
-                <Text style={styles.reelEmptyText}>
-                  {profile.name?.split(' ')[0] || 'They'} hasn't added any photos yet.
-                </Text>
-              </View>
-            </View>
-          ) : null}
-
-          {/* Match Score Breakdown — inline, between reel and bio */}
+          {/* Match Score Breakdown — above highlight reel */}
           {profile.matchScore != null ? (
             <View style={styles.section}>
               <TouchableOpacity
@@ -874,6 +878,24 @@ export default function MatchDetailScreen({ route, navigation }) {
             </View>
           ) : null}
 
+          {/* Highlight Reel — below match score */}
+          {photos.length > 0 ? (
+            <View style={styles.section}>
+              <SectionHeader label="Highlight Reel" />
+              <HighlightReelView photos={photos} sideInset={SPACING.lg} />
+            </View>
+          ) : photosLoaded ? (
+            <View style={styles.section}>
+              <SectionHeader label="Highlight Reel" />
+              <View style={styles.reelEmpty}>
+                <Ionicons name="images-outline" size={22} color={COLORS.textTertiary} />
+                <Text style={styles.reelEmptyText}>
+                  {profile.name?.split(' ')[0] || 'They'} hasn't added any photos yet.
+                </Text>
+              </View>
+            </View>
+          ) : null}
+
           {/* About */}
           {profile.bio ? (
             <View style={styles.section}>
@@ -887,6 +909,23 @@ export default function MatchDetailScreen({ route, navigation }) {
             <View style={styles.section}>
               <SectionHeader label="From" />
               <Text style={styles.bioText}>{profile.hometown}</Text>
+            </View>
+          ) : null}
+
+          {/* Love Language */}
+          {theirLoveLanguage && theirLoveLanguage !== 'not-sure' ? (
+            <View style={styles.section}>
+              <SectionHeader label="Love Language" />
+              <View style={styles.commonCard}>
+                <View style={styles.commonRow}>
+                  <View style={styles.commonRowIcon}>
+                    <Ionicons name="heart" size={14} color={COLORS.clay} />
+                  </View>
+                  <Text style={styles.commonText}>
+                    {LOVE_LANGUAGES.find((l) => l.id === theirLoveLanguage)?.label ?? theirLoveLanguage}
+                  </Text>
+                </View>
+              </View>
             </View>
           ) : null}
 
