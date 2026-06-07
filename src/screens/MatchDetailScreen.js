@@ -43,7 +43,7 @@ import HighlightReelView from '../components/HighlightReelView';
 import { useConfirm } from '../components/ConfirmProvider';
 import { useToast } from '../components/ToastProvider';
 import ReportSheet from '../components/ReportSheet';
-import { LOVE_LANGUAGES, COMMUNITY_GOALS } from '../data/mock';
+import { LOVE_LANGUAGES, COMMUNITY_GOALS, SCHOOL_TYPES, DENOMINATIONS } from '../data/mock';
 
 export default function MatchDetailScreen({ route, navigation }) {
   const { user } = useAuth();
@@ -58,6 +58,8 @@ export default function MatchDetailScreen({ route, navigation }) {
   const [photosLoaded, setPhotosLoaded] = useState(false);
   const [openingChat,     setOpeningChat]     = useState(false);
   const [ignoring,        setIgnoring]        = useState(false);
+  const [bumpSending,     setBumpSending]     = useState(false);
+  const [bumpSent,        setBumpSent]        = useState(false);
   const [moreMenuOpen,    setMoreMenuOpen]    = useState(false);
   const [reportOpen,      setReportOpen]      = useState(false);
   const [addToGroupOpen,  setAddToGroupOpen]  = useState(false);
@@ -75,11 +77,15 @@ export default function MatchDetailScreen({ route, navigation }) {
   const [myHometownCities,      setMyHometownCities]      = useState([]);
   const [myCurrentCity,         setMyCurrentCity]         = useState(null);
   const [myLookingForChurch,    setMyLookingForChurch]    = useState(null);
+  const [mySchoolType,          setMySchoolType]          = useState(null);
+  const [myDenomination,        setMyDenomination]        = useState(null);
   const [theirPolitical,        setTheirPolitical]        = useState(null);
   const [theirLoveLanguage,     setTheirLoveLanguage]     = useState(null);
   const [theirGoalIds,          setTheirGoalIds]          = useState(new Set());
   const [theirHometownCities,   setTheirHometownCities]   = useState([]);
   const [theirLookingForChurch, setTheirLookingForChurch] = useState(null);
+  const [theirSchoolType,       setTheirSchoolType]       = useState(null);
+  const [theirDenomination,     setTheirDenomination]     = useState(null);
 
   // Score breakdown modal
   const [breakdownOpen,    setBreakdownOpen]    = useState(false);
@@ -183,11 +189,14 @@ export default function MatchDetailScreen({ route, navigation }) {
     (async () => {
       const { data } = await supabase
         .from('profiles')
-        .select('hometown, love_language_id')
+        .select('hometown, love_language_id, school_type_id, denomination_id, hometown_cities')
         .eq('id', initialMatch.id)
         .maybeSingle();
       if (cancelled || !data) return;
       setTheirLoveLanguage(data.love_language_id ?? null);
+      setTheirSchoolType(data.school_type_id ?? null);
+      setTheirDenomination(data.denomination_id ?? null);
+      setTheirHometownCities((data.hometown_cities ?? []).map((c) => c.toLowerCase().trim()));
       setProfile((prev) => ({
         ...prev,
         hometown: data.hometown ?? prev.hometown,
@@ -217,7 +226,7 @@ export default function MatchDetailScreen({ route, navigation }) {
     (async () => {
       const [{ data: acts }, { data: me }, { data: goals }] = await Promise.all([
         supabase.from('profile_activities').select('activity_id').eq('profile_id', user.id),
-        supabase.from('profiles').select('life_stage_id, church_id, political_lean, love_language_id, hometown_cities, city, state, looking_for_church').eq('id', user.id).maybeSingle(),
+        supabase.from('profiles').select('life_stage_id, church_id, political_lean, love_language_id, hometown_cities, city, state, looking_for_church, school_type_id, denomination_id').eq('id', user.id).maybeSingle(),
         supabase.from('profile_goals').select('goal_id').eq('profile_id', user.id),
       ]);
       if (cancelled) return;
@@ -230,6 +239,8 @@ export default function MatchDetailScreen({ route, navigation }) {
       setMyHometownCities((me?.hometown_cities ?? []).map((c) => c.toLowerCase().trim()));
       setMyCurrentCity(me?.city && me?.state ? `${me.city}, ${me.state}` : null);
       setMyLookingForChurch(me?.looking_for_church ?? null);
+      setMySchoolType(me?.school_type_id ?? null);
+      setMyDenomination(me?.denomination_id ?? null);
     })();
     return () => { cancelled = true; };
   }, [user]);
@@ -373,6 +384,30 @@ export default function MatchDetailScreen({ route, navigation }) {
     if (!mountedRef.current) return;
     setIgnoring(false);
     navigation.goBack();
+  }
+
+  async function handleBump() {
+    if (bumpSending || bumpSent || !user || !profile.id) return;
+    setBumpSending(true);
+    try {
+      const { data, error } = await supabase.rpc('send_connection_bump', { p_to: profile.id });
+      if (!mountedRef.current) return;
+      if (error) {
+        toast({ title: 'Could not send reminder', message: error.message, type: 'error' });
+        return;
+      }
+      if (data === 'already_sent') {
+        toast({ title: 'Already sent', message: 'You already sent a reminder to this person.', type: 'info' });
+        setBumpSent(true);
+      } else if (data === 'sent') {
+        toast({ title: 'Reminder sent!', message: `${profile.name?.split(' ')[0] || 'They'} will get an email.`, type: 'success' });
+        setBumpSent(true);
+      }
+    } catch (e) {
+      if (mountedRef.current) toast({ title: 'Error', message: e?.message ?? 'Try again.', type: 'error' });
+    } finally {
+      if (mountedRef.current) setBumpSending(false);
+    }
   }
 
   async function handleSave() {
@@ -659,9 +694,22 @@ export default function MatchDetailScreen({ route, navigation }) {
             // Both looking for a church home
             const bothLookingForChurch = myLookingForChurch === true && theirLookingForChurch === true;
 
+            // Same school type
+            const sameSchoolType = !!(mySchoolType && theirSchoolType && mySchoolType === theirSchoolType);
+            const schoolTypeLabel = sameSchoolType
+              ? (SCHOOL_TYPES.find((s) => s.id === mySchoolType)?.label ?? null)
+              : null;
+
+            // Same denomination
+            const sameDenomination = !!(myDenomination && theirDenomination && myDenomination === theirDenomination);
+            const denominationLabel = sameDenomination
+              ? (DENOMINATIONS.find((d) => d.id === myDenomination)?.label ?? null)
+              : null;
+
             const hasCommon = sameStage || sameChurch || bothChurchGoers || bothLookingForChurch ||
               sharedInterests.length > 0 || politicsAlign || sameLoveLanguage ||
-              sharedGoals.length > 0 || sharedCities.length > 0 || sameCurrentCity;
+              sharedGoals.length > 0 || sharedCities.length > 0 || sameCurrentCity ||
+              sameSchoolType || sameDenomination;
 
             return (
               <View style={styles.section}>
@@ -768,6 +816,30 @@ export default function MatchDetailScreen({ route, navigation }) {
                       </View>
                       <Text style={styles.commonText}>
                         Same love language · <Text style={{ fontFamily: FONT.semiBold }}>{loveLangLabel}</Text>
+                      </Text>
+                    </View>
+                  ) : null}
+
+                  {/* ── Row: School type ──────────────────────────── */}
+                  {sameSchoolType && schoolTypeLabel ? (
+                    <View style={styles.commonRow}>
+                      <View style={styles.commonRowIcon}>
+                        <Ionicons name="school-outline" size={14} color={COLORS.sage} />
+                      </View>
+                      <Text style={styles.commonText}>
+                        Same school type · <Text style={{ fontFamily: FONT.semiBold }}>{schoolTypeLabel}</Text>
+                      </Text>
+                    </View>
+                  ) : null}
+
+                  {/* ── Row: Denomination ─────────────────────────── */}
+                  {sameDenomination && denominationLabel ? (
+                    <View style={styles.commonRow}>
+                      <View style={styles.commonRowIcon}>
+                        <Ionicons name="business-outline" size={14} color={COLORS.gold} />
+                      </View>
+                      <Text style={styles.commonText}>
+                        Same denomination · <Text style={{ fontFamily: FONT.semiBold }}>{denominationLabel}</Text>
                       </Text>
                     </View>
                   ) : null}
@@ -977,6 +1049,26 @@ export default function MatchDetailScreen({ route, navigation }) {
 
         </View>
       </ScrollView>
+
+      {/* ── Pending bump — nudge above dock ─────────────────────────────── */}
+      {ctaState === 'pending' ? (
+        <View style={styles.bumpRow}>
+          <TouchableOpacity
+            onPress={handleBump}
+            disabled={bumpSending || bumpSent}
+            activeOpacity={0.7}
+            style={styles.bumpBtn}
+          >
+            {bumpSending ? (
+              <ActivityIndicator size="small" color={COLORS.textSecondary} />
+            ) : (
+              <Text style={[styles.bumpText, bumpSent && styles.bumpTextSent]}>
+                {bumpSent ? '✓ Reminder sent' : 'Send email reminder'}
+              </Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
       {/* ── Sticky bottom dock ───────────────────────────────────────────── */}
       <View style={styles.bottomDock}>
@@ -1664,6 +1756,29 @@ const styles = StyleSheet.create({
   },
 
   rule: { marginBottom: SPACING.sm },
+
+  // Bump reminder row — above the bottom dock when pending
+  bumpRow: {
+    position: 'absolute',
+    bottom: 110,
+    left: SPACING.lg,
+    right: SPACING.lg,
+    alignItems: 'center',
+  },
+  bumpBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  bumpText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    textDecorationLine: 'underline',
+  },
+  bumpTextSent: {
+    color: COLORS.sage,
+    textDecorationLine: 'none',
+  },
 
   // Bottom dock
   bottomDock: { position: 'absolute', bottom: 24, left: SPACING.lg, right: SPACING.lg },

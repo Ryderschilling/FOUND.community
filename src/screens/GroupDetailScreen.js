@@ -755,6 +755,95 @@ export default function GroupDetailScreen({ route, navigation }) {
             </View>
           ) : null}
 
+          {/* Events — pinned above activity so upcoming dates are always visible */}
+          {(isMember || groupEvents.length > 0) ? (
+            <View style={styles.section}>
+              <View style={styles.sectionHeadRow}>
+                <Text style={styles.sectionLabel}>EVENTS</Text>
+                {isAdmin ? (
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    style={styles.memberAddBtn}
+                    onPress={() => navigation.navigate('CreateEvent', {
+                      groupId,
+                      groupName: name,
+                    })}
+                  >
+                    <Text style={styles.memberAddBtnText}>+ Create</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+
+              {groupEvents.length === 0 ? (
+                <Text style={styles.emptyText}>No upcoming events</Text>
+              ) : (
+                groupEvents.map((ev) => {
+                  const evDate = new Date(ev.event_time);
+                  const dateStr = evDate.toLocaleDateString('en-US', {
+                    weekday: 'short', month: 'short', day: 'numeric',
+                  });
+                  const timeStr = evDate.toLocaleTimeString('en-US', {
+                    hour: 'numeric', minute: '2-digit', hour12: true,
+                  });
+                  const myStatus = ev.my_status;
+                  return (
+                    <TouchableOpacity
+                      key={ev.id}
+                      activeOpacity={0.75}
+                      style={styles.eventCard}
+                      onPress={() => navigation.navigate('EventDetail', { eventId: ev.id })}
+                    >
+                      <View style={styles.eventCardLeft}>
+                        <Text style={styles.eventTitle} numberOfLines={1}>{ev.title}</Text>
+                        <View style={styles.eventMeta}>
+                          <Ionicons name="calendar-outline" size={12} color={COLORS.textSecondary} />
+                          <Text style={styles.eventMetaText}>{dateStr} · {timeStr}</Text>
+                        </View>
+                        {ev.location_name ? (
+                          <View style={styles.eventMeta}>
+                            <Ionicons name="location-outline" size={12} color={COLORS.textSecondary} />
+                            <Text style={styles.eventMetaText} numberOfLines={1}>{ev.location_name}</Text>
+                          </View>
+                        ) : null}
+                        <View style={styles.eventMeta}>
+                          <Text style={styles.eventMetaText}>
+                            {ev.going_count} going · {ev.pending_count} pending
+                          </Text>
+                        </View>
+                        {ev.recurrence ? (
+                          <View style={styles.eventMeta}>
+                            <Ionicons name="repeat-outline" size={11} color={COLORS.textTertiary} />
+                            <Text style={[styles.eventMetaText, { color: COLORS.textTertiary }]}>
+                              Repeats {ev.recurrence === 'biweekly' ? 'bi-weekly' : ev.recurrence}
+                            </Text>
+                          </View>
+                        ) : null}
+                      </View>
+                      {myStatus ? (
+                        <View style={[
+                          styles.eventStatusPill,
+                          myStatus === 'accepted' ? styles.eventStatusGoing :
+                          myStatus === 'declined' ? styles.eventStatusDeclined :
+                          styles.eventStatusPending,
+                        ]}>
+                          <Text style={[
+                            styles.eventStatusText,
+                            myStatus === 'accepted' ? { color: COLORS.sage } :
+                            myStatus === 'declined' ? { color: '#D24A4A' } :
+                            { color: COLORS.textTertiary },
+                          ]}>
+                            {myStatus === 'accepted' ? 'Going' :
+                             myStatus === 'declined' ? 'Can\'t go' : 'Pending'}
+                          </Text>
+                        </View>
+                      ) : null}
+                    </TouchableOpacity>
+                  );
+                })
+              )}
+            </View>
+          ) : null}
+
           {/* Activity feed */}
           <View style={styles.section}>
             <View style={styles.sectionHeadRow}>
@@ -918,95 +1007,6 @@ export default function GroupDetailScreen({ route, navigation }) {
                     </TouchableOpacity>
                   ) : null}
                 </ScrollView>
-              )}
-            </View>
-          ) : null}
-
-          {/* Events */}
-          {(isMember || groupEvents.length > 0) ? (
-            <View style={styles.section}>
-              <View style={styles.sectionHeadRow}>
-                <Text style={styles.sectionLabel}>EVENTS</Text>
-                {isAdmin ? (
-                  <TouchableOpacity
-                    activeOpacity={0.7}
-                    style={styles.memberAddBtn}
-                    onPress={() => navigation.navigate('CreateEvent', {
-                      groupId,
-                      groupName: name,
-                    })}
-                  >
-                    <Text style={styles.memberAddBtnText}>+ Create</Text>
-                  </TouchableOpacity>
-                ) : null}
-              </View>
-
-              {groupEvents.length === 0 ? (
-                <Text style={styles.emptyText}>No upcoming events</Text>
-              ) : (
-                groupEvents.map((ev) => {
-                  const evDate = new Date(ev.event_time);
-                  const dateStr = evDate.toLocaleDateString('en-US', {
-                    weekday: 'short', month: 'short', day: 'numeric',
-                  });
-                  const timeStr = evDate.toLocaleTimeString('en-US', {
-                    hour: 'numeric', minute: '2-digit', hour12: true,
-                  });
-                  const myStatus = ev.my_status;
-                  return (
-                    <TouchableOpacity
-                      key={ev.id}
-                      activeOpacity={0.75}
-                      style={styles.eventCard}
-                      onPress={() => navigation.navigate('EventDetail', { eventId: ev.id })}
-                    >
-                      <View style={styles.eventCardLeft}>
-                        <Text style={styles.eventTitle} numberOfLines={1}>{ev.title}</Text>
-                        <View style={styles.eventMeta}>
-                          <Ionicons name="calendar-outline" size={12} color={COLORS.textSecondary} />
-                          <Text style={styles.eventMetaText}>{dateStr} · {timeStr}</Text>
-                        </View>
-                        {ev.location_name ? (
-                          <View style={styles.eventMeta}>
-                            <Ionicons name="location-outline" size={12} color={COLORS.textSecondary} />
-                            <Text style={styles.eventMetaText} numberOfLines={1}>{ev.location_name}</Text>
-                          </View>
-                        ) : null}
-                        <View style={styles.eventMeta}>
-                          <Text style={styles.eventMetaText}>
-                            {ev.going_count} going · {ev.pending_count} pending
-                          </Text>
-                        </View>
-                        {ev.recurrence ? (
-                          <View style={styles.eventMeta}>
-                            <Ionicons name="repeat-outline" size={11} color={COLORS.textTertiary} />
-                            <Text style={[styles.eventMetaText, { color: COLORS.textTertiary }]}>
-                              Repeats {ev.recurrence === 'biweekly' ? 'bi-weekly' : ev.recurrence}
-                            </Text>
-                          </View>
-                        ) : null}
-                      </View>
-                      {myStatus ? (
-                        <View style={[
-                          styles.eventStatusPill,
-                          myStatus === 'accepted' ? styles.eventStatusGoing :
-                          myStatus === 'declined' ? styles.eventStatusDeclined :
-                          styles.eventStatusPending,
-                        ]}>
-                          <Text style={[
-                            styles.eventStatusText,
-                            myStatus === 'accepted' ? { color: COLORS.sage } :
-                            myStatus === 'declined' ? { color: '#D24A4A' } :
-                            { color: COLORS.textTertiary },
-                          ]}>
-                            {myStatus === 'accepted' ? 'Going' :
-                             myStatus === 'declined' ? 'Can\'t go' : 'Pending'}
-                          </Text>
-                        </View>
-                      ) : null}
-                    </TouchableOpacity>
-                  );
-                })
               )}
             </View>
           ) : null}
