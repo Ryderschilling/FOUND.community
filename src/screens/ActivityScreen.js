@@ -875,73 +875,67 @@ export default function ActivityScreen({ navigation }) {
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
       <View ref={containerRef} style={{ flex: 1, position: 'relative' }}>
 
-        {/* ── Fixed header: title row ──────────────────────────────── */}
+        {/* ── Fixed header: title row — never changes ──────────────── */}
         <View style={styles.pageHeader}>
-          {activeTab === 'connected' && searchOpen ? (
-            // Search mode: input expands inline next to title
-            <>
-              <Text style={[styles.pageTitle, { marginRight: 8 }]}>FOUND</Text>
-              <View style={[styles.connSearchBox, { flex: 1 }]}>
-                <Ionicons name="search" size={15} color={COLORS.textTertiary} />
-                <TextInput
-                  style={styles.connSearchInput}
-                  placeholder="Search connections…"
-                  placeholderTextColor={COLORS.textTertiary}
-                  value={connSearch}
-                  onChangeText={setConnSearch}
-                  returnKeyType="search"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  autoFocus
-                />
-                {connSearch.length > 0 ? (
-                  <TouchableOpacity onPress={() => setConnSearch('')} hitSlop={8}>
-                    <Ionicons name="close-circle" size={16} color={COLORS.textTertiary} />
-                  </TouchableOpacity>
-                ) : null}
-              </View>
-              <TouchableOpacity onPress={closeSearch} hitSlop={10} activeOpacity={0.7} style={styles.searchIconBtn}>
-                <Ionicons name="close" size={20} color={COLORS.text} />
+          <View>
+            <Text style={styles.headerMeta}>Your Inbox</Text>
+            <Wordmark size="md" label="FOUND" />
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            {activeTab === 'requests' && rows.length > 0 ? (
+              <TouchableOpacity
+                style={styles.markAllBtn}
+                onPress={handleMarkAllRead}
+                disabled={markingAll}
+                activeOpacity={0.7}
+              >
+                {markingAll
+                  ? <ActivityIndicator size="small" color={COLORS.textSecondary} />
+                  : <Text style={styles.markAllText}>Mark all read</Text>}
               </TouchableOpacity>
-            </>
-          ) : (
-            // Normal mode: title + right actions
-            <>
-              <View>
-                <Text style={styles.headerMeta}>Your Inbox</Text>
-                <Wordmark size="md" label="FOUND" />
-              </View>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                {activeTab === 'requests' && rows.length > 0 ? (
-                  <TouchableOpacity
-                    style={styles.markAllBtn}
-                    onPress={handleMarkAllRead}
-                    disabled={markingAll}
-                    activeOpacity={0.7}
-                  >
-                    {markingAll
-                      ? <ActivityIndicator size="small" color={COLORS.textSecondary} />
-                      : <Text style={styles.markAllText}>Mark all read</Text>}
-                  </TouchableOpacity>
-                ) : null}
-                {activeTab === 'connected' ? (
-                  <TouchableOpacity
-                    onPress={() => setSearchOpen(true)}
-                    hitSlop={10}
-                    activeOpacity={0.7}
-                    style={styles.searchIconBtn}
-                  >
-                    <Ionicons name="search" size={20} color={COLORS.textSecondary} />
-                  </TouchableOpacity>
-                ) : null}
-              </View>
-            </>
-          )}
+            ) : null}
+            {activeTab === 'connected' ? (
+              <TouchableOpacity
+                onPress={searchOpen ? closeSearch : () => setSearchOpen(true)}
+                hitSlop={10}
+                activeOpacity={0.7}
+                style={styles.searchIconBtn}
+              >
+                <Ionicons
+                  name={searchOpen ? 'close' : 'search'}
+                  size={20}
+                  color={searchOpen ? COLORS.text : COLORS.textSecondary}
+                />
+              </TouchableOpacity>
+            ) : null}
+          </View>
         </View>
 
-        {/* ── Filter pills — only when connected + search open ─────── */}
+        {/* ── Search bar + filters — slide in below header when open ── */}
         {activeTab === 'connected' && searchOpen ? (
-          <View style={[styles.connControls, { paddingTop: 0 }]}>
+          <View style={styles.connControls}>
+            {/* Search input */}
+            <View style={styles.connSearchBox}>
+              <Ionicons name="search" size={15} color={COLORS.textTertiary} />
+              <TextInput
+                style={styles.connSearchInput}
+                placeholder="Search connections…"
+                placeholderTextColor={COLORS.textTertiary}
+                value={connSearch}
+                onChangeText={setConnSearch}
+                returnKeyType="search"
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoFocus
+              />
+              {connSearch.length > 0 ? (
+                <TouchableOpacity onPress={() => setConnSearch('')} hitSlop={8}>
+                  <Ionicons name="close-circle" size={16} color={COLORS.textTertiary} />
+                </TouchableOpacity>
+              ) : null}
+            </View>
+
+            {/* Filter pills */}
             <View style={styles.filterRow}>
               {/* My Church */}
               <TouchableOpacity
@@ -981,19 +975,6 @@ export default function ActivityScreen({ navigation }) {
                   color={activeFilters.isNew ? COLORS.white : COLORS.textSecondary} />
                 <Text style={[styles.filterPillText, activeFilters.isNew && styles.filterPillTextActive]}>
                   New
-                </Text>
-              </TouchableOpacity>
-
-              {/* Connect Later */}
-              <TouchableOpacity
-                style={[styles.filterPill, activeFilters.connectLater && styles.filterPillActive]}
-                onPress={() => setActiveFilters((p) => ({ ...p, connectLater: !p.connectLater }))}
-                activeOpacity={0.8}
-              >
-                <Ionicons name={activeFilters.connectLater ? 'bookmark' : 'bookmark-outline'} size={13}
-                  color={activeFilters.connectLater ? COLORS.white : COLORS.textSecondary} />
-                <Text style={[styles.filterPillText, activeFilters.connectLater && styles.filterPillTextActive]}>
-                  Connect Later
                 </Text>
               </TouchableOpacity>
 
