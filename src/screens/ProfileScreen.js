@@ -33,6 +33,7 @@ import {
 import { publicUrlForGroupPhoto } from '../lib/groupPhotos';
 import { useConfirm } from '../components/ConfirmProvider';
 import { useToast } from '../components/ToastProvider';
+import { SCHOOL_TYPES } from '../data/mock';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 const AVATAR_GRADIENTS = [
@@ -540,7 +541,7 @@ export default function ProfileScreen({ navigation }) {
       const profileQ = supabase
         .from('profiles')
         .select(`
-          id, full_name, handle, bio, hometown, city, state, is_initiator, is_outgoing, avatar_url, is_visible,
+          id, full_name, handle, bio, hometown, city, state, is_initiator, is_outgoing, school_type_id, avatar_url, is_visible,
           life_stage:life_stages(id,label,icon,icon_color),
           church:churches(id,name,city,state),
           profile_activities(activity:activities(id,label,icon,icon_color))
@@ -939,6 +940,36 @@ export default function ProfileScreen({ navigation }) {
                   color={profile.life_stage.icon_color ?? COLORS.textSecondary}
                 />
                 <Text style={styles.lifeStageText}>{profile.life_stage.label}</Text>
+              </View>
+            </View>
+          ) : null}
+
+          {/* School type */}
+          {profile.school_type_id ? (() => {
+            const st = SCHOOL_TYPES.find((s) => s.id === profile.school_type_id);
+            return st ? (
+              <View style={styles.section}>
+                <SectionHeader label="School Type" />
+                <View style={styles.lifeStageCard}>
+                  <Ionicons name={st.icon || 'school-outline'} size={20} color={st.iconColor ?? COLORS.textSecondary} />
+                  <Text style={styles.lifeStageText}>{st.label}</Text>
+                </View>
+              </View>
+            ) : null;
+          })() : null}
+
+          {/* Personality — initiator + outgoing */}
+          {(profile.is_initiator != null || profile.is_outgoing != null) ? (
+            <View style={styles.section}>
+              <SectionHeader label="Personality" />
+              <View style={styles.lifeStageCard}>
+                <Ionicons name="person-outline" size={20} color={COLORS.textSecondary} />
+                <Text style={styles.lifeStageText}>
+                  {[
+                    profile.is_initiator === true  ? 'Initiator'     : profile.is_initiator === false ? 'Not an initiator' : null,
+                    profile.is_outgoing  === true  ? 'Outgoing'      : profile.is_outgoing  === false ? 'More reserved'   : null,
+                  ].filter(Boolean).join(' · ') || null}
+                </Text>
               </View>
             </View>
           ) : null}

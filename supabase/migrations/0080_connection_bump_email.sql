@@ -28,8 +28,9 @@ returns text
 language sql
 immutable
 as $func$
-  select replace(replace($html$
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+  select replace(
+    replace(
+      $html$<table role="presentation" width="100%" cellpadding="0" cellspacing="0"
        style="background:#f8f6f3;padding:40px 16px;font-family:Arial,sans-serif;">
   <tr><td align="center">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
@@ -43,10 +44,10 @@ as $func$
     <tr><td style="padding:20px 36px 0"><div style="height:1px;background:rgba(0,0,0,.07)"></div></td></tr>
     <tr><td style="padding:28px 36px 0">
       <h1 style="font:400 28px/1.2 Georgia,serif;color:#111;letter-spacing:-.5px;margin:0 0 14px">
-        Hey {{RECIPIENT}}, someone wants to connect.
+        Hey RECIPIENT_TOKEN, someone wants to connect.
       </h1>
       <p style="font:400 15px/1.65 Arial,sans-serif;color:#4b4b4b;margin:0 0 20px">
-        <strong style="color:#111">{{SENDER}}</strong> sent you a connection request on FOUND.
+        <strong style="color:#111">SENDER_TOKEN</strong> sent you a connection request on FOUND.
         Open the app to check out their profile and connect back.
       </p>
     </td></tr>
@@ -63,7 +64,7 @@ as $func$
     <tr><td style="padding:24px 36px 36px">
       <hr style="border:none;border-top:1px solid rgba(0,0,0,.08);margin:0 0 16px">
       <p style="font:400 12px/1.6 Arial;color:#a3a3a3;margin:0">
-        You''re receiving this because someone on FOUND sent you a connection request.
+        You are receiving this because someone on FOUND sent you a connection request.
       </p>
       <p style="font:400 12px/1.6 Arial;color:#a3a3a3;margin:8px 0 0">
         FOUND &middot; found.community &middot;
@@ -72,10 +73,11 @@ as $func$
     </td></tr>
   </table>
   </td></tr>
-</table>
-$html$,
-'{{SENDER}}',    coalesce(nullif(trim(p_sender_name),    ''), 'Someone'),
-'{{RECIPIENT}}', coalesce(nullif(trim(p_recipient_name), ''), 'there'));
+</table>$html$,
+      'SENDER_TOKEN', coalesce(nullif(trim(p_sender_name), ''), 'Someone')
+    ),
+    'RECIPIENT_TOKEN', coalesce(nullif(trim(p_recipient_name), ''), 'there')
+  );
 $func$;
 
 -- 3. RPC — send the bump ───────────────────────────────────────────────────────

@@ -635,6 +635,8 @@ export default function ActivityScreen({ navigation }) {
   }, [navigation]);
 
   // eslint-disable-next-line react/display-name
+  // Header only contains title + segment tabs. Search/filter are rendered
+  // OUTSIDE the FlatList so the TextInput never unmounts on keystroke.
   const Header = useCallback(() => (
     <View>
       {/* Title row */}
@@ -690,114 +692,8 @@ export default function ActivityScreen({ navigation }) {
         </TouchableOpacity>
       </View>
 
-      {/* Connected tab: search + filter + select */}
-      {activeTab === 'connected' ? (
-        <View style={styles.connControls}>
-          {/* Search + Select toggle row */}
-          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
-            <View style={[styles.connSearchBox, { flex: 1 }]}>
-              <Ionicons name="search" size={15} color={COLORS.textTertiary} />
-              <TextInput
-                style={styles.connSearchInput}
-                placeholder="Search connections…"
-                placeholderTextColor={COLORS.textTertiary}
-                value={connSearch}
-                onChangeText={setConnSearch}
-                returnKeyType="search"
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-              {connSearch.length > 0 ? (
-                <TouchableOpacity onPress={() => setConnSearch('')} hitSlop={8}>
-                  <Ionicons name="close-circle" size={16} color={COLORS.textTertiary} />
-                </TouchableOpacity>
-              ) : null}
-            </View>
-            <TouchableOpacity
-              style={[styles.selectToggleBtn, selectMode && styles.selectToggleBtnActive]}
-              onPress={() => { setSelectMode(!selectMode); setSelected({}); }}
-              activeOpacity={0.8}
-            >
-              <Text style={[styles.selectToggleText, selectMode && styles.selectToggleTextActive]}>
-                {selectMode ? 'Cancel' : 'Select'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Filter pills: My Church | Interests | New | Connect Later */}
-          <View style={styles.filterRow}>
-            {/* My Church toggle */}
-            <TouchableOpacity
-              style={[styles.filterPill, activeFilters.myChurch && styles.filterPillActive]}
-              onPress={() => setActiveFilters((p) => ({ ...p, myChurch: !p.myChurch }))}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="business-outline" size={13}
-                color={activeFilters.myChurch ? COLORS.white : COLORS.textSecondary} />
-              <Text style={[styles.filterPillText, activeFilters.myChurch && styles.filterPillTextActive]}>
-                My Church
-              </Text>
-            </TouchableOpacity>
-
-            {/* Interests dropdown */}
-            <View ref={interestsRef} collapsable={false}>
-              <TouchableOpacity
-                style={[styles.filterPill, (activeFilters.interests || openDropdown === 'interests') && styles.filterPillActive]}
-                onPress={() => toggleDropdown('interests')}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.filterPillText, activeFilters.interests && styles.filterPillTextActive]}>
-                  {activeFilters.interests || 'Interests'}
-                </Text>
-                <Ionicons name={openDropdown === 'interests' ? 'chevron-up' : 'chevron-down'} size={11}
-                  color={activeFilters.interests ? COLORS.white : COLORS.textSecondary} />
-              </TouchableOpacity>
-            </View>
-
-            {/* New toggle */}
-            <TouchableOpacity
-              style={[styles.filterPill, activeFilters.isNew && styles.filterPillActive]}
-              onPress={() => setActiveFilters((p) => ({ ...p, isNew: !p.isNew }))}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="sparkles-outline" size={13}
-                color={activeFilters.isNew ? COLORS.white : COLORS.textSecondary} />
-              <Text style={[styles.filterPillText, activeFilters.isNew && styles.filterPillTextActive]}>
-                New
-              </Text>
-            </TouchableOpacity>
-
-            {/* Connect Later toggle */}
-            <TouchableOpacity
-              style={[styles.filterPill, activeFilters.connectLater && styles.filterPillActive]}
-              onPress={() => setActiveFilters((p) => ({ ...p, connectLater: !p.connectLater }))}
-              activeOpacity={0.8}
-            >
-              <Ionicons name={activeFilters.connectLater ? 'bookmark' : 'bookmark-outline'} size={13}
-                color={activeFilters.connectLater ? COLORS.white : COLORS.textSecondary} />
-              <Text style={[styles.filterPillText, activeFilters.connectLater && styles.filterPillTextActive]}>
-                Connect Later
-              </Text>
-            </TouchableOpacity>
-
-            {/* Clear all */}
-            {activeFilterCount > 0 ? (
-              <TouchableOpacity style={styles.clearAllBtn}
-                onPress={() => { setActiveFilters({ connectLater: false, myChurch: false, interests: null, isNew: false }); setOpenDropdown(null); }}
-                activeOpacity={0.7}>
-                <Text style={styles.clearAllText}>Clear all</Text>
-              </TouchableOpacity>
-            ) : null}
-          </View>
-
-        </View>
-      ) : null}
-
     </View>
-  ), [activeTab, connections.length, rows.length, events.length, markingAll,
-      connSearch, selectMode, activeFilters, openDropdown, dropdownAnchor,
-      activeFilterCount, handleMarkAllRead, toggleDropdown, setFilter,
-      setActiveFilters, setConnSearch, setSelectMode, setSelected, navigation, myChurchId]);
+  ), [activeTab, connections.length, rows.length, events.length, markingAll, handleMarkAllRead]);
 
   const Empty = () => {
     if (loading) {
@@ -861,21 +757,28 @@ export default function ActivityScreen({ navigation }) {
         activeOpacity={1}
       />
       <View style={[styles.dropdownMenu, { position: 'absolute', top: dropdownAnchor.top, left: dropdownAnchor.left }]}>
-        {activeDropdownValue ? (
-          <TouchableOpacity style={styles.dropdownItem} onPress={() => setFilter(openDropdown, null)}>
-            <Text style={styles.dropdownItemClear}>Clear</Text>
-          </TouchableOpacity>
-        ) : null}
-        {activeDropdownOptions.map((opt) => (
-          <TouchableOpacity
-            key={opt}
-            style={[styles.dropdownItem, activeDropdownValue === opt && styles.dropdownItemActive]}
-            onPress={() => setFilter(openDropdown, opt)}
-          >
-            <Text style={[styles.dropdownItemText, activeDropdownValue === opt && styles.dropdownItemTextActive]}
-              numberOfLines={1}>{opt}</Text>
-          </TouchableOpacity>
-        ))}
+        <ScrollView
+          style={{ maxHeight: 260 }}
+          bounces={false}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {activeDropdownValue ? (
+            <TouchableOpacity style={styles.dropdownItem} onPress={() => setFilter(openDropdown, null)}>
+              <Text style={styles.dropdownItemClear}>Clear</Text>
+            </TouchableOpacity>
+          ) : null}
+          {activeDropdownOptions.map((opt) => (
+            <TouchableOpacity
+              key={opt}
+              style={[styles.dropdownItem, activeDropdownValue === opt && styles.dropdownItemActive]}
+              onPress={() => setFilter(openDropdown, opt)}
+            >
+              <Text style={[styles.dropdownItemText, activeDropdownValue === opt && styles.dropdownItemTextActive]}
+                numberOfLines={1}>{opt}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
       </View>
     </>
   ) : null;
@@ -941,6 +844,107 @@ export default function ActivityScreen({ navigation }) {
 
       {activeTab === 'connected' ? (
         <>
+          {/* Search + filter rendered outside FlatList so TextInput stays mounted
+              across re-renders and never drops keyboard focus on each keystroke. */}
+          <View style={styles.connControls}>
+            {/* Search + Select toggle row */}
+            <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+              <View style={[styles.connSearchBox, { flex: 1 }]}>
+                <Ionicons name="search" size={15} color={COLORS.textTertiary} />
+                <TextInput
+                  style={styles.connSearchInput}
+                  placeholder="Search connections…"
+                  placeholderTextColor={COLORS.textTertiary}
+                  value={connSearch}
+                  onChangeText={setConnSearch}
+                  returnKeyType="search"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                {connSearch.length > 0 ? (
+                  <TouchableOpacity onPress={() => setConnSearch('')} hitSlop={8}>
+                    <Ionicons name="close-circle" size={16} color={COLORS.textTertiary} />
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+              <TouchableOpacity
+                style={[styles.selectToggleBtn, selectMode && styles.selectToggleBtnActive]}
+                onPress={() => { setSelectMode(!selectMode); setSelected({}); }}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.selectToggleText, selectMode && styles.selectToggleTextActive]}>
+                  {selectMode ? 'Cancel' : 'Select'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Filter pills: My Church | Interests | New | Connect Later */}
+            <View style={styles.filterRow}>
+              {/* My Church toggle */}
+              <TouchableOpacity
+                style={[styles.filterPill, activeFilters.myChurch && styles.filterPillActive]}
+                onPress={() => setActiveFilters((p) => ({ ...p, myChurch: !p.myChurch }))}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="business-outline" size={13}
+                  color={activeFilters.myChurch ? COLORS.white : COLORS.textSecondary} />
+                <Text style={[styles.filterPillText, activeFilters.myChurch && styles.filterPillTextActive]}>
+                  My Church
+                </Text>
+              </TouchableOpacity>
+
+              {/* Interests dropdown */}
+              <View ref={interestsRef} collapsable={false}>
+                <TouchableOpacity
+                  style={[styles.filterPill, (activeFilters.interests || openDropdown === 'interests') && styles.filterPillActive]}
+                  onPress={() => toggleDropdown('interests')}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.filterPillText, activeFilters.interests && styles.filterPillTextActive]}>
+                    {activeFilters.interests || 'Interests'}
+                  </Text>
+                  <Ionicons name={openDropdown === 'interests' ? 'chevron-up' : 'chevron-down'} size={11}
+                    color={activeFilters.interests ? COLORS.white : COLORS.textSecondary} />
+                </TouchableOpacity>
+              </View>
+
+              {/* New toggle */}
+              <TouchableOpacity
+                style={[styles.filterPill, activeFilters.isNew && styles.filterPillActive]}
+                onPress={() => setActiveFilters((p) => ({ ...p, isNew: !p.isNew }))}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="sparkles-outline" size={13}
+                  color={activeFilters.isNew ? COLORS.white : COLORS.textSecondary} />
+                <Text style={[styles.filterPillText, activeFilters.isNew && styles.filterPillTextActive]}>
+                  New
+                </Text>
+              </TouchableOpacity>
+
+              {/* Connect Later toggle */}
+              <TouchableOpacity
+                style={[styles.filterPill, activeFilters.connectLater && styles.filterPillActive]}
+                onPress={() => setActiveFilters((p) => ({ ...p, connectLater: !p.connectLater }))}
+                activeOpacity={0.8}
+              >
+                <Ionicons name={activeFilters.connectLater ? 'bookmark' : 'bookmark-outline'} size={13}
+                  color={activeFilters.connectLater ? COLORS.white : COLORS.textSecondary} />
+                <Text style={[styles.filterPillText, activeFilters.connectLater && styles.filterPillTextActive]}>
+                  Connect Later
+                </Text>
+              </TouchableOpacity>
+
+              {/* Clear all */}
+              {activeFilterCount > 0 ? (
+                <TouchableOpacity style={styles.clearAllBtn}
+                  onPress={() => { setActiveFilters({ connectLater: false, myChurch: false, interests: null, isNew: false }); setOpenDropdown(null); }}
+                  activeOpacity={0.7}>
+                  <Text style={styles.clearAllText}>Clear all</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          </View>
+
           <FlatList
             key="connected"
             data={visibleConnections}
@@ -960,6 +964,7 @@ export default function ActivityScreen({ navigation }) {
             contentContainerStyle={[styles.list, selectMode && { paddingBottom: 140 }]}
             ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
             showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
             refreshControl={
               <RefreshControl
                 refreshing={connRefreshing}

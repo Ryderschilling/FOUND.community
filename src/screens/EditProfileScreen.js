@@ -342,7 +342,6 @@ export default function EditProfileScreen({ navigation }) {
     }
 
     setSaving(true);
-    const { city, state } = parseLocation(locationText);
 
     // 1) Persist core profile fields
     // Convert structured rows → "City, ST" canonical strings, skip blank rows

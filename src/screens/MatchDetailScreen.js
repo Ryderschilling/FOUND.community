@@ -43,7 +43,7 @@ import HighlightReelView from '../components/HighlightReelView';
 import { useConfirm } from '../components/ConfirmProvider';
 import { useToast } from '../components/ToastProvider';
 import ReportSheet from '../components/ReportSheet';
-import { LOVE_LANGUAGES, COMMUNITY_GOALS, SCHOOL_TYPES, DENOMINATIONS } from '../data/mock';
+import { LOVE_LANGUAGES, COMMUNITY_GOALS, SCHOOL_TYPES, DENOMINATIONS, FAMILY_VALUES } from '../data/mock';
 
 export default function MatchDetailScreen({ route, navigation }) {
   const { user } = useAuth();
@@ -69,6 +69,7 @@ export default function MatchDetailScreen({ route, navigation }) {
   const [groupInvitedIds, setGroupInvitedIds] = useState(new Set());
   const [avatarLightbox,  setAvatarLightbox]  = useState(false);
   const [myInterestIds,    setMyInterestIds]    = useState(new Set());
+  const [myValueIds,       setMyValueIds]       = useState(new Set());
   const [myLifeStage,      setMyLifeStage]      = useState(null);
   const [myChurchId,       setMyChurchId]       = useState(null);
   const [myPoliticalLean,  setMyPoliticalLean]  = useState(null);
@@ -82,6 +83,7 @@ export default function MatchDetailScreen({ route, navigation }) {
   const [theirPolitical,        setTheirPolitical]        = useState(null);
   const [theirLoveLanguage,     setTheirLoveLanguage]     = useState(null);
   const [theirGoalIds,          setTheirGoalIds]          = useState(new Set());
+  const [theirValueIds,         setTheirValueIds]         = useState(new Set());
   const [theirHometownCities,   setTheirHometownCities]   = useState([]);
   const [theirLookingForChurch, setTheirLookingForChurch] = useState(null);
   const [theirSchoolType,       setTheirSchoolType]       = useState(null);
@@ -187,16 +189,23 @@ export default function MatchDetailScreen({ route, navigation }) {
     if (!initialMatch.id) return;
     let cancelled = false;
     (async () => {
-      const { data } = await supabase
-        .from('profiles')
-        .select('hometown, love_language_id, school_type_id, denomination_id, hometown_cities')
-        .eq('id', initialMatch.id)
-        .maybeSingle();
+      const [{ data }, { data: theirVals }] = await Promise.all([
+        supabase
+          .from('profiles')
+          .select('hometown, love_language_id, school_type_id, denomination_id, hometown_cities')
+          .eq('id', initialMatch.id)
+          .maybeSingle(),
+        supabase.from('profile_values').select('value_id').eq('profile_id', initialMatch.id),
+      ]);
       if (cancelled || !data) return;
       setTheirLoveLanguage(data.love_language_id ?? null);
       setTheirSchoolType(data.school_type_id ?? null);
       setTheirDenomination(data.denomination_id ?? null);
-      setTheirHometownCities((data.hometown_cities ?? []).map((c) => c.toLowerCase().trim()));
+      setTheirValueIds(new Set((theirVals ?? []).map((r) => r.value_id)));
+      // Fall back to legacy `hometown` string if `hometown_cities` array is empty
+      const rawTheirCities = (data.hometown_cities ?? []).filter(Boolean);
+      const theirSourceCities = rawTheirCities.length > 0 ? rawTheirCities : (data.hometown ? [data.hometown] : []);
+      setTheirHometownCities(theirSourceCities.map((c) => c.toLowerCase().trim()));
       setProfile((prev) => ({
         ...prev,
         hometown: data.hometown ?? prev.hometown,
@@ -224,19 +233,24 @@ export default function MatchDetailScreen({ route, navigation }) {
     if (!user) return;
     let cancelled = false;
     (async () => {
-      const [{ data: acts }, { data: me }, { data: goals }] = await Promise.all([
+      const [{ data: acts }, { data: me }, { data: goals }, { data: myVals }] = await Promise.all([
         supabase.from('profile_activities').select('activity_id').eq('profile_id', user.id),
-        supabase.from('profiles').select('life_stage_id, church_id, political_lean, love_language_id, hometown_cities, city, state, looking_for_church, school_type_id, denomination_id').eq('id', user.id).maybeSingle(),
+        supabase.from('profiles').select('life_stage_id, church_id, political_lean, love_language_id, hometown, hometown_cities, city, state, looking_for_church, school_type_id, denomination_id').eq('id', user.id).maybeSingle(),
         supabase.from('profile_goals').select('goal_id').eq('profile_id', user.id),
+        supabase.from('profile_values').select('value_id').eq('profile_id', user.id),
       ]);
       if (cancelled) return;
       setMyInterestIds(new Set((acts ?? []).map((r) => r.activity_id)));
+      setMyValueIds(new Set((myVals ?? []).map((r) => r.value_id)));
       setMyLifeStage(me?.life_stage_id ?? null);
       setMyChurchId(me?.church_id ?? null);
       setMyPoliticalLean(me?.political_lean ?? null);
       setMyLoveLanguage(me?.love_language_id ?? null);
       setMyGoalIds(new Set((goals ?? []).map((r) => r.goal_id)));
-      setMyHometownCities((me?.hometown_cities ?? []).map((c) => c.toLowerCase().trim()));
+      // Fall back to legacy `hometown` string if `hometown_cities` array is empty
+      const rawMyCities = (me?.hometown_cities ?? []).filter(Boolean);
+      const mySourceCities = rawMyCities.length > 0 ? rawMyCities : (me?.hometown ? [me.hometown] : []);
+      setMyHometownCities(mySourceCities.map((c) => c.toLowerCase().trim()));
       setMyCurrentCity(me?.city && me?.state ? `${me.city}, ${me.state}` : null);
       setMyLookingForChurch(me?.looking_for_church ?? null);
       setMySchoolType(me?.school_type_id ?? null);
@@ -670,6 +684,9 @@ export default function MatchDetailScreen({ route, navigation }) {
             const sharedGoals = COMMUNITY_GOALS.filter(
               (g) => myGoalIds.has(g.id) && theirGoalIds.has(g.id)
             );
+            const sharedValues = FAMILY_VALUES.filter(
+              (v) => myValueIds.has(v.id) && theirValueIds.has(v.id)
+            );
             const normalizeCity = (raw) => {
               const s = (raw ?? '').toLowerCase().trim();
               return s.replace(/,?\s+[a-z]{2}$/, '').trim();
@@ -709,7 +726,7 @@ export default function MatchDetailScreen({ route, navigation }) {
             const hasCommon = sameStage || sameChurch || bothChurchGoers || bothLookingForChurch ||
               sharedInterests.length > 0 || politicsAlign || sameLoveLanguage ||
               sharedGoals.length > 0 || sharedCities.length > 0 || sameCurrentCity ||
-              sameSchoolType || sameDenomination;
+              sameSchoolType || sameDenomination || sharedValues.length > 0;
 
             return (
               <View style={styles.section}>
@@ -816,6 +833,23 @@ export default function MatchDetailScreen({ route, navigation }) {
                       </View>
                       <Text style={styles.commonText}>
                         Same love language · <Text style={{ fontFamily: FONT.semiBold }}>{loveLangLabel}</Text>
+                      </Text>
+                    </View>
+                  ) : null}
+
+                  {/* ── Row: Shared home values ──────────────────── */}
+                  {sharedValues.length > 0 ? (
+                    <View style={styles.commonRow}>
+                      <View style={styles.commonRowIcon}>
+                        <Ionicons name="home" size={14} color={COLORS.clay} />
+                      </View>
+                      <Text style={styles.commonText}>
+                        {sharedValues.length === 1
+                          ? `Shared value · `
+                          : `${sharedValues.length} shared home values · `}
+                        <Text style={{ fontFamily: FONT.semiBold }}>
+                          {sharedValues.map((v) => v.label).join(', ')}
+                        </Text>
                       </Text>
                     </View>
                   ) : null}
