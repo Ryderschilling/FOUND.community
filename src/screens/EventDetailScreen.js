@@ -113,6 +113,63 @@ function AttendeeRow({ invite }) {
   );
 }
 
+// ─── Recurrence helpers ────────────────────────────────────────────────────
+const WEEKDAY_NAMES  = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const ORDINAL_LABELS = ['','1st','2nd','3rd','4th'];
+
+/** Human-readable recurrence label for the detail badge. */
+function formatRecurrenceLabel(event) {
+  if (!event.recurrence) return '';
+  if (event.recurrence === 'weekly')       return 'Repeats weekly';
+  if (event.recurrence === 'biweekly')     return 'Repeats bi-weekly';
+  if (event.recurrence === 'monthly')      return 'Repeats monthly';
+  if (event.recurrence === 'monthly_nth' && event.recurrence_rule) {
+    const { weekday, weeks } = event.recurrence_rule;
+    const weekLabels = (weeks ?? []).map(w => ORDINAL_LABELS[w] ?? `${w}th`);
+    return `Repeats every ${weekLabels.join(' & ')} ${WEEKDAY_NAMES[weekday] ?? ''}`;
+  }
+  return `Repeats ${event.recurrence}`;
+}
+
+/**
+ * Given the current event, return the next Date to pre-fill on "Schedule Next Occurrence".
+ *
+ * For monthly_nth, finds the next occurrence in the same month (if one remains)
+ * or falls through to the first matching occurrence in the following month.
+ */
+function getNextEventDate(event) {
+  const curr = new Date(event.event_time);
+  if (event.recurrence === 'weekly')   { const d = new Date(curr); d.setDate(d.getDate() + 7);  return d; }
+  if (event.recurrence === 'biweekly') { const d = new Date(curr); d.setDate(d.getDate() + 14); return d; }
+  if (event.recurrence === 'monthly')  { const d = new Date(curr); d.setMonth(d.getMonth() + 1); return d; }
+
+  if (event.recurrence === 'monthly_nth' && event.recurrence_rule) {
+    const { weekday, weeks } = event.recurrence_rule;
+    const sortedWeeks = [...(weeks ?? [1])].sort((a, b) => a - b);
+
+    function nthWeekdayDate(year, month, weekday, weekNum) {
+      const firstOfMonth = new Date(year, month, 1);
+      let offset = weekday - firstOfMonth.getDay();
+      if (offset < 0) offset += 7;
+      const day = 1 + offset + (weekNum - 1) * 7;
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+      if (day > daysInMonth) return null;
+      return new Date(year, month, day, curr.getHours(), curr.getMinutes());
+    }
+
+    // Look in current month first, then next month
+    for (let monthOffset = 0; monthOffset <= 1; monthOffset++) {
+      const d = new Date(curr);
+      d.setMonth(d.getMonth() + monthOffset);
+      for (const w of sortedWeeks) {
+        const candidate = nthWeekdayDate(d.getFullYear(), d.getMonth(), weekday, w);
+        if (candidate && candidate > curr) return candidate;
+      }
+    }
+  }
+  return null;
+}
+
 // ─── Screen ───────────────────────────────────────────────────────────────
 export default function EventDetailScreen({ navigation, route }) {
   const { eventId } = route.params ?? {};
@@ -510,7 +567,7 @@ export default function EventDetailScreen({ navigation, route }) {
                 <Ionicons name="repeat-outline" size={16} color={COLORS.sage} />
               </View>
               <Text style={styles.detailText}>
-                Repeats {event.recurrence === 'biweekly' ? 'bi-weekly' : event.recurrence}
+                {formatRecurrenceLabel(event)}
               </Text>
             </View>
           ) : null}
@@ -518,10 +575,8 @@ export default function EventDetailScreen({ navigation, route }) {
 
         {/* Schedule next occurrence — creator only, recurring events only */}
         {isCreator && event.recurrence ? (() => {
-          const nextDate = new Date(event.event_time);
-          if (event.recurrence === 'weekly')   nextDate.setDate(nextDate.getDate() + 7);
-          if (event.recurrence === 'biweekly') nextDate.setDate(nextDate.getDate() + 14);
-          if (event.recurrence === 'monthly')  nextDate.setMonth(nextDate.getMonth() + 1);
+          const nextDate = getNextEventDate(event);
+          if (!nextDate) return null;
           return (
             <TouchableOpacity
               style={styles.nextOccurrenceBtn}
@@ -534,6 +589,7 @@ export default function EventDetailScreen({ navigation, route }) {
                 initialDesc:     event.description ?? '',
                 initialDate:     nextDate.toISOString(),
                 recurrence:      event.recurrence,
+                recurrenceRule:  event.recurrence_rule ?? null,
               })}
             >
               <Ionicons name="add-circle-outline" size={18} color={COLORS.sage} />

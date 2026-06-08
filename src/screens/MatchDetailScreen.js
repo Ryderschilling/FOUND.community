@@ -878,7 +878,15 @@ export default function MatchDetailScreen({ route, navigation }) {
             </View>
           ) : null}
 
-          {/* Highlight Reel — below match score */}
+          {/* About — directly below match score, before highlight reel */}
+          {profile.bio ? (
+            <View style={styles.section}>
+              <SectionHeader label="About" />
+              <Text style={styles.bioText}>{profile.bio}</Text>
+            </View>
+          ) : null}
+
+          {/* Highlight Reel — after bio */}
           {photos.length > 0 ? (
             <View style={styles.section}>
               <SectionHeader label="Highlight Reel" />
@@ -893,14 +901,6 @@ export default function MatchDetailScreen({ route, navigation }) {
                   {profile.name?.split(' ')[0] || 'They'} hasn't added any photos yet.
                 </Text>
               </View>
-            </View>
-          ) : null}
-
-          {/* About */}
-          {profile.bio ? (
-            <View style={styles.section}>
-              <SectionHeader label="About" />
-              <Text style={styles.bioText}>{profile.bio}</Text>
             </View>
           ) : null}
 
@@ -925,6 +925,35 @@ export default function MatchDetailScreen({ route, navigation }) {
                     {LOVE_LANGUAGES.find((l) => l.id === theirLoveLanguage)?.label ?? theirLoveLanguage}
                   </Text>
                 </View>
+              </View>
+            </View>
+          ) : null}
+
+          {/* Political Lean */}
+          {theirPolitical != null && theirPolitical !== 0 ? (
+            <View style={styles.section}>
+              <SectionHeader label="Political Lean" />
+              <View style={styles.commonCard}>
+                <View style={styles.commonRow}>
+                  <View style={styles.commonRowIcon}>
+                    <Ionicons name="ribbon-outline" size={14} color="#4F6EB0" />
+                  </View>
+                  <Text style={styles.commonText}>
+                    {theirPolitical > 0 ? 'Conservative' : 'Liberal'}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          ) : null}
+
+          {/* Community Goals */}
+          {theirGoalIds.size > 0 ? (
+            <View style={styles.section}>
+              <SectionHeader label="Looking For" />
+              <View style={styles.pillsWrap}>
+                {COMMUNITY_GOALS.filter((g) => theirGoalIds.has(g.id)).map((g) => (
+                  <Pill key={g.id} label={g.label} variant="neutral" />
+                ))}
               </View>
             </View>
           ) : null}
@@ -1086,7 +1115,7 @@ export default function MatchDetailScreen({ route, navigation }) {
                 { key: 'life_stage', label: 'Life Stage',   icon: 'people-outline'       },
                 { key: 'values',     label: 'Values',       icon: 'heart-outline'        },
                 { key: 'hometown',   label: 'Hometown',     icon: 'home-outline'         },
-                { key: 'political',  label: 'Politics',     icon: 'ribbon-outline'       },
+                { key: 'political',  label: 'Political Lean',     icon: 'ribbon-outline'       },
               ];
               const isTappable = (key) => DETAIL_KEYS.has(key);
               return (
@@ -1364,7 +1393,7 @@ const BREAKDOWN_ROWS = [
   { key: 'life_stage', label: 'Life Stage', icon: 'people-outline' },
   { key: 'values',     label: 'Values',     icon: 'heart-outline'  },
   { key: 'hometown',   label: 'Hometown',   icon: 'home-outline'   },
-  { key: 'political',  label: 'Politics',   icon: 'ribbon-outline' },
+  { key: 'political',  label: 'Political Lean',   icon: 'ribbon-outline' },
 ];
 
 // ─── Fallback ─────────────────────────────────────────────────────────────

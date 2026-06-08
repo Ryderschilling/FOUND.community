@@ -128,6 +128,9 @@ export default function CreateEventScreen({ navigation, route }) {
   const [selectedIds, setSelectedIds]   = useState({});
 
   const [recurrence, setRecurrence] = useState(route?.params?.recurrence ?? null);
+  // For monthly_nth: {weekday: 0–6 (0=Sun), weeks: [1–4]}
+  const [recurrenceRule, setRecurrenceRule] = useState(route?.params?.recurrenceRule ?? null);
+  const [showNthPicker, setShowNthPicker] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError]           = useState(null);
@@ -189,7 +192,8 @@ export default function CreateEventScreen({ navigation, route }) {
       p_description:   description.trim() || null,
       p_invitee_ids:   groupId ? null : (Object.keys(selectedIds).length > 0 ? Object.keys(selectedIds) : null),
       p_group_id:      groupId ?? null,
-      p_recurrence:    recurrence ?? null,
+      p_recurrence:      recurrence ?? null,
+      p_recurrence_rule: recurrence === 'monthly_nth' ? recurrenceRule : null,
     });
 
     setSubmitting(null);
@@ -390,10 +394,11 @@ export default function CreateEventScreen({ navigation, route }) {
               <Ionicons name="repeat-outline" size={18} color={COLORS.sage} />
               <View style={styles.recurrenceChips}>
                 {[
-                  { label: 'Once', value: null },
-                  { label: 'Weekly', value: 'weekly' },
-                  { label: 'Bi-weekly', value: 'biweekly' },
-                  { label: 'Monthly', value: 'monthly' },
+                  { label: 'Once',     value: null },
+                  { label: 'Weekly',   value: 'weekly' },
+                  { label: 'Bi-weekly',value: 'biweekly' },
+                  { label: 'Monthly',  value: 'monthly' },
+                  { label: 'Nth Day ▾',value: 'monthly_nth' },
                 ].map((opt) => (
                   <TouchableOpacity
                     key={String(opt.value)}
@@ -402,7 +407,14 @@ export default function CreateEventScreen({ navigation, route }) {
                       styles.recurrenceChip,
                       recurrence === opt.value && styles.recurrenceChipActive,
                     ]}
-                    onPress={() => setRecurrence(opt.value)}
+                    onPress={() => {
+                      setRecurrence(opt.value);
+                      if (opt.value === 'monthly_nth') {
+                        // Default to 1st Wednesday if nothing set yet
+                        if (!recurrenceRule) setRecurrenceRule({ weekday: 3, weeks: [1] });
+                        setShowNthPicker(true);
+                      }
+                    }}
                   >
                     <Text style={[
                       styles.recurrenceChipText,
@@ -414,6 +426,61 @@ export default function CreateEventScreen({ navigation, route }) {
                 ))}
               </View>
             </View>
+
+            {/* Nth-day sub-picker — shown inline when monthly_nth is active */}
+            {recurrence === 'monthly_nth' && (() => {
+              const DAYS  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+              const WEEKS = [
+                { label: '1st', value: 1 },
+                { label: '2nd', value: 2 },
+                { label: '3rd', value: 3 },
+                { label: '4th', value: 4 },
+              ];
+              const rule = recurrenceRule ?? { weekday: 3, weeks: [1] };
+              const toggleWeek = (w) => {
+                const curr = rule.weeks ?? [];
+                const next = curr.includes(w) ? curr.filter(x => x !== w) : [...curr, w].sort();
+                setRecurrenceRule({ ...rule, weeks: next.length ? next : [w] });
+              };
+              return (
+                <View style={styles.nthPickerContainer}>
+                  <Text style={styles.nthLabel}>Day of week</Text>
+                  <View style={styles.nthRow}>
+                    {DAYS.map((d, i) => (
+                      <TouchableOpacity
+                        key={d}
+                        activeOpacity={0.7}
+                        style={[styles.nthChip, rule.weekday === i && styles.nthChipActive]}
+                        onPress={() => setRecurrenceRule({ ...rule, weekday: i })}
+                      >
+                        <Text style={[styles.nthChipText, rule.weekday === i && styles.nthChipTextActive]}>{d}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                  <Text style={[styles.nthLabel, { marginTop: SPACING.sm }]}>Which weeks</Text>
+                  <View style={styles.nthRow}>
+                    {WEEKS.map(({ label, value }) => {
+                      const active = (rule.weeks ?? []).includes(value);
+                      return (
+                        <TouchableOpacity
+                          key={value}
+                          activeOpacity={0.7}
+                          style={[styles.nthChip, active && styles.nthChipActive]}
+                          onPress={() => toggleWeek(value)}
+                        >
+                          <Text style={[styles.nthChipText, active && styles.nthChipTextActive]}>{label}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                  {recurrenceRule && (
+                    <Text style={styles.nthPreview}>
+                      Repeats every {(recurrenceRule.weeks ?? [1]).map(w => ['','1st','2nd','3rd','4th'][w]).join(' & ')} {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][recurrenceRule.weekday]}
+                    </Text>
+                  )}
+                </View>
+              );
+            })()}
           </View>
 
           {/* Connection picker — hidden when creating from a group (all members auto-invited) */}
@@ -612,6 +679,53 @@ const styles = StyleSheet.create({
   },
   recurrenceChipTextActive: {
     color: COLORS.sage,
+  },
+  // Nth-day sub-picker
+  nthPickerContainer: {
+    marginTop: SPACING.sm,
+    marginLeft: 26,
+    paddingTop: SPACING.sm,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.borderLight,
+  },
+  nthLabel: {
+    fontFamily: FONT.medium,
+    fontSize: 11,
+    color: COLORS.textTertiary,
+    letterSpacing: 0.6,
+    marginBottom: 6,
+  },
+  nthRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  nthChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surface,
+  },
+  nthChipActive: {
+    borderColor: COLORS.sage,
+    backgroundColor: '#F0F7F0',
+  },
+  nthChipText: {
+    fontFamily: FONT.medium,
+    fontSize: 12,
+    color: COLORS.textSecondary,
+  },
+  nthChipTextActive: {
+    color: COLORS.sage,
+  },
+  nthPreview: {
+    marginTop: SPACING.sm,
+    fontFamily: FONT.regular,
+    fontSize: 12,
+    color: COLORS.sage,
+    fontStyle: 'italic',
   },
   inlinePicker: {
     borderTopWidth: 1,

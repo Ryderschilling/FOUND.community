@@ -156,7 +156,8 @@
       "package": "com.found.community",
       "permissions": [
         "android.permission.READ_CALENDAR",
-        "android.permission.WRITE_CALENDAR"
+        "android.permission.WRITE_CALENDAR",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {
@@ -179,9 +180,9 @@
     ],
     "extra": {
       "eas": {
-        "projectId": "aeafb9df-b756-440f-a01e-3cebd4655953"
+        "projectId": "abc907a0-ba1e-48a9-b6b8-6475ab8b52e7"
       }
     },
-    "owner": "ryderschilling"
+    "owner": "found-community"
   }
 }

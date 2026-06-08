@@ -36,7 +36,8 @@
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://froqanfagdkjmfrmpfye.supabase.co",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZyb3FhbmZhZ2Rram1mcm1wZnllIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2NTM0NDEsImV4cCI6MjA5NDIyOTQ0MX0.kQACOB27AJCTZxahBgJHSIOPy43RiGBgBdWqiwbTwFs",
-        "EXPO_PUBLIC_SENTRY_DSN": "https://a8aa315c2e11a09f2784469f304bc1b3@o4511453588422656.ingest.us.sentry.io/4511453604413440"
+        "EXPO_PUBLIC_SENTRY_DSN": "https://a8aa315c2e11a09f2784469f304bc1b3@o4511453588422656.ingest.us.sentry.io/4511453604413440",
+        "SENTRY_DISABLE_AUTO_UPLOAD": "true"
       }
     }
   },
