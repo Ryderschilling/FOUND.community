@@ -862,17 +862,25 @@ export default function ActivityScreen({ navigation }) {
     </View>
   ), [loading]);
 
+  // Helper to close search and reset all filter state
+  function closeSearch() {
+    setSearchOpen(false);
+    setConnSearch('');
+    setActiveFilters({ connectLater: false, myChurch: false, interests: null, isNew: false });
+    setOpenDropdown(null);
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
       <View ref={containerRef} style={{ flex: 1, position: 'relative' }}>
 
-      {activeTab === 'connected' ? (
-        <>
-          {/* Search + filter — only visible when search is open (toggled by header icon) */}
-          {searchOpen ? <View style={styles.connControls}>
-            {/* Search + Select toggle row */}
-            <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+        {/* ── Fixed header: title row ──────────────────────────────── */}
+        <View style={styles.pageHeader}>
+          {activeTab === 'connected' && searchOpen ? (
+            // Search mode: input expands inline next to title
+            <>
+              <Text style={[styles.pageTitle, { marginRight: 8 }]}>FOUND</Text>
               <View style={[styles.connSearchBox, { flex: 1 }]}>
                 <Ionicons name="search" size={15} color={COLORS.textTertiary} />
                 <TextInput
@@ -892,20 +900,50 @@ export default function ActivityScreen({ navigation }) {
                   </TouchableOpacity>
                 ) : null}
               </View>
-              <TouchableOpacity
-                style={[styles.selectToggleBtn, selectMode && styles.selectToggleBtnActive]}
-                onPress={() => { setSelectMode(!selectMode); setSelected({}); }}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.selectToggleText, selectMode && styles.selectToggleTextActive]}>
-                  {selectMode ? 'Cancel' : 'Select'}
-                </Text>
+              <TouchableOpacity onPress={closeSearch} hitSlop={10} activeOpacity={0.7} style={styles.searchIconBtn}>
+                <Ionicons name="close" size={20} color={COLORS.text} />
               </TouchableOpacity>
-            </View>
+            </>
+          ) : (
+            // Normal mode: title + right actions
+            <>
+              <View>
+                <Text style={styles.headerMeta}>Your Inbox</Text>
+                <Wordmark size="md" label="FOUND" />
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                {activeTab === 'requests' && rows.length > 0 ? (
+                  <TouchableOpacity
+                    style={styles.markAllBtn}
+                    onPress={handleMarkAllRead}
+                    disabled={markingAll}
+                    activeOpacity={0.7}
+                  >
+                    {markingAll
+                      ? <ActivityIndicator size="small" color={COLORS.textSecondary} />
+                      : <Text style={styles.markAllText}>Mark all read</Text>}
+                  </TouchableOpacity>
+                ) : null}
+                {activeTab === 'connected' ? (
+                  <TouchableOpacity
+                    onPress={() => setSearchOpen(true)}
+                    hitSlop={10}
+                    activeOpacity={0.7}
+                    style={styles.searchIconBtn}
+                  >
+                    <Ionicons name="search" size={20} color={COLORS.textSecondary} />
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            </>
+          )}
+        </View>
 
-            {/* Filter pills: My Church | Interests | New | Connect Later */}
+        {/* ── Filter pills — only when connected + search open ─────── */}
+        {activeTab === 'connected' && searchOpen ? (
+          <View style={[styles.connControls, { paddingTop: 0 }]}>
             <View style={styles.filterRow}>
-              {/* My Church toggle */}
+              {/* My Church */}
               <TouchableOpacity
                 style={[styles.filterPill, activeFilters.myChurch && styles.filterPillActive]}
                 onPress={() => setActiveFilters((p) => ({ ...p, myChurch: !p.myChurch }))}
@@ -933,7 +971,7 @@ export default function ActivityScreen({ navigation }) {
                 </TouchableOpacity>
               </View>
 
-              {/* New toggle */}
+              {/* New */}
               <TouchableOpacity
                 style={[styles.filterPill, activeFilters.isNew && styles.filterPillActive]}
                 onPress={() => setActiveFilters((p) => ({ ...p, isNew: !p.isNew }))}
@@ -946,7 +984,7 @@ export default function ActivityScreen({ navigation }) {
                 </Text>
               </TouchableOpacity>
 
-              {/* Connect Later toggle */}
+              {/* Connect Later */}
               <TouchableOpacity
                 style={[styles.filterPill, activeFilters.connectLater && styles.filterPillActive]}
                 onPress={() => setActiveFilters((p) => ({ ...p, connectLater: !p.connectLater }))}
@@ -968,123 +1006,154 @@ export default function ActivityScreen({ navigation }) {
                 </TouchableOpacity>
               ) : null}
             </View>
-          </View> : null}
+          </View>
+        ) : null}
 
+        {/* ── Segment tabs ─────────────────────────────────────────── */}
+        <View style={styles.segmentWrap}>
+          <TouchableOpacity
+            style={[styles.segBtn, activeTab === 'connected' && styles.segBtnActive]}
+            onPress={() => setActiveTab('connected')}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.segLabel, activeTab === 'connected' && styles.segLabelActive]}>
+              Connected {connections.length > 0 ? `(${connections.length})` : ''}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.segBtn, activeTab === 'requests' && styles.segBtnActive]}
+            onPress={() => setActiveTab('requests')}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.segLabel, activeTab === 'requests' && styles.segLabelActive]}>
+              Requests {rows.length > 0 ? `(${rows.length})` : ''}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.segBtn, activeTab === 'events' && styles.segBtnActive]}
+            onPress={() => setActiveTab('events')}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.segLabel, activeTab === 'events' && styles.segLabelActive]}>
+              Events {events.length > 0 ? `(${events.length})` : ''}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* ── Scrollable content per tab ───────────────────────────── */}
+        {activeTab === 'connected' ? (
+          <>
+            <FlatList
+              key="connected"
+              data={visibleConnections}
+              keyExtractor={(r) => r.profile_id}
+              ListHeaderComponent={GatheringPromo}
+              ListEmptyComponent={ConnectedEmpty}
+              renderItem={({ item }) => (
+                <ConnectionRow
+                  row={item}
+                  onPress={handleConnOpen}
+                  onPin={handlePin}
+                  selectMode={selectMode}
+                  selected={!!selected[item.profile_id]}
+                  onSelect={(id) => setSelected((s) => ({ ...s, [id]: !s[id] }))}
+                />
+              )}
+              contentContainerStyle={[styles.list, selectMode && { paddingBottom: 140 }]}
+              ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              refreshControl={
+                <RefreshControl
+                  refreshing={connRefreshing}
+                  onRefresh={() => loadConnections({ isRefresh: true })}
+                  tintColor={COLORS.textTertiary}
+                />
+              }
+            />
+            {selectMode ? (
+              <View style={styles.bulkBar}>
+                <Text style={styles.bulkCount}>
+                  {selectedCount > 0 ? `${selectedCount} selected` : 'Tap to select'}
+                </Text>
+                <View style={styles.bulkActions}>
+                  <TouchableOpacity
+                    style={[styles.bulkBtn, selectedCount === 0 && styles.bulkBtnDisabled]}
+                    disabled={selectedCount === 0}
+                    activeOpacity={0.8}
+                    onPress={() => {
+                      toast({ title: 'Coming soon', message: 'Group messaging will open here.', type: 'info' });
+                    }}
+                  >
+                    <Ionicons name="chatbubbles-outline" size={16} color={selectedCount === 0 ? COLORS.textTertiary : COLORS.white} />
+                    <Text style={[styles.bulkBtnText, selectedCount === 0 && { color: COLORS.textTertiary }]}>Message</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.bulkBtn, selectedCount === 0 && styles.bulkBtnDisabled]}
+                    disabled={selectedCount === 0}
+                    activeOpacity={0.8}
+                    onPress={() => {
+                      toast({ title: 'Coming soon', message: 'Event invites will open here.', type: 'info' });
+                    }}
+                  >
+                    <Ionicons name="calendar-outline" size={16} color={selectedCount === 0 ? COLORS.textTertiary : COLORS.white} />
+                    <Text style={[styles.bulkBtnText, selectedCount === 0 && { color: COLORS.textTertiary }]}>Invite</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : null}
+          </>
+        ) : activeTab === 'requests' ? (
           <FlatList
-            key="connected"
-            data={visibleConnections}
+            key="requests"
+            data={rows}
             keyExtractor={(r) => r.profile_id}
-            ListHeaderComponent={ConnectedHeader}
-            ListEmptyComponent={ConnectedEmpty}
+            ListHeaderComponent={GatheringPromo}
+            ListEmptyComponent={Empty}
             renderItem={({ item }) => (
-              <ConnectionRow
+              <ActivityRow
                 row={item}
-                onPress={handleConnOpen}
-                onPin={handlePin}
-                selectMode={selectMode}
-                selected={!!selected[item.profile_id]}
-                onSelect={(id) => setSelected((s) => ({ ...s, [id]: !s[id] }))}
+                onAccept={handleAccept}
+                onDismiss={handleDismiss}
+                onOpen={handleOpen}
+                onMessage={openChatWith}
+                busy={busyProfileId === item.profile_id}
               />
             )}
-            contentContainerStyle={[styles.list, selectMode && { paddingBottom: 140 }]}
+            contentContainerStyle={styles.list}
             ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
             showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
             refreshControl={
               <RefreshControl
-                refreshing={connRefreshing}
-                onRefresh={() => loadConnections({ isRefresh: true })}
+                refreshing={refreshing}
+                onRefresh={() => load({ isRefresh: true })}
                 tintColor={COLORS.textTertiary}
               />
             }
           />
-          {/* Bulk action bar — shown when in select mode */}
-          {selectMode ? (
-            <View style={styles.bulkBar}>
-              <Text style={styles.bulkCount}>
-                {selectedCount > 0 ? `${selectedCount} selected` : 'Tap to select'}
-              </Text>
-              <View style={styles.bulkActions}>
-                <TouchableOpacity
-                  style={[styles.bulkBtn, selectedCount === 0 && styles.bulkBtnDisabled]}
-                  disabled={selectedCount === 0}
-                  activeOpacity={0.8}
-                  onPress={() => {
-                    const ids = Object.keys(selected).filter((k) => selected[k]);
-                    // TODO: open group message compose with selected ids
-                    toast({ title: 'Coming soon', message: 'Group messaging will open here.', type: 'info' });
-                  }}
-                >
-                  <Ionicons name="chatbubbles-outline" size={16} color={selectedCount === 0 ? COLORS.textTertiary : COLORS.white} />
-                  <Text style={[styles.bulkBtnText, selectedCount === 0 && { color: COLORS.textTertiary }]}>Message</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.bulkBtn, selectedCount === 0 && styles.bulkBtnDisabled]}
-                  disabled={selectedCount === 0}
-                  activeOpacity={0.8}
-                  onPress={() => {
-                    toast({ title: 'Coming soon', message: 'Event invites will open here.', type: 'info' });
-                  }}
-                >
-                  <Ionicons name="calendar-outline" size={16} color={selectedCount === 0 ? COLORS.textTertiary : COLORS.white} />
-                  <Text style={[styles.bulkBtnText, selectedCount === 0 && { color: COLORS.textTertiary }]}>Invite</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ) : null}
-        </>
-      ) : activeTab === 'requests' ? (
-        <FlatList
-          key="requests"
-          data={rows}
-          keyExtractor={(r) => r.profile_id}
-          ListHeaderComponent={RequestsHeader}
-          ListEmptyComponent={Empty}
-          renderItem={({ item }) => (
-            <ActivityRow
-              row={item}
-              onAccept={handleAccept}
-              onDismiss={handleDismiss}
-              onOpen={handleOpen}
-              onMessage={openChatWith}
-              busy={busyProfileId === item.profile_id}
-            />
-          )}
-          contentContainerStyle={styles.list}
-          ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={() => load({ isRefresh: true })}
-              tintColor={COLORS.textTertiary}
-            />
-          }
-        />
-      ) : (
-        /* ── Events tab ── */
-        <FlatList
-          key="events"
-          data={events}
-          keyExtractor={(ev) => ev.event_id}
-          ListHeaderComponent={EventsHeader}
-          ListEmptyComponent={EventsEmpty}
-          renderItem={renderEventItem}
-          contentContainerStyle={styles.list}
-          ItemSeparatorComponent={Separator}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={() => load({ isRefresh: true })}
-              tintColor={COLORS.textTertiary}
-            />
-          }
-        />
-      )}
+        ) : (
+          <FlatList
+            key="events"
+            data={events}
+            keyExtractor={(ev) => ev.event_id}
+            ListHeaderComponent={GatheringPromo}
+            ListEmptyComponent={EventsEmpty}
+            renderItem={renderEventItem}
+            contentContainerStyle={styles.list}
+            ItemSeparatorComponent={Separator}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={() => load({ isRefresh: true })}
+                tintColor={COLORS.textTertiary}
+              />
+            }
+          />
+        )}
 
-      {/* Dropdown portal — always on top of everything */}
-      {DropdownPortal}
+        {/* Dropdown portal — always on top of everything */}
+        {DropdownPortal}
       </View>
     </SafeAreaView>
   );
