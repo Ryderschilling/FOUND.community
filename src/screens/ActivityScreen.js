@@ -292,6 +292,7 @@ export default function ActivityScreen({ navigation }) {
   const [activeFilters, setActiveFilters] = useState({ connectLater: false, myChurch: false, interests: null, isNew: false });
   const [dropdownAnchor, setDropdownAnchor] = useState({ top: 0, left: 0 });
   const [myChurchId, setMyChurchId] = useState(null);
+  const [searchOpen, setSearchOpen] = useState(false);
   const interestsRef  = useRef(null);
   const containerRef  = useRef(null);
 
@@ -645,7 +646,7 @@ export default function ActivityScreen({ navigation }) {
           <Text style={styles.headerMeta}>Your Inbox</Text>
           <Wordmark size="md" label="FOUND" />
         </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
           {activeTab === 'requests' && rows.length > 0 ? (
             <TouchableOpacity
               style={styles.markAllBtn}
@@ -656,6 +657,29 @@ export default function ActivityScreen({ navigation }) {
               {markingAll
                 ? <ActivityIndicator size="small" color={COLORS.textSecondary} />
                 : <Text style={styles.markAllText}>Mark all read</Text>}
+            </TouchableOpacity>
+          ) : null}
+          {activeTab === 'connected' ? (
+            <TouchableOpacity
+              onPress={() => {
+                if (searchOpen) {
+                  setSearchOpen(false);
+                  setConnSearch('');
+                  setActiveFilters({ connectLater: false, myChurch: false, interests: null, isNew: false });
+                  setOpenDropdown(null);
+                } else {
+                  setSearchOpen(true);
+                }
+              }}
+              hitSlop={10}
+              activeOpacity={0.7}
+              style={styles.searchIconBtn}
+            >
+              <Ionicons
+                name={searchOpen ? 'close' : 'search'}
+                size={20}
+                color={searchOpen ? COLORS.text : COLORS.textSecondary}
+              />
             </TouchableOpacity>
           ) : null}
         </View>
@@ -693,7 +717,8 @@ export default function ActivityScreen({ navigation }) {
       </View>
 
     </View>
-  ), [activeTab, connections.length, rows.length, events.length, markingAll, handleMarkAllRead]);
+  ), [activeTab, connections.length, rows.length, events.length, markingAll, handleMarkAllRead,
+      searchOpen, setSearchOpen, setConnSearch, setActiveFilters, setOpenDropdown]);
 
   const Empty = () => {
     if (loading) {
@@ -844,9 +869,8 @@ export default function ActivityScreen({ navigation }) {
 
       {activeTab === 'connected' ? (
         <>
-          {/* Search + filter rendered outside FlatList so TextInput stays mounted
-              across re-renders and never drops keyboard focus on each keystroke. */}
-          <View style={styles.connControls}>
+          {/* Search + filter — only visible when search is open (toggled by header icon) */}
+          {searchOpen ? <View style={styles.connControls}>
             {/* Search + Select toggle row */}
             <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
               <View style={[styles.connSearchBox, { flex: 1 }]}>
@@ -860,6 +884,7 @@ export default function ActivityScreen({ navigation }) {
                   returnKeyType="search"
                   autoCapitalize="none"
                   autoCorrect={false}
+                  autoFocus
                 />
                 {connSearch.length > 0 ? (
                   <TouchableOpacity onPress={() => setConnSearch('')} hitSlop={8}>
@@ -943,7 +968,7 @@ export default function ActivityScreen({ navigation }) {
                 </TouchableOpacity>
               ) : null}
             </View>
-          </View>
+          </View> : null}
 
           <FlatList
             key="connected"
@@ -1080,6 +1105,13 @@ const styles = StyleSheet.create({
     paddingBottom: 4,
     minWidth: 40,
     alignItems: 'flex-end',
+  },
+  searchIconBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   markAllText: {
     fontFamily: FONT.semiBold,

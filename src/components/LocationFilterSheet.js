@@ -134,7 +134,7 @@ export default function LocationFilterSheet({
     onApply?.({ mode: 'anywhere', radiusMi });
   }
 
-  const radiusDisabled = mode !== 'self';
+  const radiusDisabled = mode === 'anywhere';
 
   return (
     <Modal
@@ -209,7 +209,7 @@ export default function LocationFilterSheet({
             </View>
           ) : null}
 
-          {/* Radius picker — applies to Near Me only */}
+          {/* Radius picker — applies to Near Me and Search Location */}
           <View style={styles.radiusBlock}>
             <Text style={styles.radiusLabel}>Radius</Text>
             <View style={styles.radiusRow}>

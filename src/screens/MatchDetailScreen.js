@@ -1084,24 +1084,6 @@ export default function MatchDetailScreen({ route, navigation }) {
         </View>
       </ScrollView>
 
-      {/* ── Pending bump — nudge above dock ─────────────────────────────── */}
-      {ctaState === 'pending' ? (
-        <View style={styles.bumpRow}>
-          <TouchableOpacity
-            onPress={handleBump}
-            disabled={bumpSending || bumpSent}
-            activeOpacity={0.7}
-            style={styles.bumpBtn}
-          >
-            {bumpSending ? (
-              <ActivityIndicator size="small" color={COLORS.textSecondary} />
-            ) : (
-              <Text style={[styles.bumpText, bumpSent && styles.bumpTextSent]}>
-                {bumpSent ? '✓ Reminder sent' : 'Send email reminder'}
-              </Text>
-            )}
-          </TouchableOpacity>
-        </View>
       ) : null}
 
       {/* ── Sticky bottom dock ───────────────────────────────────────────── */}
