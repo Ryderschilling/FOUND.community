@@ -217,6 +217,26 @@ export async function deleteGroupPost(postId, photoUrl) {
 }
 
 /**
+ * Pin a post. Owner-only; server enforces a 3-post max per group.
+ * @returns {Promise<{ error: Error|null }>}
+ */
+export async function pinGroupPost(postId) {
+  if (!postId) return { error: new Error('Missing post id') };
+  const { error } = await supabase.rpc('pin_group_post', { p_post: postId });
+  return { error: error ?? null };
+}
+
+/**
+ * Unpin a post. Owner-only.
+ * @returns {Promise<{ error: Error|null }>}
+ */
+export async function unpinGroupPost(postId) {
+  if (!postId) return { error: new Error('Missing post id') };
+  const { error } = await supabase.rpc('unpin_group_post', { p_post: postId });
+  return { error: error ?? null };
+}
+
+/**
  * Bulk-delete every post-photo storage object for a group. Call before
  * delete_group so the bucket isn't left with orphaned files (the cascade
  * only clears the group_posts rows, not storage).

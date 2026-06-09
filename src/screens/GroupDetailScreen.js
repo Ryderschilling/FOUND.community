@@ -58,6 +58,8 @@ import {
   createGroupPost,
   deleteGroupPost,
   updateGroupPost,
+  pinGroupPost,
+  unpinGroupPost,
   pickGroupPostImage,
   uploadGroupPostPhoto,
   purgeGroupPostPhotoStorage,
@@ -374,6 +376,25 @@ export default function GroupDetailScreen({ route, navigation }) {
     setPosts((prev) => prev.map((p) => p.id === postId ? { ...p, body: newBody.trim() } : p));
     setEditingPost(null);
     return true;
+  }
+
+  async function handlePinPost(post) {
+    if (post.is_pinned) {
+      const { error } = await unpinGroupPost(post.id);
+      if (error) { toast({ title: 'Could not unpin', message: error.message, type: 'error' }); return; }
+      setPosts((prev) => prev.map((p) => p.id === post.id ? { ...p, is_pinned: false, pinned_at: null } : p));
+    } else {
+      const { error } = await pinGroupPost(post.id);
+      if (error) { toast({ title: 'Could not pin', message: error.message, type: 'error' }); return; }
+      setPosts((prev) => {
+        const updated = prev.map((p) => p.id === post.id ? { ...p, is_pinned: true, pinned_at: new Date().toISOString() } : p);
+        // Re-sort: pinned first (by pinned_at asc), then unpinned by created_at desc
+        return [
+          ...updated.filter((p) => p.is_pinned).sort((a, b) => new Date(a.pinned_at) - new Date(b.pinned_at)),
+          ...updated.filter((p) => !p.is_pinned),
+        ];
+      });
+    }
   }
 
   async function handleDeleteGroup() {
@@ -956,6 +977,8 @@ export default function GroupDetailScreen({ route, navigation }) {
                     onViewPhoto={(url) => setLightbox({ url })}
                     canReport={post.author_id !== user?.id}
                     onReport={() => setReportSheet({ visible: true, targetKind: 'group_post', targetId: post.id })}
+                    canPin={isOwner}
+                    onPin={handlePinPost}
                   />
                 ))}
               </View>
@@ -1464,10 +1487,16 @@ function PhotoLightbox({ photo, onClose }) {
 }
 
 // ─── Post card ────────────────────────────────────────────────────────────
-function PostCard({ post, onDelete, onEdit, onViewPhoto, canReport, onReport }) {
+function PostCard({ post, onDelete, onEdit, onViewPhoto, canReport, onReport, canPin, onPin }) {
   const isStaff = post.author_role === 'owner' || post.author_role === 'admin';
   return (
-    <View style={styles.postCard}>
+    <View style={[styles.postCard, post.is_pinned && styles.postCardPinned]}>
+      {post.is_pinned ? (
+        <View style={styles.pinnedBadge}>
+          <Ionicons name="bookmark" size={11} color={COLORS.brand} />
+          <Text style={styles.pinnedBadgeText}>Pinned</Text>
+        </View>
+      ) : null}
       <View style={styles.postHead}>
         <Avatar
           uri={post.author_avatar || undefined}
@@ -1497,8 +1526,16 @@ function PostCard({ post, onDelete, onEdit, onViewPhoto, canReport, onReport }) 
           </View>
           <Text style={styles.postTime}>{timeAgo(post.created_at)}</Text>
         </View>
-        {post.can_delete || post.can_edit || canReport ? (
-          <PostActionsMenu post={post} onDelete={onDelete} onEdit={onEdit} canReport={canReport} onReport={onReport} />
+        {post.can_delete || post.can_edit || canReport || canPin ? (
+          <PostActionsMenu
+            post={post}
+            onDelete={onDelete}
+            onEdit={onEdit}
+            canReport={canReport}
+            onReport={onReport}
+            canPin={canPin}
+            onPin={onPin}
+          />
         ) : null}
       </View>
 
@@ -1873,7 +1910,7 @@ function MemberActionsMenu({ member, canManage, canRemove, canBlockOrReport, onS
 }
 
 // ─── Post actions menu ─────────────────────────────────────────────────────
-function PostActionsMenu({ post, onDelete, onEdit, canReport, onReport }) {
+function PostActionsMenu({ post, onDelete, onEdit, canReport, onReport, canPin, onPin }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
@@ -1892,6 +1929,26 @@ function PostActionsMenu({ post, onDelete, onEdit, canReport, onReport }) {
           <TouchableOpacity activeOpacity={1} style={StyleSheet.absoluteFill} onPress={() => setMenuOpen(false)} />
           <View style={modalStyles.sheet}>
             <View style={modalStyles.handle} />
+
+            {canPin ? (
+              <TouchableOpacity
+                style={modalStyles.actionRow}
+                activeOpacity={0.7}
+                onPress={() => {
+                  setMenuOpen(false);
+                  onPin(post);
+                }}
+              >
+                <Ionicons
+                  name={post.is_pinned ? 'bookmark' : 'bookmark-outline'}
+                  size={20}
+                  color={COLORS.text}
+                />
+                <Text style={modalStyles.actionText}>
+                  {post.is_pinned ? 'Unpin post' : 'Pin post'}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
 
             {post.can_edit ? (
               <TouchableOpacity
@@ -1977,10 +2034,11 @@ function EditPostModal({ post, onClose, onSave }) {
             </TouchableOpacity>
           </View>
           <TextInput
-            style={[modalStyles.input, modalStyles.textarea, { marginBottom: SPACING.md }]}
+            style={[modalStyles.input, modalStyles.textarea, { marginBottom: SPACING.md, maxHeight: 220 }]}
             value={body}
             onChangeText={setBody}
             multiline
+            scrollEnabled
             maxLength={MAX_POST_BODY}
             placeholder="What's on your mind?"
             placeholderTextColor={COLORS.textTertiary}
@@ -2300,6 +2358,23 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
     padding: SPACING.md,
+  },
+  postCardPinned: {
+    borderColor: COLORS.brand,
+    borderWidth: 1.5,
+  },
+  pinnedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 6,
+  },
+  pinnedBadgeText: {
+    fontFamily: FONT.medium,
+    fontSize: 11,
+    color: COLORS.brand,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
   },
   postHead: {
     flexDirection: 'row',
