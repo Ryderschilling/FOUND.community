@@ -18,8 +18,8 @@
 // =============================================================================
 
 (function () {
-  const SUPABASE_URL  = 'https://froqanfagdkjmfrmpfye.supabase.co';
-  const SUPABASE_ANON = 'sb_publishable_TWr-nQ9gwyvuxUsdtR49hA_dkk2TNLO';
+  const SUPABASE_URL  = 'https://cspsglmopchuqkvdfvwc.supabase.co';
+  const SUPABASE_ANON = 'sb_publishable_9i75dUct6hVFJK-UlY1orA_E8cyKvdH';
 
   // Reuse if index.html already initialized one
   if (!window._supabase) {

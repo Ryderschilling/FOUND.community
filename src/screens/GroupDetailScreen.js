@@ -655,10 +655,19 @@ export default function GroupDetailScreen({ route, navigation }) {
           {/* Meeting address — the RPC only returns this to members, so it
               naturally stays hidden from people just previewing the group. */}
           {detail?.address ? (
-            <View style={styles.metaRow}>
-              <Ionicons name="navigate-outline" size={13} color={COLORS.textSecondary} />
-              <Text style={styles.metaText}>{detail.address}</Text>
-            </View>
+            <TouchableOpacity
+              style={styles.metaRow}
+              activeOpacity={0.7}
+              onPress={() => {
+                const encoded = encodeURIComponent(detail.address);
+                Linking.openURL(`maps://?q=${encoded}`).catch(() =>
+                  Linking.openURL(`https://maps.google.com/?q=${encoded}`)
+                );
+              }}
+            >
+              <Ionicons name="navigate-outline" size={13} color={COLORS.accent} />
+              <Text style={[styles.metaText, { color: COLORS.accent, textDecorationLine: 'underline' }]}>{detail.address}</Text>
+            </TouchableOpacity>
           ) : null}
 
           {detail?.website_url ? (
