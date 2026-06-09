@@ -5,10 +5,9 @@
  * Buckets: profile-photos, group-post-photos
  *
  * Usage:
- *   OLD_SERVICE_ROLE_KEY=xxx node scripts/migrate_storage.js
+ *   OLD_SERVICE_ROLE_KEY=xxx NEW_SERVICE_ROLE_KEY=xxx node scripts/migrate_storage.js
  *
- * New project credentials are hardcoded (already set up).
- * Old project URL is hardcoded. Only old service role key needed as env var.
+ * Both keys required as env vars. Never hardcode service role keys.
  */
 
 const { createClient } = require('@supabase/supabase-js');
@@ -17,13 +16,19 @@ const OLD_URL = 'https://froqanfagdkjmfrmpfye.supabase.co';
 const OLD_KEY = process.env.OLD_SERVICE_ROLE_KEY;
 
 const NEW_URL = 'https://cspsglmopchuqkvdfvwc.supabase.co';
-const NEW_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNzcHNnbG1vcGNodXFrdmRmdndjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MTAyMjQyNCwiZXhwIjoyMDk2NTk4NDI0fQ.XKaY1sbNQzXFWMOtp8ptY5lzFqnl72H199MgDN9dO_A';
+const NEW_KEY = process.env.NEW_SERVICE_ROLE_KEY;
 
 const BUCKETS = ['profile-photos', 'group-post-photos', 'avatars', 'group-photos'];
 
 if (!OLD_KEY) {
   console.error('ERROR: Set OLD_SERVICE_ROLE_KEY env var before running.');
   console.error('Find it in: old Supabase project → Project Settings → API → service_role key');
+  process.exit(1);
+}
+
+if (!NEW_KEY) {
+  console.error('ERROR: Set NEW_SERVICE_ROLE_KEY env var before running.');
+  console.error('Find it in: new Supabase project → Project Settings → API → service_role key');
   process.exit(1);
 }
 
