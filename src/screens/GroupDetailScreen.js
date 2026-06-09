@@ -57,6 +57,7 @@ import {
   fetchGroupPosts,
   createGroupPost,
   deleteGroupPost,
+  updateGroupPost,
   pickGroupPostImage,
   uploadGroupPostPhoto,
   purgeGroupPostPhotoStorage,
@@ -126,6 +127,7 @@ export default function GroupDetailScreen({ route, navigation }) {
   const [posting, setPosting]             = useState(false);
 
   const [editOpen, setEditOpen]               = useState(false);
+  const [editingPost, setEditingPost]         = useState(null); // post being edited
   const [manageTarget, setManageTarget]       = useState(null); // member row
   const [lightbox, setLightbox]               = useState(null);
   const [membersModalOpen, setMembersModalOpen] = useState(false);
@@ -363,6 +365,15 @@ export default function GroupDetailScreen({ route, navigation }) {
     const { error } = await deleteGroupPost(post.id, post.photo_url);
     if (error) { toast({ title: 'Could not delete', message: error.message, type: 'error' }); return; }
     await refreshPosts();
+  }
+
+  async function handleSavePostEdit(postId, newBody) {
+    const { error } = await updateGroupPost(postId, newBody);
+    if (error) { toast({ title: 'Could not save', message: error.message, type: 'error' }); return false; }
+    // Update locally so the feed reflects the edit without a full reload
+    setPosts((prev) => prev.map((p) => p.id === postId ? { ...p, body: newBody.trim() } : p));
+    setEditingPost(null);
+    return true;
   }
 
   async function handleDeleteGroup() {
@@ -932,6 +943,7 @@ export default function GroupDetailScreen({ route, navigation }) {
                     key={post.id}
                     post={post}
                     onDelete={handleDeletePost}
+                    onEdit={(p) => setEditingPost(p)}
                     onViewPhoto={(url) => setLightbox({ url })}
                     canReport={post.author_id !== user?.id}
                     onReport={() => setReportSheet({ visible: true, targetKind: 'group_post', targetId: post.id })}
@@ -1233,6 +1245,12 @@ export default function GroupDetailScreen({ route, navigation }) {
         onDelete={handleDeleteGroup}
       />
 
+      <EditPostModal
+        post={editingPost}
+        onClose={() => setEditingPost(null)}
+        onSave={handleSavePostEdit}
+      />
+
       {/* Report sheet */}
       <ReportSheet
         visible={reportSheet.visible}
@@ -1437,7 +1455,7 @@ function PhotoLightbox({ photo, onClose }) {
 }
 
 // ─── Post card ────────────────────────────────────────────────────────────
-function PostCard({ post, onDelete, onViewPhoto, canReport, onReport }) {
+function PostCard({ post, onDelete, onEdit, onViewPhoto, canReport, onReport }) {
   const isStaff = post.author_role === 'owner' || post.author_role === 'admin';
   return (
     <View style={styles.postCard}>
@@ -1470,8 +1488,8 @@ function PostCard({ post, onDelete, onViewPhoto, canReport, onReport }) {
           </View>
           <Text style={styles.postTime}>{timeAgo(post.created_at)}</Text>
         </View>
-        {post.can_delete || canReport ? (
-          <PostActionsMenu post={post} onDelete={onDelete} canReport={canReport} onReport={onReport} />
+        {post.can_delete || post.can_edit || canReport ? (
+          <PostActionsMenu post={post} onDelete={onDelete} onEdit={onEdit} canReport={canReport} onReport={onReport} />
         ) : null}
       </View>
 
@@ -1846,7 +1864,7 @@ function MemberActionsMenu({ member, canManage, canRemove, canBlockOrReport, onS
 }
 
 // ─── Post actions menu ─────────────────────────────────────────────────────
-function PostActionsMenu({ post, onDelete, canReport, onReport }) {
+function PostActionsMenu({ post, onDelete, onEdit, canReport, onReport }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
@@ -1865,6 +1883,20 @@ function PostActionsMenu({ post, onDelete, canReport, onReport }) {
           <TouchableOpacity activeOpacity={1} style={StyleSheet.absoluteFill} onPress={() => setMenuOpen(false)} />
           <View style={modalStyles.sheet}>
             <View style={modalStyles.handle} />
+
+            {post.can_edit ? (
+              <TouchableOpacity
+                style={modalStyles.actionRow}
+                activeOpacity={0.7}
+                onPress={() => {
+                  setMenuOpen(false);
+                  onEdit(post);
+                }}
+              >
+                <Ionicons name="pencil-outline" size={20} color={COLORS.text} />
+                <Text style={modalStyles.actionText}>Edit post</Text>
+              </TouchableOpacity>
+            ) : null}
 
             {post.can_delete ? (
               <TouchableOpacity
@@ -1901,6 +1933,59 @@ function PostActionsMenu({ post, onDelete, canReport, onReport }) {
         </View>
       </Modal>
     </>
+  );
+}
+
+// ─── Edit post modal ───────────────────────────────────────────────────────
+function EditPostModal({ post, onClose, onSave }) {
+  const [body, setBody] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (post) setBody(post.body ?? '');
+  }, [post]);
+
+  async function handleSave() {
+    if (!body.trim()) return;
+    setSaving(true);
+    const ok = await onSave(post.id, body);
+    setSaving(false);
+    if (ok) onClose();
+  }
+
+  return (
+    <Modal visible={!!post} animationType="slide" transparent onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        style={modalStyles.backdrop}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <View style={modalStyles.editSheet}>
+          <View style={modalStyles.handle} />
+          <View style={modalStyles.headerRow}>
+            <Text style={modalStyles.title}>Edit Post</Text>
+            <TouchableOpacity onPress={onClose} hitSlop={10}>
+              <Ionicons name="close" size={22} color={COLORS.textSecondary} />
+            </TouchableOpacity>
+          </View>
+          <TextInput
+            style={[modalStyles.input, modalStyles.textarea, { marginBottom: SPACING.md }]}
+            value={body}
+            onChangeText={setBody}
+            multiline
+            maxLength={MAX_POST_BODY}
+            placeholder="What's on your mind?"
+            placeholderTextColor={COLORS.textTertiary}
+            autoFocus
+          />
+          <PrimaryButton
+            label={saving ? 'Saving…' : 'Save Changes'}
+            onPress={handleSave}
+            disabled={saving || !body.trim()}
+            loading={saving}
+          />
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
   );
 }
 

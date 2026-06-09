@@ -24,7 +24,7 @@ import { decode } from 'base64-arraybuffer';
 import { supabase } from './supabase';
 
 const BUCKET = 'profile-photos';
-export const MAX_PHOTOS = 9; // matches the 3x3 grid in ProfileScreen
+export const MAX_PHOTOS = 3; // 3-photo cap (reduced from 9 to control storage/data)
 
 // Simple uuid v4 generator — avoids pulling in a dep just for this.
 // Good enough for storage path collision avoidance.

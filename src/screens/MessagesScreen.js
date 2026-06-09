@@ -75,8 +75,10 @@ function MessageRow({ item, onPress }) {
         )}
       </View>
       <View style={styles.info}>
-        {/* Bold name for direct threads — these are always connected people */}
-        <Text style={[styles.name, !isGroup && styles.nameConnected]}>{name}</Text>
+        <View style={styles.nameRow}>
+          <Text style={[styles.name, !isGroup && styles.nameConnected]} numberOfLines={1}>{name}</Text>
+          {isGroup ? <Text style={styles.groupLabel}>(group)</Text> : null}
+        </View>
         <Text style={styles.preview} numberOfLines={1}>{preview}</Text>
       </View>
       <View style={styles.right}>
@@ -100,6 +102,8 @@ export default function MessagesScreen({ navigation }) {
   const [refreshing,   setRefreshing]   = useState(false);
   const [composeOpen,  setComposeOpen]  = useState(false);
   const [opening,      setOpening]      = useState(false);
+  const [activeTab,    setActiveTab]    = useState('all');   // 'all' | 'new' | 'groups'
+  const [hideGroups,   setHideGroups]   = useState(false);
 
   const load = useCallback(async ({ isRefresh } = {}) => {
     if (isRefresh) setRefreshing(true); else setLoading(true);
@@ -172,6 +176,21 @@ export default function MessagesScreen({ navigation }) {
     });
   }
 
+  // Derive visible threads based on active tab + hide groups toggle
+  const visibleThreads = threads.filter((t) => {
+    const isGroup = t.kind === 'group';
+    if (activeTab === 'groups') return isGroup;
+    if (hideGroups && isGroup) return false;
+    if (activeTab === 'new') return (t.unread_count ?? 0) > 0;
+    return true; // 'all'
+  });
+
+  const TABS = [
+    { key: 'all',    label: 'All' },
+    { key: 'new',    label: 'New' },
+    { key: 'groups', label: 'Groups' },
+  ];
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
@@ -181,9 +200,44 @@ export default function MessagesScreen({ navigation }) {
           <Text style={styles.headerMeta}>Inbox</Text>
           <Wordmark size="md" label="Messages" />
         </View>
-        <IconButton onPress={() => setComposeOpen(true)}>
-          <Ionicons name="create-outline" size={18} color={COLORS.text} />
-        </IconButton>
+        <View style={styles.headerActions}>
+          {/* Hide/show groups toggle — only relevant outside the Groups tab */}
+          {activeTab !== 'groups' ? (
+            <TouchableOpacity
+              style={[styles.hideGroupsBtn, hideGroups && styles.hideGroupsBtnActive]}
+              onPress={() => setHideGroups((v) => !v)}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name={hideGroups ? 'people' : 'people-outline'}
+                size={14}
+                color={hideGroups ? COLORS.accent : COLORS.textSecondary}
+              />
+              <Text style={[styles.hideGroupsText, hideGroups && styles.hideGroupsTextActive]}>
+                {hideGroups ? 'Show Groups' : 'Hide Groups'}
+              </Text>
+            </TouchableOpacity>
+          ) : null}
+          <IconButton onPress={() => setComposeOpen(true)}>
+            <Ionicons name="create-outline" size={18} color={COLORS.text} />
+          </IconButton>
+        </View>
+      </View>
+
+      {/* Segment control — matches FOUND page Connected/Requests/Events */}
+      <View style={styles.segmentWrap}>
+        {TABS.map((tab) => (
+          <TouchableOpacity
+            key={tab.key}
+            style={[styles.segBtn, activeTab === tab.key && styles.segBtnActive]}
+            onPress={() => setActiveTab(tab.key)}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.segLabel, activeTab === tab.key && styles.segLabelActive]}>
+              {tab.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
       </View>
 
       <ComposeModal
@@ -199,7 +253,7 @@ export default function MessagesScreen({ navigation }) {
         </View>
       ) : (
         <FlatList
-          data={threads}
+          data={visibleThreads}
           keyExtractor={(item) => item.thread_id}
           renderItem={({ item }) => (
             <MessageRow item={item} onPress={() => openThread(item)} />
@@ -210,9 +264,15 @@ export default function MessagesScreen({ navigation }) {
           ListEmptyComponent={
             <View style={styles.emptyWrap}>
               <Ionicons name="chatbubbles-outline" size={28} color={COLORS.textTertiary} />
-              <Text style={styles.emptyTitle}>No conversations yet</Text>
+              <Text style={styles.emptyTitle}>
+                {activeTab === 'new' ? 'No unread messages' : activeTab === 'groups' ? 'No group chats yet' : 'No conversations yet'}
+              </Text>
               <Text style={styles.emptyBody}>
-                Tap the pencil icon above to start a conversation with someone you're connected with.
+                {activeTab === 'new'
+                  ? 'You\'re all caught up.'
+                  : activeTab === 'groups'
+                  ? 'Join a group to start chatting with members.'
+                  : 'Tap the pencil icon above to start a conversation with someone you\'re connected with.'}
               </Text>
             </View>
           }
@@ -485,12 +545,62 @@ const styles = StyleSheet.create({
 
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: SPACING.lg, paddingTop: SPACING.lg, paddingBottom: SPACING.lg,
+    paddingHorizontal: SPACING.lg, paddingTop: SPACING.lg, paddingBottom: SPACING.sm,
   },
   headerMeta: {
     fontFamily: FONT.mono, fontSize: 9, letterSpacing: 1.6,
     textTransform: 'uppercase', color: COLORS.textTertiary, marginBottom: 3,
   },
+  headerActions: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+  },
+  hideGroupsBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 10, paddingVertical: 6,
+    borderRadius: RADIUS.full, borderWidth: 1, borderColor: COLORS.border,
+    backgroundColor: COLORS.surface,
+  },
+  hideGroupsBtnActive: {
+    borderColor: COLORS.accent, backgroundColor: COLORS.sageBg ?? COLORS.surface,
+  },
+  hideGroupsText: {
+    fontFamily: FONT.semiBold, fontSize: 11, color: COLORS.textSecondary,
+  },
+  hideGroupsTextActive: { color: COLORS.accent },
+
+  // Segment control — matches FOUND page style exactly
+  segmentWrap: {
+    flexDirection: 'row',
+    marginHorizontal: SPACING.sm,
+    marginBottom: SPACING.md,
+    backgroundColor: COLORS.surfaceAlt,
+    borderRadius: RADIUS.full,
+    padding: 3,
+  },
+  segBtn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    borderRadius: RADIUS.full,
+  },
+  segBtnActive: {
+    backgroundColor: COLORS.white,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  segLabel: {
+    fontFamily: FONT.semiBold,
+    fontSize: 13,
+    color: COLORS.textSecondary,
+  },
+  segLabelActive: {
+    color: COLORS.text,
+  },
+
   title: { fontFamily: FONT.serifItalic, fontSize: 30, color: COLORS.text, letterSpacing: -0.3 },
 
   row: {
@@ -504,8 +614,10 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   info: { flex: 1, gap: 3, minWidth: 0 },
-  name:          { fontFamily: FONT.semiBold, fontSize: 15, color: COLORS.text },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 5, flexShrink: 1 },
+  name:          { fontFamily: FONT.semiBold, fontSize: 15, color: COLORS.text, flexShrink: 1 },
   nameConnected: { fontFamily: FONT.bold,     fontSize: 15, color: COLORS.text },
+  groupLabel:    { fontFamily: FONT.regular,  fontSize: 12, color: COLORS.textTertiary, flexShrink: 0 },
   preview:       { fontFamily: FONT.regular,  fontSize: 13, color: COLORS.textSecondary },
   right: { alignItems: 'flex-end', gap: 4, flexShrink: 0 },
   time:  { fontFamily: FONT.regular, fontSize: 11, color: COLORS.textTertiary },

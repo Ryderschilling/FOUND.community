@@ -185,6 +185,20 @@ export async function createGroupPost({ groupId, body = null, photoUrl = null })
 }
 
 /**
+ * Edit the body of a post. Only the original author can do this.
+ * @returns {Promise<{ error: Error|null }>}
+ */
+export async function updateGroupPost(postId, body) {
+  if (!postId) return { error: new Error('Missing post id') };
+  const trimmed = (body ?? '').trim();
+  if (!trimmed) return { error: new Error('Post body cannot be empty') };
+  const violation = checkText(trimmed, 'post');
+  if (!violation.ok) return { error: new Error(violation.message) };
+  const { error } = await supabase.rpc('update_group_post', { p_post: postId, p_body: trimmed });
+  return { error: error ?? null };
+}
+
+/**
  * Delete a post: removes the DB row (RPC, gated to author/admin) and then
  * best-effort removes the photo storage object.
  * @returns {Promise<{ error: Error|null }>}
