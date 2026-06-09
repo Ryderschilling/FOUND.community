@@ -19,7 +19,7 @@ const OLD_KEY = process.env.OLD_SERVICE_ROLE_KEY;
 const NEW_URL = 'https://cspsglmopchuqkvdfvwc.supabase.co';
 const NEW_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNzcHNnbG1vcGNodXFrdmRmdndjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MTAyMjQyNCwiZXhwIjoyMDk2NTk4NDI0fQ.XKaY1sbNQzXFWMOtp8ptY5lzFqnl72H199MgDN9dO_A';
 
-const BUCKETS = ['profile-photos', 'group-post-photos'];
+const BUCKETS = ['profile-photos', 'group-post-photos', 'avatars', 'group-photos'];
 
 if (!OLD_KEY) {
   console.error('ERROR: Set OLD_SERVICE_ROLE_KEY env var before running.');

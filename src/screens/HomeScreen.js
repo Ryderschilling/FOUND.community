@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
   Text,
@@ -139,7 +140,15 @@ function bioIsEmpty(p) {
 
 export default function HomeScreen({ navigation }) {
   const { user, profile } = useAuth();
-  const { count: notifCount } = useUnreadNotifications(user?.id, 'home');
+  const { count: notifCount, refresh: refreshNotifCount } = useUnreadNotifications(user?.id, 'home');
+
+  // Re-fetch badge count every time this screen regains focus so the bell
+  // clears reliably after the user views and dismisses the notifications feed.
+  useFocusEffect(
+    useCallback(() => {
+      refreshNotifCount();
+    }, [refreshNotifCount]),
+  );
   const insets = useSafeAreaInsets();
 
   const [activeFilter, setActiveFilter] = useState('all');
