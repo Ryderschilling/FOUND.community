@@ -20,7 +20,7 @@ import {
   SettingsNote,
 } from './SettingsKit';
 
-const CONTACT_EMAIL = 'hello@found.community';
+const CONTACT_EMAIL = 'support@found.community';
 const WEBSITE_URL   = 'https://found.community';
 const APP_VERSION   = Constants.expoConfig?.version ?? '0.1.0';
 

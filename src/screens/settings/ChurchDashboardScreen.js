@@ -22,7 +22,7 @@ import {
   SettingsNote,
 } from './SettingsKit';
 
-const CONTACT_EMAIL = 'hello@found.community';
+const CONTACT_EMAIL = 'support@found.community';
 
 async function openMailto(subject, toast) {
   const url = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(subject)}`;
