@@ -171,6 +171,9 @@ export default function HomeScreen({ navigation }) {
   // My own activity IDs — used by the "Interests" filter to surface profiles
   // who share at least one interest with me.
   const [myActivityIds, setMyActivityIds] = useState([]);
+  // Track when the activities fetch has completed so we only show the
+  // incomplete-profile nudge after we know the answer (not while loading).
+  const [myActivitiesLoaded, setMyActivitiesLoaded] = useState(false);
 
   // Incomplete-profile nudge: a dismissable modal that fires once, two minutes
   // into the session, if the user still hasn't written a bio.
@@ -284,6 +287,7 @@ export default function HomeScreen({ navigation }) {
         return;
       }
       setMyActivityIds((data ?? []).map((r) => r.activity_id).filter(Boolean));
+      if (!cancelled) setMyActivitiesLoaded(true);
     })();
     return () => { cancelled = true; };
   }, [user]);
@@ -637,6 +641,28 @@ export default function HomeScreen({ navigation }) {
         </ScrollView>
       </View>
 
+      {/* Incomplete-profile nudge — shown when the user has no interests
+          selected. People with blank profiles score 0% on everyone, so
+          this is the most impactful thing they can do. Hidden once they
+          add at least one interest via Edit Profile. */}
+      {myActivitiesLoaded && myActivityIds.length === 0 && !loading ? (
+        <TouchableOpacity
+          style={styles.profileNudge}
+          activeOpacity={0.85}
+          onPress={() => navigation?.navigate('EditProfile')}
+        >
+          <View style={styles.profileNudgeInner}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.profileNudgeTitle}>Finish your profile</Text>
+              <Text style={styles.profileNudgeBody}>
+                Add your interests and goals so people can find you and see your match score.
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={COLORS.textSecondary} />
+          </View>
+        </TouchableOpacity>
+      ) : null}
+
     </View>
   );
 
@@ -874,6 +900,34 @@ const styles = StyleSheet.create({
   // The FlatList's ListHeaderComponent
   listHeader: {
     paddingTop: SPACING.md,
+  },
+  profileNudge: {
+    marginHorizontal: SPACING.lg,
+    marginTop: SPACING.sm,
+    marginBottom: SPACING.xs,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surface ?? COLORS.white,
+    overflow: 'hidden',
+  },
+  profileNudgeInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: SPACING.md,
+    gap: SPACING.sm,
+  },
+  profileNudgeTitle: {
+    fontFamily: FONT.semiBold,
+    fontSize: 14,
+    color: COLORS.text,
+    marginBottom: 3,
+  },
+  profileNudgeBody: {
+    fontFamily: FONT.regular,
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    lineHeight: 18,
   },
   titleRow: {
     flexDirection: 'row',
