@@ -181,23 +181,19 @@ export default function ChurchPicker({
   const debounceRef = useRef(null);
   const inputRef    = useRef(null);
 
-  // ── search debounce ────────────────────────────────────────────────────────
+  // ── search: load all churches immediately, then filter as user types ─────────
   useEffect(() => {
     if (mode !== 'search') return;
     clearTimeout(debounceRef.current);
 
-    if (!query.trim()) {
-      setResults([]);
-      setSearching(false);
-      return;
-    }
-
     setSearching(true);
+    // No delay on empty query (initial load), 350ms debounce while typing
+    const delay = query.trim() ? 350 : 0;
     debounceRef.current = setTimeout(async () => {
       const { data } = await supabase.rpc('search_churches', { p_query: query.trim() });
       setResults(data ?? []);
       setSearching(false);
-    }, 350);
+    }, delay);
 
     return () => clearTimeout(debounceRef.current);
   }, [query, mode]);

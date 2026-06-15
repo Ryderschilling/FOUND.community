@@ -39,6 +39,7 @@ import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
 import { Avatar, PrimaryButton } from '../components/Atoms';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../auth/AuthContext';
+import { useProfileGate } from '../lib/useProfileGate';
 import { useConfirm } from '../components/ConfirmProvider';
 import { useToast } from '../components/ToastProvider';
 import ReportSheet from '../components/ReportSheet';
@@ -107,6 +108,7 @@ function timeAgo(iso) {
 // ─── Screen ───────────────────────────────────────────────────────────────
 export default function GroupDetailScreen({ route, navigation }) {
   const { user } = useAuth();
+  const { checkGate, ProfileGateModal } = useProfileGate(navigation);
   const confirm = useConfirm();
   const toast = useToast();
   const groupId = route?.params?.groupId ?? route?.params?.group?.id ?? null;
@@ -236,6 +238,7 @@ export default function GroupDetailScreen({ route, navigation }) {
   // ── Actions ──────────────────────────────────────────────────────────────
   async function handleJoin() {
     if (busy || !groupId) return;
+    if (!checkGate()) return;
     setBusy(true);
     const { data, error } = await supabase.rpc('join_group', { p_group: groupId });
     setBusy(false);
@@ -589,6 +592,7 @@ export default function GroupDetailScreen({ route, navigation }) {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
+      <ProfileGateModal />
 
       {/* Nav */}
       <View style={styles.nav}>

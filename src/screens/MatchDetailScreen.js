@@ -38,6 +38,7 @@ import { Avatar, Pill, SectionHeader, RuleLabel } from '../components/Atoms';
 import ScoreRing from '../components/ScoreRing';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../auth/AuthContext';
+import { useProfileGate } from '../lib/useProfileGate';
 import { fetchProfilePhotos } from '../lib/profilePhotos';
 import HighlightReelView from '../components/HighlightReelView';
 import { useConfirm } from '../components/ConfirmProvider';
@@ -47,6 +48,7 @@ import { LOVE_LANGUAGES, COMMUNITY_GOALS, SCHOOL_TYPES, DENOMINATIONS, FAMILY_VA
 
 export default function MatchDetailScreen({ route, navigation }) {
   const { user } = useAuth();
+  const { checkGate, ProfileGateModal } = useProfileGate(navigation);
   const initialMatch = route?.params?.match ?? FALLBACK_MATCH;
 
   // ── Local state ──────────────────────────────────────────────────────────
@@ -364,6 +366,7 @@ export default function MatchDetailScreen({ route, navigation }) {
   // ── Actions ──────────────────────────────────────────────────────────────
   async function handleConnect() {
     if (connected || !user || !profile.id) return;
+    if (!checkGate()) return;
     const willMatch = theirKind === 'like';
     setConnected(true);
     if (willMatch) setIsMatch(true); // optimistic: skip the Pending flash
@@ -488,6 +491,7 @@ export default function MatchDetailScreen({ route, navigation }) {
 
   async function handleOpenChat() {
     if (openingChat || !user || !profile.id) return;
+    if (!checkGate()) return;
     setOpeningChat(true);
     try {
       const { data: threadId, error } = await supabase
@@ -575,6 +579,7 @@ export default function MatchDetailScreen({ route, navigation }) {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
+      <ProfileGateModal />
 
       <View style={styles.nav}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} activeOpacity={0.7}>

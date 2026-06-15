@@ -900,6 +900,54 @@ export default function ProfileScreen({ navigation }) {
             />
           </View>
 
+          {/* ── Profile completion bar ─────────────────────────────────────
+              Shows a progress bar + checklist of missing items. Disappears
+              once the profile is 100% complete. Tapping navigates to Edit. */}
+          {(() => {
+            const items = [
+              { label: 'Profile photo',  done: !!profile.avatar_url },
+              { label: 'Your name',      done: !!profile.full_name?.trim() },
+              { label: 'City',           done: !!profile.city?.trim() },
+              { label: 'Life stage',     done: !!profile.life_stage?.id },
+              { label: 'Church',         done: !!profile.church?.id },
+              { label: '3+ interests',   done: (profile.profile_activities?.length ?? 0) >= 3 },
+              { label: 'Bio',            done: !!profile.bio?.trim() },
+            ];
+            const done  = items.filter(i => i.done).length;
+            const total = items.length;
+            const pct   = Math.round((done / total) * 100);
+            if (pct === 100) return null; // fully complete — hide the bar
+
+            const missing = items.filter(i => !i.done);
+            return (
+              <TouchableOpacity
+                style={styles.completionCard}
+                activeOpacity={0.88}
+                onPress={handleEditProfile}
+              >
+                <View style={styles.completionHeader}>
+                  <Text style={styles.completionTitle}>Profile {pct}% complete</Text>
+                  <Text style={styles.completionCta}>Finish →</Text>
+                </View>
+
+                {/* Progress bar */}
+                <View style={styles.completionTrack}>
+                  <View style={[styles.completionFill, { width: `${pct}%` }]} />
+                </View>
+
+                {/* Missing items */}
+                <View style={styles.completionItems}>
+                  {missing.map((item) => (
+                    <View key={item.label} style={styles.completionItem}>
+                      <View style={styles.completionDot} />
+                      <Text style={styles.completionItemText}>{item.label}</Text>
+                    </View>
+                  ))}
+                </View>
+              </TouchableOpacity>
+            );
+          })()}
+
           {/* Bio */}
           <View style={styles.section}>
             <SectionHeader label="About" />
@@ -1553,5 +1601,72 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.15)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+
+  // ── Profile completion bar ──────────────────────────────────────
+  completionCard: {
+    marginHorizontal: SPACING.lg,
+    marginTop: SPACING.sm,
+    marginBottom: SPACING.md,
+    backgroundColor: COLORS.surfaceAlt,
+    borderRadius: 16,
+    padding: SPACING.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  completionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  completionTitle: {
+    fontFamily: FONT.semiBold,
+    fontSize: 14,
+    color: COLORS.text,
+  },
+  completionCta: {
+    fontFamily: FONT.semiBold,
+    fontSize: 13,
+    color: COLORS.textSecondary,
+  },
+  completionTrack: {
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: COLORS.border,
+    overflow: 'hidden',
+    marginBottom: 14,
+  },
+  completionFill: {
+    height: '100%',
+    borderRadius: 3,
+    backgroundColor: COLORS.text,
+  },
+  completionItems: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  completionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: COLORS.white,
+    borderRadius: 99,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  completionDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: COLORS.clay ?? '#C4A882',
+  },
+  completionItemText: {
+    fontFamily: FONT.regular,
+    fontSize: 12,
+    color: COLORS.text,
   },
 });

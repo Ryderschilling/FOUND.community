@@ -56,7 +56,6 @@ export default function SignUpScreen({ navigation }) {
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy]         = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
-  const [infoMsg, setInfoMsg]   = useState(null);
 
   const debounceRef    = useRef(null);
   const skipFetchRef   = useRef(false); // true while/after a suggestion is selected
@@ -170,7 +169,6 @@ export default function SignUpScreen({ navigation }) {
 
   async function handleSignUp() {
     setErrorMsg(null);
-    setInfoMsg(null);
 
     const name      = fullName.trim();
     const emailVal  = email.trim().toLowerCase();
@@ -231,7 +229,7 @@ export default function SignUpScreen({ navigation }) {
           return st ? `${c}, ${st}` : c;
         });
 
-      const { session } = await signUpWithPassword({
+      await signUpWithPassword({
         email:         emailVal,
         password,
         fullName:      name,
@@ -244,12 +242,9 @@ export default function SignUpScreen({ navigation }) {
         lat,
         lng,
       });
-      // If "Confirm email" is disabled in Supabase: session is set and the
-      // AuthContext auto-routes into onboarding. If confirmation is required
-      // (default), session is null and we tell them to check their inbox.
-      if (!session) {
-        setInfoMsg('Account created. Check your inbox for the confirmation link, then come back and sign in.');
-      }
+      // AuthContext onAuthStateChange fires immediately (Supabase "Confirm email"
+      // is disabled). Session is set → profile loads → navigator mounts
+      // OnboardingScreen. No action needed here.
     } catch (e) {
       setErrorMsg(friendlySignUpError(e?.message));
     } finally {
@@ -472,11 +467,6 @@ export default function SignUpScreen({ navigation }) {
                 <Text style={s.errorText}>{errorMsg}</Text>
               </View>
             ) : null}
-            {infoMsg ? (
-              <View style={s.infoBox}>
-                <Text style={s.infoText}>{infoMsg}</Text>
-              </View>
-            ) : null}
 
             <View style={{ height: SPACING.lg }} />
             {busy ? (
@@ -596,15 +586,6 @@ const s = StyleSheet.create({
     padding: SPACING.md,
   },
   errorText: { ...TYPE.body, color: '#8A2D2D', fontSize: 14, lineHeight: 20 },
-  infoBox: {
-    marginTop: SPACING.md,
-    backgroundColor: COLORS.sageBg,
-    borderColor: COLORS.sageLight,
-    borderWidth: 1,
-    borderRadius: RADIUS.md,
-    padding: SPACING.md,
-  },
-  infoText: { ...TYPE.body, color: COLORS.sage, fontSize: 14, lineHeight: 20 },
 
   backLink: { alignSelf: 'flex-start', paddingVertical: 4 },
   backLinkText: { ...TYPE.body, fontSize: 14, color: COLORS.textSecondary },

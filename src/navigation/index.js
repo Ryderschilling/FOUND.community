@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform, ActivityIndicator, AppState, Animated, Linking } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform, ActivityIndicator, AppState, Animated, Linking, Modal, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { NavigationContainer, createNavigationContainerRef, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -167,8 +167,15 @@ function FloatingTabBar({ state, descriptors, navigation }) {
   // the floating pill against the screen edge.
   const bottom = Math.max(insets.bottom, 16) + 8;
   const { counts, refresh: refreshCounts } = useUnreadCounts();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { count: notifCount, refresh: refreshNotifs } = useUnreadNotifications(user?.id, 'tab-bar');
+
+  // Profile gate — blocks Messages + Groups until the user has a photo AND a bio.
+  // Applies to new AND existing users since it checks runtime profile state.
+  const [photoGateTab, setPhotoGateTab] = useState(null); // 'Messages' | 'Groups' | null
+  const hasPhoto    = !!(profile?.avatar_url);
+  const hasBio      = !!(profile?.bio?.trim());
+  const profileComplete = hasPhoto && hasBio;
 
   // ── Pill positioning ──────────────────────────────────────────────
   // Web (CSS): position:absolute origins from the PADDING edge of the parent.
@@ -214,6 +221,46 @@ function FloatingTabBar({ state, descriptors, navigation }) {
   }, [state.index, barWidth]);
 
   return (
+    <>
+    {/* ── Profile-gate modal ───────────────────────────────────────────
+        Shown when a user without a complete profile taps Messages or Groups.
+        "Complete profile" navigates to EditProfile via the root stack ref. */}
+    <Modal
+      visible={photoGateTab !== null}
+      transparent
+      animationType="fade"
+      onRequestClose={() => setPhotoGateTab(null)}
+    >
+      <Pressable style={styles.gateOverlay} onPress={() => setPhotoGateTab(null)}>
+        <Pressable style={styles.gateSheet} onPress={(e) => e.stopPropagation()}>
+          <View style={styles.gateHandle} />
+          <Text style={styles.gateTitle}>Complete your profile first</Text>
+          <Text style={styles.gateBody}>
+            {photoGateTab === 'Messages'
+              ? 'Add a profile photo and a short bio so people know who they\'re talking to before you start messaging.'
+              : 'Add a profile photo and a short bio so members can recognize you before you join a group.'}
+          </Text>
+          <TouchableOpacity
+            style={styles.gateButton}
+            activeOpacity={0.85}
+            onPress={() => {
+              setPhotoGateTab(null);
+              if (navigationRef.isReady()) navigationRef.navigate('EditProfile');
+            }}
+          >
+            <Text style={styles.gateButtonText}>Complete profile</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.gateDismiss}
+            activeOpacity={0.7}
+            onPress={() => setPhotoGateTab(null)}
+          >
+            <Text style={styles.gateDismissText}>Not now</Text>
+          </TouchableOpacity>
+        </Pressable>
+      </Pressable>
+    </Modal>
+
     <View style={[styles.tabBarOuter, { paddingBottom: bottom }]}>
       <View
         style={styles.tabBarInner}
@@ -235,6 +282,13 @@ function FloatingTabBar({ state, descriptors, navigation }) {
           const tab     = TABS.find(t => t.name === route.name) ?? TABS[0];
 
           const onPress = () => {
+            // Gate Messages + Groups behind a complete profile (photo + bio).
+            // Shows a modal explaining what's needed; button goes to EditProfile.
+            if (!profileComplete && (route.name === 'Messages' || route.name === 'Groups')) {
+              setPhotoGateTab(route.name);
+              return;
+            }
+
             const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
             if (!focused && !event.defaultPrevented) {
               navigation.navigate(route.name);
@@ -267,6 +321,7 @@ function FloatingTabBar({ state, descriptors, navigation }) {
         })}
       </View>
     </View>
+    </>
   );
 }
 
@@ -538,5 +593,64 @@ const styles = StyleSheet.create({
     fontSize: 9,
     color: COLORS.white,
     letterSpacing: 0,
+  },
+
+  // ── Photo-gate modal ─────────────────────────────────────────────
+  gateOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
+  },
+  gateSheet: {
+    backgroundColor: COLORS.white,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 28,
+    paddingBottom: 40,
+    paddingTop: 12,
+    alignItems: 'center',
+  },
+  gateHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: COLORS.border,
+    marginBottom: 24,
+  },
+  gateTitle: {
+    fontFamily: FONT.semiBold,
+    fontSize: 18,
+    color: COLORS.text,
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  gateBody: {
+    fontFamily: FONT.regular,
+    fontSize: 15,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 28,
+  },
+  gateButton: {
+    width: '100%',
+    backgroundColor: COLORS.text,
+    borderRadius: 9999,
+    paddingVertical: 15,
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  gateButtonText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 15,
+    color: COLORS.white,
+  },
+  gateDismiss: {
+    paddingVertical: 8,
+  },
+  gateDismissText: {
+    fontFamily: FONT.regular,
+    fontSize: 14,
+    color: COLORS.textSecondary,
   },
 });

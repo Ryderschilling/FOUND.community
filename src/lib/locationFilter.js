@@ -22,7 +22,7 @@ export const DEFAULT_FILTER = { mode: 'anywhere', radiusMi: DEFAULT_RADIUS };
 
 // Supported modes. Anything else (e.g. a legacy mode from an older build)
 // is migrated back to 'anywhere' on load.
-const VALID_MODES = ['anywhere', 'self', 'custom'];
+const VALID_MODES = ['anywhere', 'self', 'custom', 'gps'];
 
 export async function loadFilter() {
   try {
@@ -46,6 +46,16 @@ export async function loadFilter() {
         lat: parsed.lat,
         lng: parsed.lng,
         displayName: parsed.displayName || '',
+      };
+    }
+    if (parsed.mode === 'gps') {
+      // GPS requires coords captured at time of selection — fall back if missing.
+      if (!parsed.lat || !parsed.lng) return DEFAULT_FILTER;
+      return {
+        mode: 'gps',
+        radiusMi: parsed.radiusMi,
+        lat: parsed.lat,
+        lng: parsed.lng,
       };
     }
     return { mode: parsed.mode, radiusMi: parsed.radiusMi };
@@ -82,6 +92,9 @@ export function filterToRpcArgs(filter, selfLocation = null) {
     case 'custom':
       if (!filter.lat || !filter.lng) return fallback;
       return { p_lat: filter.lat, p_lng: filter.lng, p_radius_mi: radius, p_anywhere: false };
+    case 'gps':
+      if (!filter.lat || !filter.lng) return fallback;
+      return { p_lat: filter.lat, p_lng: filter.lng, p_radius_mi: radius, p_anywhere: false };
     case 'anywhere':
     default:
       // p_anywhere: true tells the RPC to bypass all geo filters and sort by
@@ -99,6 +112,7 @@ export function filterLabel(filter) {
   switch (filter.mode) {
     case 'self':   return `Near Me · ${r} mi`;
     case 'custom': return filter.displayName ? `${filter.displayName} · ${r} mi` : `Custom · ${r} mi`;
+    case 'gps':    return `Here · ${r} mi`;
     case 'anywhere':
     default:       return 'Anywhere';
   }

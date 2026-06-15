@@ -27,6 +27,7 @@ import {
   Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
 import { PrimaryButton } from './Atoms';
 import { DEFAULT_RADIUS, RADIUS_OPTIONS, DEFAULT_FILTER } from '../lib/locationFilter';
@@ -70,6 +71,12 @@ export default function LocationFilterSheet({
   const [radiusMi, setRadiusMi]       = useState(start.radiusMi ?? DEFAULT_RADIUS);
   const [locationQuery, setLocQuery]  = useState(start.displayName ?? '');
   const [geocoding, setGeocoding]     = useState(false);
+  const [gpsLoading, setGpsLoading]   = useState(false);
+  const [gpsCoords, setGpsCoords]     = useState(
+    start.mode === 'gps' && start.lat && start.lng
+      ? { lat: start.lat, lng: start.lng }
+      : null
+  );
 
   const fadeAnim  = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.95)).current;
@@ -82,6 +89,12 @@ export default function LocationFilterSheet({
     setRadiusMi(s.radiusMi ?? DEFAULT_RADIUS);
     setLocQuery(s.displayName ?? '');
     setGeocoding(false);
+    setGpsLoading(false);
+    setGpsCoords(
+      s.mode === 'gps' && s.lat && s.lng
+        ? { lat: s.lat, lng: s.lng }
+        : null
+    );
   }, [visible, initialFilter]);
 
   // Fade + scale animation
@@ -99,7 +112,34 @@ export default function LocationFilterSheet({
     }
   }, [visible]);
 
+  async function handleSelectGps() {
+    setGpsLoading(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        toast({ title: 'Location access denied', message: 'Allow location in Settings to use this mode.', type: 'info' });
+        return;
+      }
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      setGpsCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+      setMode('gps');
+    } catch {
+      toast({ title: 'Could not get location', message: 'Try again or use Search Location.', type: 'error' });
+    } finally {
+      setGpsLoading(false);
+    }
+  }
+
   async function handleApply() {
+    if (mode === 'gps') {
+      if (!gpsCoords?.lat || !gpsCoords?.lng) {
+        toast({ title: 'Location not ready', message: 'Tap "Current Location" to fetch your GPS first.', type: 'info' });
+        return;
+      }
+      onApply?.({ mode: 'gps', radiusMi, lat: gpsCoords.lat, lng: gpsCoords.lng });
+      return;
+    }
+
     if (mode === 'self') {
       if (!selfHasLocation) {
         toast({ title: 'No location set', message: 'Set your city in Edit Profile to use Near Me.', type: 'info' });
@@ -135,6 +175,7 @@ export default function LocationFilterSheet({
   }
 
   const radiusDisabled = mode === 'anywhere';
+  const isWorking = geocoding || gpsLoading;
 
   return (
     <Modal
@@ -177,6 +218,37 @@ export default function LocationFilterSheet({
               disabled={!selfHasLocation}
               onPress={() => setMode('self')}
             />
+            <Pressable
+              style={[
+                styles.modeRow,
+                mode === 'gps' && styles.modeRowSelected,
+                gpsLoading && styles.modeRowDisabled,
+              ]}
+              onPress={handleSelectGps}
+              disabled={gpsLoading}
+            >
+              <View style={styles.modeIcon}>
+                {gpsLoading
+                  ? <ActivityIndicator size="small" color={COLORS.textSecondary} />
+                  : <Ionicons name="navigate-outline" size={18} color={mode === 'gps' ? COLORS.text : COLORS.textSecondary} />
+                }
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.modeLabel, mode === 'gps' && styles.modeLabelSelected]}>
+                  {gpsLoading ? 'Getting location…' : 'Current Location'}
+                </Text>
+                <Text style={styles.modeSub}>
+                  {mode === 'gps' && gpsCoords
+                    ? 'Using your live GPS — great for travel'
+                    : 'Show people near where you are right now'}
+                </Text>
+              </View>
+              {mode === 'gps' ? (
+                <View style={styles.check}>
+                  <Ionicons name="checkmark" size={14} color={COLORS.white} />
+                </View>
+              ) : null}
+            </Pressable>
             <ModeRow
               icon="search-outline"
               label="Search Location"
@@ -240,9 +312,9 @@ export default function LocationFilterSheet({
           </View>
 
           <PrimaryButton
-            label={geocoding ? 'Searching…' : 'Apply'}
-            onPress={geocoding ? undefined : handleApply}
-            style={{ marginTop: SPACING.md, opacity: geocoding ? 0.7 : 1 }}
+            label={gpsLoading ? 'Getting location…' : geocoding ? 'Searching…' : 'Apply'}
+            onPress={isWorking ? undefined : handleApply}
+            style={{ marginTop: SPACING.md, opacity: isWorking ? 0.7 : 1 }}
           />
         </Animated.View>
       </Animated.View>

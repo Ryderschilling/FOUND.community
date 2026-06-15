@@ -20,6 +20,7 @@ import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
 import { Avatar, IconButton, Wordmark } from '../components/Atoms';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../auth/AuthContext';
+import { useProfileGate } from '../lib/useProfileGate';
 import { useToast } from '../components/ToastProvider';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -96,6 +97,7 @@ function MessageRow({ item, onPress }) {
 // ─── Screen ───────────────────────────────────────────────────────────────
 export default function MessagesScreen({ navigation }) {
   const { user } = useAuth();
+  const { checkGate, ProfileGateModal } = useProfileGate(navigation);
   const toast = useToast();
   const [threads,      setThreads]      = useState([]);
   const [loading,      setLoading]      = useState(true);
@@ -155,6 +157,7 @@ export default function MessagesScreen({ navigation }) {
 
   async function startThreadWith(contact) {
     if (opening) return;
+    if (!checkGate()) return;
     setOpening(true);
     const { data: threadId, error } = await supabase
       .rpc('start_direct_thread', { p_other: contact.profile_id });
@@ -194,6 +197,7 @@ export default function MessagesScreen({ navigation }) {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
+      <ProfileGateModal />
 
       <View style={styles.header}>
         <View>

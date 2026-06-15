@@ -15,7 +15,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.found.community",
-      "buildNumber": "23",
+      "buildNumber": "24",
       "icon": {
         "light": "./assets/icon.png",
         "dark": "./assets/icon-dark.png"
@@ -28,6 +28,7 @@
         "NSCameraUsageDescription": "FOUND uses your camera so you can take a profile photo.",
         "NSPhotoLibraryUsageDescription": "FOUND uses your photo library so you can choose a profile photo.",
         "NSPhotoLibraryAddUsageDescription": "FOUND saves photos you take in the app to your photo library.",
+        "NSLocationWhenInUseUsageDescription": "FOUND uses your location to show you people nearby when you're traveling.",
         "UIPrerenderedIcon": true
       },
       "privacyManifests": {
@@ -160,7 +161,9 @@
       "permissions": [
         "android.permission.READ_CALENDAR",
         "android.permission.WRITE_CALENDAR",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
       ]
     },
     "web": {
@@ -178,6 +181,12 @@
         }
       ],
       "expo-secure-store",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "FOUND uses your location to show you people nearby when you're traveling."
+        }
+      ],
       "@sentry/react-native",
       "@react-native-community/datetimepicker"
     ],
