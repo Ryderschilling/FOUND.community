@@ -239,7 +239,7 @@ export default function ChurchPicker({
   async function handleSubmitRequest() {
     if (!reqName.trim()) return;
     setSubmitting(true);
-    await supabase.rpc('submit_church_request', {
+    const { data: churchId, error } = await supabase.rpc('submit_church_request', {
       p_name:           reqName.trim(),
       p_city:           reqCity.trim() || null,
       p_state:          reqState.trim() || null,
@@ -247,7 +247,23 @@ export default function ChurchPicker({
     });
     setSubmitting(false);
     setModalOpen(false);
-    setRequestSent(true);
+
+    if (!error && churchId) {
+      // Profile is now linked to the submitted church — show it as selected.
+      const submitted = {
+        id:    churchId,
+        name:  reqName.trim(),
+        city:  reqCity.trim()  || null,
+        state: reqState.trim() || null,
+      };
+      setSelectedChurch(submitted);
+      setHomeSelected(false);
+      setMode('done');
+      onSaved?.({ churchId, isHomeChurch: false });
+    } else {
+      // RPC returned an error or no ID — fall back to the "request sent" message.
+      setRequestSent(true);
+    }
   }
 
   function handleChange() {

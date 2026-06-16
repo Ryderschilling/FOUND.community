@@ -110,9 +110,9 @@ export function filterLabel(filter) {
   if (!filter) return 'Anywhere';
   const r = filter.radiusMi ?? DEFAULT_RADIUS;
   switch (filter.mode) {
-    case 'self':   return `Near Me · ${r} mi`;
+    case 'self':   return `Near Me · ${r} mi`;   // legacy — migrates to gps on next apply
     case 'custom': return filter.displayName ? `${filter.displayName} · ${r} mi` : `Custom · ${r} mi`;
-    case 'gps':    return `Here · ${r} mi`;
+    case 'gps':    return `Near Me · ${r} mi`;   // live GPS, same label as intended
     case 'anywhere':
     default:       return 'Anywhere';
   }

@@ -1,16 +1,15 @@
 // ─────────────────────────────────────────────────────────────────────────
 // LocationFilterSheet — bottom-sheet modal for the Discover location filter.
 //
-// Two modes:
-//   Anywhere  → no override; the feed uses your saved Settings radius.
-//   Near Me   → centered on your profile location, hard-capped by the radius.
+// Modes:
+//   Anywhere        → no override; the feed uses your saved Settings radius.
+//   Near Me         → pings live GPS, hard-capped by the radius chosen below.
+//                     Works even when the user is travelling — always reflects
+//                     their current physical location, not their profile ZIP.
+//   Search Location → geocode any city / ZIP and center there.
 //
 // On Apply we hand the resolved filter object back to the parent, which
 // (a) persists it via saveFilter() and (b) refetches matches.
-//
-// "Near Me" needs a geocoded profile location. If you don't have one yet the
-// option is disabled — set your city in Edit Profile (or run the location
-// backfill) and it lights up.
 // ─────────────────────────────────────────────────────────────────────────
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -133,19 +132,16 @@ export default function LocationFilterSheet({
   async function handleApply() {
     if (mode === 'gps') {
       if (!gpsCoords?.lat || !gpsCoords?.lng) {
-        toast({ title: 'Location not ready', message: 'Tap "Current Location" to fetch your GPS first.', type: 'info' });
+        toast({ title: 'Location not ready', message: 'Tap "Near Me" to fetch your GPS first.', type: 'info' });
         return;
       }
       onApply?.({ mode: 'gps', radiusMi, lat: gpsCoords.lat, lng: gpsCoords.lng });
       return;
     }
 
+    // Legacy 'self' mode — migrate to anywhere on next apply.
     if (mode === 'self') {
-      if (!selfHasLocation) {
-        toast({ title: 'No location set', message: 'Set your city in Edit Profile to use Near Me.', type: 'info' });
-        return;
-      }
-      onApply?.({ mode: 'self', radiusMi });
+      onApply?.({ mode: 'anywhere', radiusMi });
       return;
     }
 
@@ -206,18 +202,6 @@ export default function LocationFilterSheet({
               selected={mode === 'anywhere'}
               onPress={() => setMode('anywhere')}
             />
-            <ModeRow
-              icon="location-outline"
-              label="Near Me"
-              subLabel={
-                selfHasLocation
-                  ? 'People within the radius below'
-                  : 'Set your location first in Edit Profile'
-              }
-              selected={mode === 'self'}
-              disabled={!selfHasLocation}
-              onPress={() => setMode('self')}
-            />
             <Pressable
               style={[
                 styles.modeRow,
@@ -230,16 +214,16 @@ export default function LocationFilterSheet({
               <View style={styles.modeIcon}>
                 {gpsLoading
                   ? <ActivityIndicator size="small" color={COLORS.textSecondary} />
-                  : <Ionicons name="navigate-outline" size={18} color={mode === 'gps' ? COLORS.text : COLORS.textSecondary} />
+                  : <Ionicons name="location-outline" size={18} color={mode === 'gps' ? COLORS.text : COLORS.textSecondary} />
                 }
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.modeLabel, mode === 'gps' && styles.modeLabelSelected]}>
-                  {gpsLoading ? 'Getting location…' : 'Current Location'}
+                  {gpsLoading ? 'Getting location…' : 'Near Me'}
                 </Text>
                 <Text style={styles.modeSub}>
                   {mode === 'gps' && gpsCoords
-                    ? 'Using your live GPS — great for travel'
+                    ? 'Using your live GPS location'
                     : 'Show people near where you are right now'}
                 </Text>
               </View>

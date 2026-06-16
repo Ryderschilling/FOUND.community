@@ -2,7 +2,7 @@
   "expo": {
     "name": "FOUND",
     "slug": "found-community-app",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "scheme": "found",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
