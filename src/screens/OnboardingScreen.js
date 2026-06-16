@@ -982,6 +982,7 @@ function StepMatchReveal({ onFinish, busy }) {
 export default function OnboardingScreen({ navigation }) {
   const { refreshProfile, signOut, profile } = useAuth();
   const confirm = useConfirm();
+  const toast = useToast();
 
   async function doSignOut() {
     try { await signOut(); } catch (e) {
@@ -1138,11 +1139,12 @@ export default function OnboardingScreen({ navigation }) {
       await markTutorialPending();
       await refreshProfile();
       // AppNavigator swaps from Onboarding → Main when onboarding_complete flips.
-      // Reset busy defensively so the button isn't stuck if the swap is delayed
-      // (e.g. slow network, double-tap, profile cache).
-      setBusy(false);
     } catch (e) {
       toast({ title: 'Could not save your profile', message: e?.message ?? 'Unknown error. Try again.', type: 'error' });
+    } finally {
+      // Guaranteed reset — catch block previously crashed here because toast was
+      // undefined (useToast() was imported but never called), which left setBusy
+      // stuck on true forever. finally ensures the button always unblocks.
       setBusy(false);
     }
   }

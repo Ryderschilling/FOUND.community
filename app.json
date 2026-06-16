@@ -15,7 +15,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.found.community",
-      "buildNumber": "24",
+      "buildNumber": "25",
       "icon": {
         "light": "./assets/icon.png",
         "dark": "./assets/icon-dark.png"
