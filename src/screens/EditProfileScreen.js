@@ -301,9 +301,18 @@ export default function EditProfileScreen({ navigation }) {
         // Pad to 3 rows
         while (parsedRows.length < 3) parsedRows.push({ city: '', state: '' });
         setHometownCities(parsedRows);
-        setCity(p.city ?? '');
-        setState(p.state ?? '');
-        setZip(p.zip ?? '');
+        const savedCity  = p.city  ?? '';
+        const savedState = p.state ?? '';
+        const savedZip   = p.zip   ?? '';
+        setCity(savedCity);
+        setState(savedState);
+        setZip(savedZip);
+        // Pre-fill the address autocomplete display from stored location data
+        if (savedCity || savedZip) {
+          const parts = [savedCity, savedState].filter(Boolean).join(', ');
+          setAddressQuery(savedZip ? `${parts} ${savedZip}`.trim() : parts);
+          skipFetchRef.current = true; // don't trigger a Nominatim lookup on load
+        }
         setLifeStage(p.life_stage_id ?? null);
         setProfileChurchId(p.church_id ?? null);
         setProfileIsHome(p.is_home_church ?? false);

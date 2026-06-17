@@ -11,7 +11,7 @@
 // and marks-read.
 // ─────────────────────────────────────────────────────────────────────────
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from './supabase';
 
 /**
@@ -65,37 +65,44 @@ export function useUnreadNotifications(userId, tag = 'default') {
   const [count, setCount] = useState(0);
 
   const refresh = useCallback(async () => {
-    if (!userId) {
-      setCount(0);
-      return;
-    }
+    if (!userId) { setCount(0); return; }
     const { count: c } = await fetchUnreadCount();
     setCount(c);
   }, [userId]);
 
+  // Keep a stable ref to the latest refresh so the realtime callback
+  // never captures a stale closure, and so the effect dependency array
+  // doesn't include `refresh` (which would recreate the channel on every
+  // render and trigger the "cannot add callbacks after subscribe()" crash).
+  const refreshRef = useRef(refresh);
+  useEffect(() => { refreshRef.current = refresh; }, [refresh]);
+
   useEffect(() => {
-    if (!userId) {
-      setCount(0);
-      return undefined;
-    }
-    refresh();
+    if (!userId) { setCount(0); return undefined; }
+
+    // Fire once on mount / userId change.
+    refreshRef.current();
+
+    const chanName = `notifications:${userId}:${tag}`;
+
+    // Guard: if a channel with this exact name is already subscribed (e.g.
+    // from a previous render cycle that didn't fully clean up), remove it
+    // first so Supabase doesn't throw "cannot add callbacks after subscribe()".
+    supabase.getChannels().forEach((ch) => {
+      if (ch.topic === chanName) supabase.removeChannel(ch);
+    });
 
     const channel = supabase
-      .channel(`notifications:${userId}:${tag}`)
+      .channel(chanName)
       .on(
         'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'notifications',
-          filter: `user_id=eq.${userId}`,
-        },
-        () => { refresh(); },
+        { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` },
+        () => { refreshRef.current(); },
       )
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [userId, refresh]);
+  }, [userId, tag]); // intentionally excludes `refresh` — use refreshRef instead
 
   return { count, refresh };
 }

@@ -25,6 +25,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../auth/AuthContext';
+import { navigationRef } from '../navigation';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
 
 export function useProfileGate(navigation) {
@@ -45,7 +46,7 @@ export function useProfileGate(navigation) {
 
   function handleCompleteProfile() {
     setVisible(false);
-    navigation.navigate('EditProfile');
+    if (navigationRef.isReady()) navigationRef.navigate('EditProfile');
   }
 
   // What's still missing — drives the body copy

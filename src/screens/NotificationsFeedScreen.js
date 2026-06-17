@@ -60,9 +60,15 @@ function visualsFor(type) {
       return { icon: 'calendar',        fg: COLORS.clay, bg: COLORS.clayBg };
     case 'event_rsvp':
       return { icon: 'checkmark-circle',fg: COLORS.sage, bg: COLORS.sageBg };
+    case 'church_welcome':
+      return { icon: 'business',            fg: COLORS.sage, bg: COLORS.sageBg };
+    case 'church_reply':
+      return { icon: 'chatbubble-ellipses', fg: COLORS.sage, bg: COLORS.sageBg };
+    case 'church_message':
+      return { icon: 'mail',                fg: COLORS.gold, bg: COLORS.goldBg };
     case 'connection':
     default:
-      return { icon: 'person-add',      fg: COLORS.warm, bg: COLORS.warmBg };
+      return { icon: 'person-add',          fg: COLORS.warm, bg: COLORS.warmBg };
   }
 }
 
@@ -220,13 +226,19 @@ export default function NotificationsFeedScreen({ navigation }) {
         },
       });
     } else if (n.type === 'event_invite' && n.entity_id) {
-      // Someone invited me to their event → open the event detail
       navigation?.navigate('EventDetail', { eventId: n.entity_id, isCreator: false });
     } else if (n.type === 'event_rsvp' && n.entity_id) {
-      // Someone RSVPed to my event → open my event detail (creator view)
       navigation?.navigate('EventDetail', { eventId: n.entity_id, isCreator: true });
+    } else if (n.type === 'church_welcome' && n.data?.church_id) {
+      // Member just joined a church → show the church's profile.
+      navigation?.navigate('ChurchProfile', { churchId: n.data.church_id });
+    } else if (n.type === 'church_reply' && n.data?.church_id) {
+      // Church replied to member's message → open the conversation thread.
+      navigation?.navigate('ChurchInbox', {
+        churchId:   n.data.church_id,
+        churchName: n.title?.replace(' replied to your message', '') || 'Church',
+      });
     } else {
-      // No actor info — fall back to Activity tab.
       navigation?.navigate('Main', { screen: 'Activity' });
     }
   }, [navigation]);

@@ -55,6 +55,8 @@ import ResetPasswordScreen  from '../screens/auth/ResetPasswordScreen';
 import EditProfileScreen  from '../screens/EditProfileScreen';
 import GroupDetailScreen  from '../screens/GroupDetailScreen';
 import NotificationsFeedScreen from '../screens/NotificationsFeedScreen';
+import ChurchProfileScreen    from '../screens/ChurchProfileScreen';
+import ChurchInboxScreen      from '../screens/ChurchInboxScreen';
 import BlockedUsersScreen from '../screens/BlockedUsersScreen';
 import SuspendedScreen    from '../screens/SuspendedScreen';
 import CreateEventScreen  from '../screens/CreateEventScreen';
@@ -400,6 +402,8 @@ function AppStack({ needsOnboarding }) {
           <Stack.Screen name="BlockedUsers"     component={BlockedUsersScreen}     options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="CreateEvent"     component={CreateEventScreen}      options={{ animation: 'slide_from_bottom' }} />
           <Stack.Screen name="EventDetail"     component={EventDetailScreen}      options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="ChurchProfile"   component={ChurchProfileScreen}    options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="ChurchInbox"     component={ChurchInboxScreen}      options={{ animation: 'slide_from_right' }} />
         </>
       )}
     </Stack.Navigator>
