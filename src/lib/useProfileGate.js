@@ -78,24 +78,24 @@ export function useProfileGate(navigation) {
               Add what's missing so others know who they're connecting with.
             </Text>
 
-            {/* Visual checklist — shows exactly what's needed */}
+            {/* Only show what's still missing */}
             <View style={styles.checklist}>
-              <View style={styles.checkRow}>
-                <View style={[styles.checkBadge, hasPhoto && styles.checkBadgeDone]}>
-                  <Ionicons name={hasPhoto ? 'checkmark' : 'close'} size={13} color="#fff" />
+              {!hasPhoto && (
+                <View style={styles.checkRow}>
+                  <View style={styles.checkBadge}>
+                    <Ionicons name="close" size={13} color="#fff" />
+                  </View>
+                  <Text style={styles.checkLabel}>Profile photo</Text>
                 </View>
-                <Text style={[styles.checkLabel, hasPhoto && styles.checkLabelDone]}>
-                  Profile photo
-                </Text>
-              </View>
-              <View style={styles.checkRow}>
-                <View style={[styles.checkBadge, hasBio && styles.checkBadgeDone]}>
-                  <Ionicons name={hasBio ? 'checkmark' : 'close'} size={13} color="#fff" />
+              )}
+              {!hasBio && (
+                <View style={styles.checkRow}>
+                  <View style={styles.checkBadge}>
+                    <Ionicons name="close" size={13} color="#fff" />
+                  </View>
+                  <Text style={styles.checkLabel}>Bio</Text>
                 </View>
-                <Text style={[styles.checkLabel, hasBio && styles.checkLabelDone]}>
-                  Bio
-                </Text>
-              </View>
+              )}
             </View>
 
             <TouchableOpacity

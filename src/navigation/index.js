@@ -243,24 +243,24 @@ function FloatingTabBar({ state, descriptors, navigation }) {
               : 'Members need to know who you are before you can join a group.'}
           </Text>
 
-          {/* Checklist — shows exactly what's still missing */}
+          {/* Only show what's still missing */}
           <View style={styles.gateChecklist}>
-            <View style={styles.gateCheckRow}>
-              <View style={[styles.gateCheckBadge, hasPhoto && styles.gateCheckBadgeDone]}>
-                <Ionicons name={hasPhoto ? 'checkmark' : 'close'} size={13} color={COLORS.white} />
+            {!hasPhoto && (
+              <View style={styles.gateCheckRow}>
+                <View style={styles.gateCheckBadge}>
+                  <Ionicons name="close" size={13} color={COLORS.white} />
+                </View>
+                <Text style={styles.gateCheckLabel}>Profile photo</Text>
               </View>
-              <Text style={[styles.gateCheckLabel, hasPhoto && styles.gateCheckLabelDone]}>
-                Profile photo
-              </Text>
-            </View>
-            <View style={styles.gateCheckRow}>
-              <View style={[styles.gateCheckBadge, hasBio && styles.gateCheckBadgeDone]}>
-                <Ionicons name={hasBio ? 'checkmark' : 'close'} size={13} color={COLORS.white} />
+            )}
+            {!hasBio && (
+              <View style={styles.gateCheckRow}>
+                <View style={styles.gateCheckBadge}>
+                  <Ionicons name="close" size={13} color={COLORS.white} />
+                </View>
+                <Text style={styles.gateCheckLabel}>Bio</Text>
               </View>
-              <Text style={[styles.gateCheckLabel, hasBio && styles.gateCheckLabelDone]}>
-                Bio
-              </Text>
-            </View>
+            )}
           </View>
 
           <TouchableOpacity
