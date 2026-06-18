@@ -2,7 +2,7 @@
   "expo": {
     "name": "FOUND",
     "slug": "found-community-app",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "scheme": "found",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
@@ -15,7 +15,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.found.community",
-      "buildNumber": "25",
+      "buildNumber": "28",
       "icon": {
         "light": "./assets/icon.png",
         "dark": "./assets/icon-dark.png"
