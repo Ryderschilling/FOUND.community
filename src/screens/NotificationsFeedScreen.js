@@ -13,7 +13,7 @@
 // Accept / Dismiss actions live.
 // ─────────────────────────────────────────────────────────────────────────
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -127,11 +127,29 @@ export default function NotificationsFeedScreen({ navigation }) {
   }, []);
 
   // Initial load + live updates.
+  // NOTE: `load` is intentionally excluded from the deps array here.
+  // Including it caused the channel to be recreated on every render that
+  // touched `load` (e.g. after navigating away and back), which triggered
+  // "cannot add postgres_changes callbacks after subscribe()".
+  // We use a ref so the realtime callback always calls the latest `load`
+  // without needing to recreate the channel.
+  const loadRef = useRef(load);
+  useEffect(() => { loadRef.current = load; }, [load]);
+
   useEffect(() => {
-    load();
+    loadRef.current();
     if (!user?.id) return undefined;
+
+    const chanName = `notifications-feed:${user.id}`;
+    // Guard: remove any stale channel with this name before subscribing.
+    // Supabase prefixes topics with 'realtime:' internally, so we must
+    // compare against 'realtime:${chanName}', not chanName directly.
+    supabase.getChannels().forEach((ch) => {
+      if (ch.topic === `realtime:${chanName}`) supabase.removeChannel(ch);
+    });
+
     const channel = supabase
-      .channel(`notifications-feed:${user.id}`)
+      .channel(chanName)
       .on(
         'postgres_changes',
         {
@@ -140,11 +158,11 @@ export default function NotificationsFeedScreen({ navigation }) {
           table: 'notifications',
           filter: `user_id=eq.${user.id}`,
         },
-        () => { load(); },
+        () => { loadRef.current(); },
       )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [user?.id, load]);
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const unreadCount = items.filter((n) => !n.read_at).length;
 
@@ -234,9 +252,13 @@ export default function NotificationsFeedScreen({ navigation }) {
       navigation?.navigate('ChurchProfile', { churchId: n.data.church_id });
     } else if (n.type === 'church_reply' && n.data?.church_id) {
       // Church replied to member's message → open the conversation thread.
+      // Title format: "{church name} replied to your message"
+      const churchName = n.title
+        ? n.title.replace(/ replied to your message\.?$/i, '').trim()
+        : 'Church';
       navigation?.navigate('ChurchInbox', {
         churchId:   n.data.church_id,
-        churchName: n.title?.replace(' replied to your message', '') || 'Church',
+        churchName: churchName || 'Church',
       });
     } else {
       navigation?.navigate('Main', { screen: 'Activity' });

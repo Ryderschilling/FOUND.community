@@ -84,12 +84,14 @@ export function useUnreadNotifications(userId, tag = 'default') {
     refreshRef.current();
 
     const chanName = `notifications:${userId}:${tag}`;
+    // Supabase stores channel topics with a 'realtime:' prefix internally.
+    const realtimeTopic = `realtime:${chanName}`;
 
-    // Guard: if a channel with this exact name is already subscribed (e.g.
-    // from a previous render cycle that didn't fully clean up), remove it
-    // first so Supabase doesn't throw "cannot add callbacks after subscribe()".
+    // Guard: remove any stale channel with this name before subscribing.
+    // The previous implementation compared ch.topic === chanName which never
+    // matched because Supabase prefixes topics with 'realtime:'. Fixed here.
     supabase.getChannels().forEach((ch) => {
-      if (ch.topic === chanName) supabase.removeChannel(ch);
+      if (ch.topic === realtimeTopic) supabase.removeChannel(ch);
     });
 
     const channel = supabase

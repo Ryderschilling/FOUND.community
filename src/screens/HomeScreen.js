@@ -20,6 +20,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, FONT, SPACING } from '../theme';
 import PersonCard from '../components/PersonCard';
+import ChurchCard from '../components/ChurchCard';
 import InboundStrip from '../components/InboundStrip';
 import LocationFilterSheet from '../components/LocationFilterSheet';
 import { Wordmark, Chip, Pill, IconButton } from '../components/Atoms';
@@ -37,10 +38,11 @@ import TutorialOverlay from '../components/TutorialOverlay';
 import { checkAndClearTutorial } from '../lib/tutorial';
 
 // Filter chips (non-location). Location lives in the dedicated pill above.
-// Discover is purely a feed of new people to meet — connections live in the
+// Discover is purely a feed of new people to meet -- connections live in the
 // FOUND tab. All filters here hide existing connections by default.
 const FILTERS = [
   { id: 'all',       label: 'All'           },
+  { id: 'churches',  label: 'Churches'      },
   { id: 'pending',   label: 'Pending'       },
   { id: 'stage',     label: 'Life Stage'    },
   { id: 'church',    label: 'My Church'     },
@@ -52,9 +54,9 @@ const FILTERS = [
 // Height of the FOUND + bell header block
 const HEADER_HEIGHT = 88;
 
-// ─── Helpers ──────────────────────────────────────────────────────────────
+// --- Helpers --------------------------------------------------------------
 // Fixed gradient palette for avatars (matches existing visual language)
-// Neutral monochrome avatar palette — black/white/charcoal, no green or yellow.
+// Neutral monochrome avatar palette -- black/white/charcoal, no green or yellow.
 // Matches Sam's branding direction (less green tint, more black & white).
 const AVATAR_GRADIENTS = [
   ['#1A1A1A', '#3A3A3A'],
@@ -67,7 +69,7 @@ const AVATAR_GRADIENTS = [
   ['#5A5A5A', '#2A2A2A'],
 ];
 
-// Deterministic hash → palette index, so each profile always picks the same colors
+// Deterministic hash ? palette index, so each profile always picks the same colors
 function gradientFor(id) {
   if (!id) return AVATAR_GRADIENTS[0];
   let h = 0;
@@ -76,11 +78,11 @@ function gradientFor(id) {
 }
 
 function initialsFor(name) {
-  if (!name) return '··';
+  if (!name) return '??';
   const parts = name.trim().split(/\s+/);
   const a = parts[0]?.[0] ?? '';
   const b = parts.length > 1 ? parts[parts.length - 1][0] : '';
-  return (a + b).toUpperCase() || '··';
+  return (a + b).toUpperCase() || '??';
 }
 
 function formatDistance(mi) {
@@ -92,7 +94,7 @@ function formatDistance(mi) {
   return `${Math.round(n)} mi`;
 }
 
-// RPC row → PersonCard shape
+// RPC row ? PersonCard shape
 function rowToMatch(row) {
   return {
     id:          row.profile_id,
@@ -127,7 +129,7 @@ function rowToMatch(row) {
   };
 }
 
-// "New" filter window — surface profiles created within the last N days.
+// "New" filter window -- surface profiles created within the last N days.
 const NEW_WINDOW_DAYS = 30;
 
 // How long after Discover mounts before nudging the user to add a bio.
@@ -159,8 +161,13 @@ export default function HomeScreen({ navigation }) {
   const [refreshing, setRefreshing]     = useState(false);
   const [error, setError]               = useState(null);
 
+  // Churches discovery feed -- fetched lazily when the "Churches" chip is tapped.
+  const [churches, setChurches]               = useState([]);
+  const [churchesLoading, setChurchesLoading] = useState(false);
+  const [churchesFetched, setChurchesFetched] = useState(false); // avoid re-fetching on every re-render
+
   // Location filter (loaded from AsyncStorage on mount).
-  // `selfLocation` is my own profile's lat/lng — needed so "Near Me" mode can
+  // `selfLocation` is my own profile's lat/lng -- needed so "Near Me" mode can
   // pass an explicit point to the RPC override (the RPC defaults to my profile
   // location for distance display, but the hard radius filter only kicks in
   // when override lat/lng are provided).
@@ -168,7 +175,7 @@ export default function HomeScreen({ navigation }) {
   const [selfLocation, setSelfLoc]  = useState(null);
   const [locSheetOpen, setLocSheet] = useState(false);
 
-  // My own activity IDs — used by the "Interests" filter to surface profiles
+  // My own activity IDs -- used by the "Interests" filter to surface profiles
   // who share at least one interest with me.
   const [myActivityIds, setMyActivityIds] = useState([]);
   // Track when the activities fetch has completed so we only show the
@@ -187,7 +194,7 @@ export default function HomeScreen({ navigation }) {
   const scrollUpAccum    = useRef(0);   // accumulated upward px since last hide
   const scrollDownAccum  = useRef(0);   // accumulated downward px since last show
 
-  // ── First-time tutorial ─────────────────────────────────────────────────
+  // -- First-time tutorial -------------------------------------------------
   const [showTutorial, setShowTutorial] = useState(false);
   // Refs for the elements the tutorial spotlight will highlight.
   // Each must be a native View with collapsable={false} so .measure() works.
@@ -198,7 +205,7 @@ export default function HomeScreen({ navigation }) {
     firstCard:   React.createRef(),
   }).current;
   // Measures the SafeAreaView so TutorialOverlay knows the real app frame
-  // position on the page — critical on web where the phone renders inside a
+  // position on the page -- critical on web where the phone renders inside a
   // centered browser frame (Dimensions.get('window') returns browser width).
   const appViewRef   = useRef(null);
   const [appMetrics, setAppMetrics] = useState(null);
@@ -236,6 +243,34 @@ export default function HomeScreen({ navigation }) {
       setRefreshing(false);
     }
   }, [user, locFilter, selfLocation]);
+
+  // Load the churches discovery list.
+  // Runs when the user taps the "Churches" chip (lazy) or on pull-to-refresh
+  // while in that mode.  Uses selfLocation for distance if available.
+  const loadChurches = useCallback(async ({ force = false } = {}) => {
+    if (churchesFetched && !force) return; // already loaded, skip unless forced
+    setChurchesLoading(true);
+    try {
+      const args = selfLocation
+        ? { user_lat: selfLocation.lat, user_lng: selfLocation.lng }
+        : {};
+      const { data, error: rpcErr } = await supabase.rpc('discover_churches', args);
+      if (rpcErr) throw rpcErr;
+      setChurches(data ?? []);
+      setChurchesFetched(true);
+    } catch (e) {
+      console.warn('[discover] loadChurches failed', e?.message);
+    } finally {
+      setChurchesLoading(false);
+    }
+  }, [selfLocation, churchesFetched]);
+
+  // Re-fetch churches when the user switches to the Churches tab (first time only).
+  useEffect(() => {
+    if (activeFilter === 'churches') {
+      loadChurches();
+    }
+  }, [activeFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Bootstrap: hydrate saved location filter + my own coords.
   useEffect(() => {
@@ -334,7 +369,7 @@ export default function HomeScreen({ navigation }) {
     return () => { cancelled = true; };
   }, []);
 
-  // Two minutes in, nudge the user to add a bio — once per session, and only
+  // Two minutes in, nudge the user to add a bio -- once per session, and only
   // if they still don't have one. Dismissable; not a hard requirement.
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -347,15 +382,15 @@ export default function HomeScreen({ navigation }) {
     return () => clearTimeout(timer);
   }, []);
 
-  // Mutate one match row in place — used by all three handlers below to
+  // Mutate one match row in place -- used by all three handlers below to
   // keep the visible card in sync with the server without a full refetch.
   const patchMatch = useCallback((id, patch) => {
     setMatches((prev) => prev.map((m) => (m.id === id ? { ...m, ...patch } : m)));
   }, []);
 
   // Optimistic Connect. RLS allows insert where from_profile = auth.uid().
-  // PK (from, to, kind) → re-tap is a no-op via ignoreDuplicates.
-  // If theirKind === 'like' this is a reciprocal → flip isMatch immediately
+  // PK (from, to, kind) ? re-tap is a no-op via ignoreDuplicates.
+  // If theirKind === 'like' this is a reciprocal ? flip isMatch immediately
   // so the card jumps from "Accept" straight to "Connected" instead of
   // bouncing through "Pending" before the next refresh.
   const handleConnect = useCallback(async (toProfileId) => {
@@ -380,7 +415,7 @@ export default function HomeScreen({ navigation }) {
     }
   }, [user, patchMatch]);
 
-  // Connect Later — toggle this person in the user's private saved list.
+  // Connect Later -- toggle this person in the user's private saved list.
   // Optimistic; saved_profiles RLS scopes every row to saver_id = auth.uid().
   // `currentlySaved` is passed in by the card so we don't close over `matches`.
   const handleSave = useCallback(async (toProfileId, currentlySaved) => {
@@ -423,7 +458,7 @@ export default function HomeScreen({ navigation }) {
     const diff = y - lastScrollY.current;
 
     if (diff > 0) {
-      // Scrolling down — only hide if we're past the top zone (avoids hiding on tiny bounces)
+      // Scrolling down -- only hide if we're past the top zone (avoids hiding on tiny bounces)
       scrollUpAccum.current = 0;
       if (headerVisible.current && y > 40) {
         scrollDownAccum.current += diff;
@@ -438,7 +473,7 @@ export default function HomeScreen({ navigation }) {
         }
       }
     } else if (diff < 0) {
-      // Scrolling up — accumulate; show after 40px of intentional upward scroll
+      // Scrolling up -- accumulate; show after 40px of intentional upward scroll
       scrollDownAccum.current = 0;
       if (!headerVisible.current) {
         scrollUpAccum.current += Math.abs(diff);
@@ -465,7 +500,7 @@ export default function HomeScreen({ navigation }) {
     // loadMatches re-runs automatically because it depends on locFilter
   }
 
-  // The strip is an action prompt — "people you haven't dealt with yet."
+  // The strip is an action prompt -- "people you haven't dealt with yet."
   // Once you've accepted (became a match) OR sent them a connect request,
   // the row should drop off here. They still live in the matches list below
   // (with the appropriate Connected / Pending state).
@@ -473,7 +508,7 @@ export default function HomeScreen({ navigation }) {
     (r) => !r.is_match && !r.my_kind
   );
 
-  // Convert an inbound row → match shape so MatchDetail renders correctly.
+  // Convert an inbound row ? match shape so MatchDetail renders correctly.
   function inboundToMatch(row) {
     return {
       id:          row.profile_id,
@@ -497,14 +532,14 @@ export default function HomeScreen({ navigation }) {
 
   // Client-side view of the already-loaded match feed: apply the active filter
   // chip first, then the text search. Cheap (feed is capped at 100 rows) and
-  // instant — no extra round-trip. Promote to a server RPC if the feed ever
+  // instant -- no extra round-trip. Promote to a server RPC if the feed ever
   // grows past a few hundred rows.
-  //   all         → everyone I'm NOT already connected with
-  //   connections → only mutual matches (people I'm connected with)
-  //   saved       → only people in my private Connect Later list
-  //   stage       → same life stage as me   (compares life_stage_id, not the label)
-  //   church      → same church as me       (compares church_id)
-  //   new         → joined in the last NEW_WINDOW_DAYS days
+  //   all         ? everyone I'm NOT already connected with
+  //   connections ? only mutual matches (people I'm connected with)
+  //   saved       ? only people in my private Connect Later list
+  //   stage       ? same life stage as me   (compares life_stage_id, not the label)
+  //   church      ? same church as me       (compares church_id)
+  //   new         ? joined in the last NEW_WINDOW_DAYS days
   // Discovery filters all hide existing connections; the Connections tab is the
   // one place they appear.
   const visibleMatches = useMemo(() => {
@@ -525,7 +560,7 @@ export default function HomeScreen({ navigation }) {
       return list;
     }
 
-    // Discover always hides existing connections — they live in the FOUND tab.
+    // Discover always hides existing connections -- they live in the FOUND tab.
     list = list.filter((m) => !m.isMatch && !m.connected);
 
     if (activeFilter === 'saved') {
@@ -571,6 +606,17 @@ export default function HomeScreen({ navigation }) {
     return list;
   }, [matches, query, activeFilter, profile, myActivityIds]);
 
+  // Client-side text search over the churches list (same pattern as visibleMatches).
+  const visibleChurches = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return churches;
+    return churches.filter((c) => {
+      const hay = [c.name, c.denomination, c.city, c.state, c.description]
+        .filter(Boolean).join(' ').toLowerCase();
+      return hay.includes(q);
+    });
+  }, [churches, query]);
+
   const searching   = query.trim().length > 0;
   const filtering   = activeFilter !== 'all';
   const narrowed    = searching || filtering;
@@ -582,7 +628,7 @@ export default function HomeScreen({ navigation }) {
   // drop keyboard focus).
   const listHeader = (
     <View style={styles.listHeader}>
-      {/* Location filter pill — tap to open the bottom sheet */}
+      {/* Location filter pill -- tap to open the bottom sheet */}
       <View style={styles.locationPillRow}>
         <View ref={tutorialRefs.locPill} collapsable={false} style={{ alignSelf: 'stretch' }}>
           <TouchableOpacity
@@ -603,7 +649,7 @@ export default function HomeScreen({ navigation }) {
           <Ionicons name="search" size={16} color={COLORS.textTertiary} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search people, churches, interests…"
+            placeholder="Search people, churches, interests..."
             placeholderTextColor={COLORS.textTertiary}
             value={query}
             onChangeText={setQuery}
@@ -641,7 +687,7 @@ export default function HomeScreen({ navigation }) {
         </ScrollView>
       </View>
 
-      {/* Incomplete-profile nudge — shown when the user has no interests
+      {/* Incomplete-profile nudge -- shown when the user has no interests
           selected. People with blank profiles score 0% on everyone, so
           this is the most impactful thing they can do. Hidden once they
           add at least one interest via Edit Profile. */}
@@ -667,11 +713,44 @@ export default function HomeScreen({ navigation }) {
   );
 
   const EmptyState = () => {
+    // -- Churches mode ------------------------------------------------------
+    if (activeFilter === 'churches') {
+      if (churchesLoading) {
+        return (
+          <View style={styles.stateBox}>
+            <ActivityIndicator color={COLORS.textTertiary} />
+            <Text style={styles.stateBody}>Finding churches near you...</Text>
+          </View>
+        );
+      }
+      if (searching && churches.length > 0) {
+        return (
+          <View style={styles.stateBox}>
+            <Ionicons name="search-outline" size={28} color={COLORS.textTertiary} />
+            <Text style={styles.stateTitle}>No churches found</Text>
+            <Text style={styles.stateBody}>
+              No churches match "{query.trim()}". Try a different search.
+            </Text>
+          </View>
+        );
+      }
+      return (
+        <View style={styles.stateBox}>
+          <Ionicons name="business-outline" size={28} color={COLORS.textTertiary} />
+          <Text style={styles.stateTitle}>No churches nearby</Text>
+          <Text style={styles.stateBody}>
+            We'll add more churches as the community grows in your area.
+          </Text>
+        </View>
+      );
+    }
+
+    // -- People mode --------------------------------------------------------
     if (loading) {
       return (
         <View style={styles.stateBox}>
           <ActivityIndicator color={COLORS.textTertiary} />
-          <Text style={styles.stateBody}>Finding your community…</Text>
+          <Text style={styles.stateBody}>Finding your community...</Text>
         </View>
       );
     }
@@ -690,8 +769,8 @@ export default function HomeScreen({ navigation }) {
       const filterLabelText =
         FILTERS.find((f) => f.id === activeFilter)?.label || 'this filter';
       const body = searching
-        ? `No one matches “${query.trim()}”${filtering ? ` in “${filterLabelText}”` : ''}. Try a different search.`
-        : `No one fits “${filterLabelText}” yet. Tap “All” to see everyone.`;
+        ? `No one matches "${query.trim()}"${filtering ? ` in "${filterLabelText}"` : ''}. Try a different search.`
+        : `No one fits "${filterLabelText}" yet. Tap "All" to see everyone.`;
       return (
         <View style={styles.stateBox}>
           <Ionicons name="search-outline" size={28} color={COLORS.textTertiary} />
@@ -705,7 +784,7 @@ export default function HomeScreen({ navigation }) {
         <Ionicons name="people-outline" size={28} color={COLORS.textTertiary} />
         <Text style={styles.stateTitle}>More Christians joining every day</Text>
         <Text style={styles.stateBody}>
-          Check back soon — we'll surface the best fits for you as more people in your area join FOUND.
+          Check back soon -- we'll surface the best fits for you as more people in your area join FOUND.
         </Text>
       </View>
     );
@@ -724,11 +803,11 @@ export default function HomeScreen({ navigation }) {
     >
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
 
-      {/* ── Sticky header — absolutely positioned so it floats above the list ── */}
+      {/* -- Sticky header -- absolutely positioned so it floats above the list -- */}
       <Animated.View style={[styles.header, { top: insets.top, paddingTop: SPACING.lg, transform: [{ translateY: headerTranslate }] }]}>
         <View>
           <Text style={styles.headerMeta}>
-            {profile?.city ? `${profile.city}` : 'Your Area'}{' · '}{new Date().toLocaleDateString('en-US', { weekday: 'long' })}
+            {profile?.city ? `${profile.city}` : 'Your Area'}{' ? '}{new Date().toLocaleDateString('en-US', { weekday: 'long' })}
           </Text>
           <Wordmark size="md" />
         </View>
@@ -746,15 +825,26 @@ export default function HomeScreen({ navigation }) {
         </View>
       </Animated.View>
 
-      {/* ── Match cards — paddingTop reserves room under the fixed header ── */}
+      {/* -- Feed -- churches or people depending on active filter -- */}
       <FlatList
-        data={visibleMatches}
+        data={activeFilter === 'churches' ? visibleChurches : visibleMatches}
         keyExtractor={(item) => item.id}
         ListHeaderComponent={listHeader}
         ListEmptyComponent={EmptyState}
-        renderItem={({ item, index }) => (
+        renderItem={({ item, index }) => {
+          if (activeFilter === 'churches') {
+            return (
+              <ChurchCard
+                church={item}
+                onPress={() => navigation?.navigate('ChurchProfile', {
+                  churchId: item.id,
+                  distanceMiles: item.distance_miles ?? null,
+                })}
+              />
+            );
+          }
           // Wrap the first card so the tutorial can measure + spotlight it
-          index === 0 ? (
+          return index === 0 ? (
             <View ref={tutorialRefs.firstCard} collapsable={false}>
               <PersonCard
                 match={item}
@@ -774,8 +864,8 @@ export default function HomeScreen({ navigation }) {
               onCancel={() => handleCancel(item.id)}
               onPress={() => navigation?.navigate('MatchDetail', { match: item })}
             />
-          )
-        )}
+          );
+        }}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={[styles.list, { paddingTop: HEADER_HEIGHT }]}
         ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
@@ -784,8 +874,15 @@ export default function HomeScreen({ navigation }) {
         scrollEventThrottle={16}
         refreshControl={
           <RefreshControl
-            refreshing={refreshing}
-            onRefresh={() => loadMatches({ isRefresh: true })}
+            refreshing={activeFilter === 'churches' ? churchesLoading : refreshing}
+            onRefresh={() => {
+              if (activeFilter === 'churches') {
+                setChurchesFetched(false);
+                loadChurches({ force: true });
+              } else {
+                loadMatches({ isRefresh: true });
+              }
+            }}
             tintColor={COLORS.textTertiary}
           />
         }
@@ -799,7 +896,7 @@ export default function HomeScreen({ navigation }) {
         selfHasLocation={!!selfLocation}
       />
 
-      {/* ── First-time onboarding tutorial ─────────────────────────── */}
+      {/* -- First-time onboarding tutorial --------------------------- */}
       <TutorialOverlay
         visible={showTutorial}
         onDone={() => setShowTutorial(false)}
@@ -807,7 +904,7 @@ export default function HomeScreen({ navigation }) {
         appMetrics={appMetrics}
       />
 
-      {/* Incomplete-profile nudge — dismissable, fires once per session */}
+      {/* Incomplete-profile nudge -- dismissable, fires once per session */}
       <Modal
         visible={bioPromptOpen}
         transparent
@@ -950,7 +1047,7 @@ const styles = StyleSheet.create({
   },
 
 
-  // Location pill — top of header, opens the LocationFilterSheet
+  // Location pill -- top of header, opens the LocationFilterSheet
   locationPillRow: {
     paddingHorizontal: SPACING.md,
     marginBottom: SPACING.md,
@@ -995,7 +1092,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: COLORS.text,
     padding: 0,
-    // Kill the default focus ring on web — the box already has a border.
+    // Kill the default focus ring on web -- the box already has a border.
     ...(Platform.OS === 'web' ? { outlineStyle: 'none' } : null),
   },
 

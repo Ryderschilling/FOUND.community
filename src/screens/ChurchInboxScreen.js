@@ -1,14 +1,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // ChurchInboxScreen
 //
-// App member → church messaging. Opened from ChurchProfileScreen's "Message Us"
-// button (or via a church_reply notification tap).
+// Full back-and-forth conversation between the app user and a church.
 //
-// Shows:
-//  - The member's past messages to this church (read-only history)
-//  - A compose box to send a new message
-//  - Church replies arrive as notifications; a "You have a reply" banner
-//    appears when a church_reply notification exists for this church.
+// Sent messages    = user → church  (church_messages table, direction='sent')
+// Received replies = church → user  (notifications type='church_reply', direction='received')
+//
+// Data comes from get_church_conversation(p_church_id) RPC which returns both
+// sides merged and sorted oldest-first.
 //
 // Church admins read and reply from the dashboard — never here.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -42,22 +41,31 @@ function timeAgo(ts) {
   return new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-// ─── Message Row ──────────────────────────────────────────────────────────────
+// ─── Bubble ───────────────────────────────────────────────────────────────────
 
-function MessageRow({ msg }) {
+function Bubble({ msg, churchName }) {
+  const isSent = msg.direction === 'sent';
   return (
-    <View style={[styles.bubble, msg.replied_at ? styles.bubbleReplied : null]}>
-      <Text style={styles.bubbleBody}>{msg.body}</Text>
-      <View style={styles.bubbleMeta}>
-        <Text style={styles.bubbleTime}>{timeAgo(msg.created_at)}</Text>
-        {msg.replied_at ? (
-          <View style={styles.repliedBadge}>
-            <Ionicons name="checkmark-done" size={12} color={COLORS.sage} />
-            <Text style={styles.repliedText}>Replied</Text>
-          </View>
-        ) : msg.read_at ? (
-          <Text style={styles.readText}>Seen</Text>
-        ) : null}
+    <View style={[styles.bubbleRow, isSent ? styles.bubbleRowSent : styles.bubbleRowReceived]}>
+      {/* Church initial avatar on received side */}
+      {!isSent && (
+        <View style={styles.churchInitial}>
+          <Text style={styles.churchInitialText}>
+            {(churchName?.[0] ?? 'C').toUpperCase()}
+          </Text>
+        </View>
+      )}
+
+      <View style={[styles.bubble, isSent ? styles.bubbleSent : styles.bubbleReceived]}>
+        {!isSent && (
+          <Text style={styles.senderLabel}>{churchName}</Text>
+        )}
+        <Text style={[styles.bubbleBody, isSent ? styles.bubbleBodySent : styles.bubbleBodyReceived]}>
+          {msg.body}
+        </Text>
+        <Text style={[styles.bubbleTime, isSent ? styles.bubbleTimeSent : styles.bubbleTimeReceived]}>
+          {timeAgo(msg.created_at)}
+        </Text>
       </View>
     </View>
   );
@@ -70,35 +78,47 @@ export default function ChurchInboxScreen({ navigation, route }) {
   const churchId   = route?.params?.churchId;
   const churchName = route?.params?.churchName ?? 'Church';
 
-  const [messages, setMessages]   = useState([]);
-  const [loading, setLoading]     = useState(true);
-  const [sending, setSending]     = useState(false);
-  const [body, setBody]           = useState('');
-  const [error, setError]         = useState(null);
-  const [sentBanner, setSentBanner] = useState(false);
+  const [messages, setMessages] = useState([]);
+  const [loading,  setLoading]  = useState(true);
+  const [sending,  setSending]  = useState(false);
+  const [body,     setBody]     = useState('');
+  const [error,    setError]    = useState(null);
   const flatRef = useRef(null);
 
   const load = useCallback(async () => {
     if (!churchId || !user?.id) return;
     try {
-      // Members can only see their own messages (RLS enforces this)
-      const { data, error: err } = await supabase
-        .from('church_messages')
-        .select('id, body, read_at, replied_at, created_at')
-        .eq('church_id', churchId)
-        .eq('from_profile_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(50);
-
+      const { data, error: err } = await supabase.rpc('get_church_conversation', {
+        p_church_id: churchId,
+      });
       if (err) throw err;
       setMessages(data ?? []);
     } catch (e) {
-      // Non-critical — just show empty state
+      // Non-critical — show empty state
     }
     setLoading(false);
   }, [churchId, user?.id]);
 
-  useEffect(() => { load(); }, [load]);
+  // Mark church replies as read whenever this screen is active
+  const markRead = useCallback(async () => {
+    if (!churchId) return;
+    try {
+      await supabase.rpc('mark_church_replies_read', { p_church_id: churchId });
+    } catch (_) {}
+  }, [churchId]);
+
+  useEffect(() => {
+    markRead();
+    load();
+  }, [load, markRead]);
+
+  useEffect(() => {
+    const unsub = navigation?.addListener?.('focus', () => {
+      markRead();
+      load();
+    });
+    return unsub;
+  }, [navigation, load, markRead]);
 
   const handleSend = useCallback(async () => {
     const trimmed = body.trim();
@@ -113,9 +133,8 @@ export default function ChurchInboxScreen({ navigation, route }) {
       });
       if (err) throw err;
       setBody('');
-      setSentBanner(true);
-      setTimeout(() => setSentBanner(false), 4000);
-      load(); // refresh message list
+      await load();
+      setTimeout(() => flatRef.current?.scrollToEnd?.({ animated: true }), 100);
     } catch (e) {
       setError('Could not send message. Try again.');
     }
@@ -141,50 +160,34 @@ export default function ChurchInboxScreen({ navigation, route }) {
           </TouchableOpacity>
           <View style={styles.headerCenter}>
             <Text style={styles.headerTitle} numberOfLines={1}>{churchName}</Text>
-            <Text style={styles.headerSub}>Church inbox</Text>
+            <Text style={styles.headerSub}>Church conversation</Text>
           </View>
           <View style={{ width: 36 }} />
         </View>
 
-        {/* Privacy note */}
-        <View style={styles.privacyNote}>
-          <Ionicons name="lock-closed-outline" size={13} color={COLORS.textTertiary} />
-          <Text style={styles.privacyText}>
-            Only {churchName}'s team can read your message. They'll reply via notification.
-          </Text>
-        </View>
-
-        {/* Sent banner */}
-        {sentBanner ? (
-          <View style={styles.sentBanner}>
-            <Ionicons name="checkmark-circle" size={16} color={COLORS.sage} />
-            <Text style={styles.sentBannerText}>Message sent! The team will be in touch.</Text>
-          </View>
-        ) : null}
-
-        {/* Message history */}
+        {/* Conversation */}
         {loading ? (
           <View style={styles.center}>
             <ActivityIndicator color={COLORS.textTertiary} />
           </View>
-        ) : messages.length > 0 ? (
-          <FlatList
-            ref={flatRef}
-            data={messages}
-            keyExtractor={(m) => m.id}
-            renderItem={({ item }) => <MessageRow msg={item} />}
-            contentContainerStyle={styles.list}
-            inverted
-            showsVerticalScrollIndicator={false}
-          />
-        ) : (
+        ) : messages.length === 0 ? (
           <View style={styles.center}>
             <Ionicons name="chatbubble-ellipses-outline" size={32} color={COLORS.textTertiary} />
             <Text style={styles.emptyTitle}>Start the conversation</Text>
             <Text style={styles.emptyBody}>
-              Your message goes directly to {churchName}'s team on the FOUND church dashboard.
+              Your message goes directly to {churchName}'s team. They'll reply here.
             </Text>
           </View>
+        ) : (
+          <FlatList
+            ref={flatRef}
+            data={messages}
+            keyExtractor={(m) => m.id}
+            renderItem={({ item }) => <Bubble msg={item} churchName={churchName} />}
+            contentContainerStyle={styles.list}
+            showsVerticalScrollIndicator={false}
+            onContentSizeChange={() => flatRef.current?.scrollToEnd?.({ animated: false })}
+          />
         )}
 
         {/* Error */}
@@ -236,6 +239,9 @@ const styles = StyleSheet.create({
     paddingTop: SPACING.sm,
     paddingBottom: SPACING.sm,
     gap: SPACING.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    backgroundColor: COLORS.white,
   },
   backBtn: {
     width: 36, height: 36, borderRadius: 18,
@@ -243,61 +249,53 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.border,
   },
   headerCenter: { flex: 1, alignItems: 'center' },
-  headerTitle: { fontFamily: FONT.bold, fontSize: 17, color: COLORS.text },
-  headerSub:   { fontFamily: FONT.regular, fontSize: 12, color: COLORS.textTertiary, marginTop: 1 },
-
-  privacyNote: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 6,
-    marginHorizontal: SPACING.md,
-    marginBottom: 8,
-    padding: 10,
-    backgroundColor: COLORS.surfaceAlt,
-    borderRadius: RADIUS.md ?? 12,
-  },
-  privacyText: { flex: 1, fontFamily: FONT.regular, fontSize: 12, color: COLORS.textTertiary, lineHeight: 17 },
-
-  sentBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginHorizontal: SPACING.md,
-    marginBottom: 8,
-    padding: 12,
-    backgroundColor: COLORS.sageBg,
-    borderRadius: RADIUS.md ?? 12,
-    borderWidth: 1,
-    borderColor: COLORS.sageLight,
-  },
-  sentBannerText: { fontFamily: FONT.semiBold, fontSize: 13, color: COLORS.sage },
+  headerTitle:  { fontFamily: FONT.bold,    fontSize: 17, color: COLORS.text },
+  headerSub:    { fontFamily: FONT.regular, fontSize: 12, color: COLORS.textTertiary, marginTop: 1 },
 
   center: {
     flex: 1, alignItems: 'center', justifyContent: 'center',
     gap: 8, paddingHorizontal: SPACING.xl ?? 32,
   },
-  emptyTitle: { fontFamily: FONT.bold, fontSize: 17, color: COLORS.text, marginTop: 8, textAlign: 'center' },
-  emptyBody:  { fontFamily: FONT.regular, fontSize: 14, color: COLORS.textTertiary, textAlign: 'center', lineHeight: 20 },
+  emptyTitle: { fontFamily: FONT.bold,    fontSize: 17, color: COLORS.text,          marginTop: 8, textAlign: 'center' },
+  emptyBody:  { fontFamily: FONT.regular, fontSize: 14, color: COLORS.textTertiary,  textAlign: 'center', lineHeight: 20 },
 
-  list: { paddingHorizontal: SPACING.md, paddingVertical: 8 },
+  list: { paddingHorizontal: SPACING.md, paddingVertical: SPACING.md },
+
+  // ── Bubbles ──────────────────────────────────────────────────────────────
+  bubbleRow:         { flexDirection: 'row', alignItems: 'flex-end', marginBottom: 10 },
+  bubbleRowSent:     { justifyContent: 'flex-end' },
+  bubbleRowReceived: { justifyContent: 'flex-start', gap: 8 },
+
+  churchInitial: {
+    width: 28, height: 28, borderRadius: 14,
+    backgroundColor: '#1a1a1a',
+    alignItems: 'center', justifyContent: 'center',
+    flexShrink: 0,
+  },
+  churchInitialText: { fontFamily: FONT.bold, fontSize: 12, color: '#fff' },
 
   bubble: {
-    backgroundColor: COLORS.white,
-    borderRadius: RADIUS.lg ?? 16,
-    borderWidth: 1,
-    borderColor: COLORS.borderLight,
-    padding: SPACING.md,
-    marginBottom: 8,
+    maxWidth: '75%',
+    borderRadius: RADIUS.lg ?? 18,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
-  bubbleReplied: { borderColor: COLORS.sageLight },
-  bubbleBody: { fontFamily: FONT.regular, fontSize: 15, color: COLORS.text, lineHeight: 22 },
-  bubbleMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 },
-  bubbleTime: { fontFamily: FONT.regular, fontSize: 11, color: COLORS.textTertiary },
-  repliedBadge: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  repliedText: { fontFamily: FONT.semiBold, fontSize: 11, color: COLORS.sage },
-  readText:    { fontFamily: FONT.regular,  fontSize: 11, color: COLORS.textTertiary },
+  bubbleSent:     { backgroundColor: '#1a1a1a', borderBottomRightRadius: 4 },
+  bubbleReceived: {
+    backgroundColor: COLORS.white,
+    borderWidth: 1, borderColor: COLORS.border,
+    borderBottomLeftRadius: 4,
+  },
 
-  errorRow: { paddingHorizontal: SPACING.md, paddingBottom: 4 },
+  senderLabel:        { fontFamily: FONT.semiBold, fontSize: 11, color: COLORS.textTertiary, marginBottom: 3 },
+  bubbleBody:         { fontFamily: FONT.regular,  fontSize: 15, lineHeight: 22 },
+  bubbleBodySent:     { color: '#fff' },
+  bubbleBodyReceived: { color: COLORS.text },
+  bubbleTime:         { fontFamily: FONT.regular,  fontSize: 11, marginTop: 4 },
+  bubbleTimeSent:     { color: 'rgba(255,255,255,0.5)', textAlign: 'right' },
+  bubbleTimeReceived: { color: COLORS.textTertiary },
+
+  errorRow:  { paddingHorizontal: SPACING.md, paddingBottom: 4 },
   errorText: { fontFamily: FONT.regular, fontSize: 13, color: '#D24A4A', textAlign: 'center' },
 
   compose: {
@@ -313,24 +311,13 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    minHeight: 44,
-    maxHeight: 120,
+    minHeight: 44, maxHeight: 120,
     backgroundColor: COLORS.bg,
     borderRadius: RADIUS.lg ?? 16,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontFamily: FONT.regular,
-    fontSize: 15,
-    color: COLORS.text,
-    lineHeight: 21,
+    borderWidth: 1, borderColor: COLORS.border,
+    paddingHorizontal: 14, paddingVertical: 10,
+    fontFamily: FONT.regular, fontSize: 15, color: COLORS.text, lineHeight: 21,
   },
-  sendBtn: {
-    width: 44, height: 44, borderRadius: 22,
-    backgroundColor: COLORS.accent,
-    alignItems: 'center', justifyContent: 'center',
-    flexShrink: 0,
-  },
+  sendBtn:         { width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.accent, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   sendBtnDisabled: { opacity: 0.4 },
 });

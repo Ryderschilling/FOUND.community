@@ -54,17 +54,34 @@ function relativeTime(iso) {
 
 // ─── Thread row ───────────────────────────────────────────────────────────
 function MessageRow({ item, onPress }) {
-  const isGroup = item.kind === 'group';
-  const name    = item.other_full_name || item.other_handle || 'Conversation';
-  // "You: [body]" when last message is mine; raw body otherwise
-  const rawBody = item.last_message_body || (isGroup ? 'Group thread' : 'Say hi!');
-  const preview = item.last_message_is_mine ? `You: ${rawBody}` : rawBody;
+  const isGroup  = item.kind === 'group';
+  const isChurch = item.kind === 'church';
+  const name     = item.other_full_name || item.other_handle || 'Conversation';
+  const rawBody  = item.last_message_body || (isGroup ? 'Group thread' : 'Say hi!');
+  const preview  = item.last_message_is_mine ? `You: ${rawBody}` : rawBody;
+  const unread   = item.unread_count ?? 0;
+
   return (
     <TouchableOpacity style={styles.row} onPress={onPress} activeOpacity={0.7}>
       <View style={styles.avatarWrap}>
         {isGroup ? (
           <View style={styles.groupAvatar}>
             <Ionicons name="people-outline" size={22} color={COLORS.textSecondary} />
+          </View>
+        ) : isChurch ? (
+          <View style={styles.churchAvatar}>
+            {item.church_logo_url ? (
+              <Avatar
+                initials={initialsFor(name)}
+                size={50}
+                gradientColors={['#1a1a1a', '#333333']}
+                uri={item.church_logo_url}
+              />
+            ) : (
+              <View style={styles.churchAvatarFallback}>
+                <Ionicons name="business-outline" size={22} color="#fff" />
+              </View>
+            )}
           </View>
         ) : (
           <Avatar
@@ -77,16 +94,17 @@ function MessageRow({ item, onPress }) {
       </View>
       <View style={styles.info}>
         <View style={styles.nameRow}>
-          <Text style={[styles.name, !isGroup && styles.nameConnected]} numberOfLines={1}>{name}</Text>
-          {isGroup ? <Text style={styles.groupLabel}>(group)</Text> : null}
+          <Text style={styles.name} numberOfLines={1}>{name}</Text>
+          {isChurch && <Text style={styles.churchLabel}>Church</Text>}
+          {isGroup  && <Text style={styles.groupLabel}>(group)</Text>}
         </View>
-        <Text style={styles.preview} numberOfLines={1}>{preview}</Text>
+        <Text style={[styles.preview, unread > 0 && styles.previewUnread]} numberOfLines={1}>{preview}</Text>
       </View>
       <View style={styles.right}>
         <Text style={styles.time}>{relativeTime(item.last_message_at)}</Text>
-        {item.unread_count > 0 ? (
+        {unread > 0 ? (
           <View style={styles.badge}>
-            <Text style={styles.badgeText}>{item.unread_count}</Text>
+            <Text style={styles.badgeText}>{unread}</Text>
           </View>
         ) : null}
       </View>
@@ -110,15 +128,36 @@ export default function MessagesScreen({ navigation }) {
   const load = useCallback(async ({ isRefresh } = {}) => {
     if (isRefresh) setRefreshing(true); else setLoading(true);
     try {
-      const { data, error } = await supabase.rpc('my_threads_detailed');
-      if (error) throw error;
-      // Only show threads that have at least one message sent
-      // Filter to threads that have at least one message.
-      // Use last_message_body (from the messages CTE) rather than last_message_at
-      // (the threads table column) — the touch_thread trigger was blocked by RLS
-      // so last_message_at is unreliable until migration 0032 is applied.
-      const withMessages = (data ?? []).filter((t) => t.last_message_body != null);
-      setThreads(withMessages);
+      const [threadsRes, churchRes] = await Promise.all([
+        supabase.rpc('my_threads_detailed'),
+        supabase.rpc('my_church_conversations'),
+      ]);
+
+      if (threadsRes.error) throw threadsRes.error;
+
+      const withMessages = (threadsRes.data ?? []).filter((t) => t.last_message_body != null);
+
+      // Shape church conversations to match thread row format
+      const churchThreads = (churchRes.data ?? []).map((c) => ({
+        thread_id:            c.church_id,   // reuse field as unique key
+        kind:                 'church',
+        church_id:            c.church_id,
+        church_logo_url:      c.church_logo_url,
+        other_full_name:      c.church_name,
+        last_message_body:    c.last_message_body,
+        last_message_at:      c.last_message_at,
+        last_message_is_mine: c.last_message_is_mine,
+        unread_count:         c.unread_reply_count,
+      }));
+
+      // Merge + sort by most recent activity
+      const all = [...withMessages, ...churchThreads].sort((a, b) => {
+        const ta = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
+        const tb = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
+        return tb - ta;
+      });
+
+      setThreads(all);
     } catch (e) {
       console.warn('[messages] load failed', e?.message);
     } finally {
@@ -135,6 +174,13 @@ export default function MessagesScreen({ navigation }) {
   }, [navigation, load]);
 
   function openThread(item) {
+    if (item.kind === 'church') {
+      navigation?.navigate('ChurchInbox', {
+        churchId:   item.church_id,
+        churchName: item.other_full_name,
+      });
+      return;
+    }
     if (item.kind === 'group') {
       navigation?.navigate('Chat', {
         thread_id: item.thread_id,
@@ -181,8 +227,13 @@ export default function MessagesScreen({ navigation }) {
 
   // Derive visible threads based on active tab + hide groups toggle
   const visibleThreads = threads.filter((t) => {
-    const isGroup = t.kind === 'group';
-    if (activeTab === 'groups') return isGroup;
+    const isGroup  = t.kind === 'group';
+    const isChurch = t.kind === 'church';
+    if (activeTab === 'groups') return isGroup;           // church never in Groups tab
+    if (isChurch) {
+      if (activeTab === 'new') return (t.unread_count ?? 0) > 0;
+      return true;
+    }
     if (hideGroups && isGroup) return false;
     if (activeTab === 'new') return (t.unread_count ?? 0) > 0;
     return true; // 'all'
@@ -612,6 +663,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.lg, paddingVertical: 13,
   },
   avatarWrap: { position: 'relative', flexShrink: 0 },
+  churchAvatar: { width: 50, height: 50, borderRadius: RADIUS.full, overflow: 'hidden' },
+  churchAvatarFallback: {
+    width: 50, height: 50, borderRadius: RADIUS.full,
+    backgroundColor: '#1a1a1a',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  churchLabel: { fontFamily: FONT.regular, fontSize: 11, color: COLORS.textTertiary, flexShrink: 0 },
   groupAvatar: {
     width: 50, height: 50, borderRadius: RADIUS.full,
     backgroundColor: COLORS.surfaceAlt, borderWidth: 1, borderColor: COLORS.border,
@@ -622,7 +680,8 @@ const styles = StyleSheet.create({
   name:          { fontFamily: FONT.semiBold, fontSize: 15, color: COLORS.text, flexShrink: 1 },
   nameConnected: { fontFamily: FONT.bold,     fontSize: 15, color: COLORS.text },
   groupLabel:    { fontFamily: FONT.regular,  fontSize: 12, color: COLORS.textTertiary, flexShrink: 0 },
-  preview:       { fontFamily: FONT.regular,  fontSize: 13, color: COLORS.textSecondary },
+  preview:        { fontFamily: FONT.regular,   fontSize: 13, color: COLORS.textSecondary },
+  previewUnread:  { fontFamily: FONT.semiBold,  fontSize: 13, color: COLORS.text },
   right: { alignItems: 'flex-end', gap: 4, flexShrink: 0 },
   time:  { fontFamily: FONT.regular, fontSize: 11, color: COLORS.textTertiary },
   badge: {

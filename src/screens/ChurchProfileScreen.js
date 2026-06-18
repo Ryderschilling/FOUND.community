@@ -1,17 +1,13 @@
-// ─────────────────────────────────────────────────────────────────────────────
 // ChurchProfileScreen
 //
-// The app-side church profile. Rendered when:
-//   - A member taps a church_welcome notification
-//   - A member taps the church name on their own profile or a match's profile
-//   - A member browses to their church from the church picker
+// App-side church profile. Members can:
+//   - View full church info (logo, bio, service times, staff, groups)
+//   - Message the church
+//   - Follow / unfollow the church (to get notifications for new groups, etc.)
 //
-// All data comes from the `get_church_profile` RPC — a single call that
-// returns the church row + staff array + groups array + member count.
-//
-// Church admins manage everything from the dashboard; this screen is read-only.
-// The only action a member can take here is "Message Us" → ChurchInboxScreen.
-// ─────────────────────────────────────────────────────────────────────────────
+// All read data comes from get_church_profile RPC.
+// Follow state comes from get_church_follow_status RPC.
+// Church admins manage content from the dashboard; this screen is read-only.
 
 import React, { useState, useEffect, useCallback } from 'react';
 import {
@@ -24,12 +20,13 @@ import {
   StatusBar,
   ActivityIndicator,
   Linking,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING, RADIUS } from '../theme';
 import { supabase } from '../lib/supabase';
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// Helpers
 
 function initials(name) {
   if (!name) return '?';
@@ -38,58 +35,121 @@ function initials(name) {
     .toUpperCase() || '?';
 }
 
-function lifeStageLabel(s) {
-  const MAP = { single: 'Single', dating: 'Dating', engaged: 'Engaged', married: 'Married', parents: 'Parents', empty_nest: 'Empty Nest' };
-  return MAP[s] || s || '';
+function formatDist(mi) {
+  if (mi == null) return null;
+  const n = Number(mi);
+  if (!isFinite(n)) return null;
+  if (n < 0.1) return '< 0.1 mi away';
+  if (n < 10)  return `${n.toFixed(1)} mi away`;
+  return `${Math.round(n)} mi away`;
 }
 
-// Parse service_times — stored as jsonb in DB (array of {day, time} objects or a plain string).
 function formatServiceTimes(raw) {
   if (!raw) return null;
   try {
     const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
     if (Array.isArray(parsed)) {
-      return parsed.map(t => `${t.day ?? ''} ${t.time ?? ''}`.trim()).filter(Boolean).join('  ·  ');
+      return parsed.map(t => `${t.day ?? ''} ${t.time ?? ''}`.trim()).filter(Boolean).join('  |  ');
     }
     if (typeof parsed === 'string') return parsed;
   } catch (_) {}
   return typeof raw === 'string' ? raw : null;
 }
 
-// ─── Staff Card ────────────────────────────────────────────────────────────────
+// Church logo — shows uploaded image or initials fallback
+
+function ChurchLogo({ name, logoUrl, size = 88 }) {
+  const [imgFailed, setImgFailed] = useState(false);
+  const radius = size / 2;
+
+  if (logoUrl && !imgFailed) {
+    return (
+      <Image
+        source={{ uri: logoUrl }}
+        style={[styles.churchAvatar, { width: size, height: size, borderRadius: radius }]}
+        onError={() => setImgFailed(true)}
+        resizeMode="cover"
+      />
+    );
+  }
+
+  return (
+    <View style={[styles.churchAvatar, { width: size, height: size, borderRadius: radius }]}>
+      <Text style={[styles.churchInitials, { fontSize: size * 0.32 }]}>{initials(name)}</Text>
+    </View>
+  );
+}
+
+// Staff card
 
 function StaffCard({ member }) {
+  const [photoFailed, setPhotoFailed] = useState(false);
   return (
     <View style={styles.staffCard}>
-      <View style={styles.staffAvatar}>
-        <Text style={styles.staffInitials}>{initials(member.name)}</Text>
-      </View>
+      {member.avatar_url && !photoFailed ? (
+        <Image
+          source={{ uri: member.avatar_url }}
+          style={styles.staffAvatar}
+          onError={() => setPhotoFailed(true)}
+          resizeMode="cover"
+        />
+      ) : (
+        <View style={styles.staffAvatar}>
+          <Text style={styles.staffInitials}>{initials(member.name)}</Text>
+        </View>
+      )}
       <View style={styles.staffInfo}>
         <Text style={styles.staffName}>{member.name}</Text>
         {member.title ? <Text style={styles.staffTitle}>{member.title}</Text> : null}
-        {member.bio   ? <Text style={styles.staffBio} numberOfLines={2}>{member.bio}</Text> : null}
+        {member.bio   ? <Text style={styles.staffBio} numberOfLines={3}>{member.bio}</Text> : null}
       </View>
     </View>
   );
 }
 
-// ─── Group Chip ────────────────────────────────────────────────────────────────
+// Group card — tappable, navigates to GroupDetail
 
-function GroupChip({ group }) {
+function GroupCard({ group, navigation }) {
   return (
-    <View style={styles.groupChip}>
-      <Text style={styles.groupName}>{group.name}</Text>
+    <TouchableOpacity
+      style={styles.groupCard}
+      activeOpacity={0.82}
+      onPress={() => navigation?.navigate('GroupDetail', { groupId: group.id })}
+    >
+      <View style={styles.groupHeader}>
+        <Text style={styles.groupName}>{group.name}</Text>
+        <View style={styles.groupCardRight}>
+          {group.member_count > 0 ? (
+            <View style={styles.groupCountBadge}>
+              <Ionicons name="people-outline" size={11} color={COLORS.textTertiary} />
+              <Text style={styles.groupCountText}>{group.member_count}</Text>
+            </View>
+          ) : null}
+          <Ionicons name="chevron-forward" size={16} color={COLORS.textTertiary} />
+        </View>
+      </View>
+      {group.description ? (
+        <Text style={styles.groupDesc} numberOfLines={2}>{group.description}</Text>
+      ) : null}
       {group.schedule_text ? (
-        <Text style={styles.groupSchedule}>{group.schedule_text}</Text>
+        <View style={styles.groupScheduleRow}>
+          <Ionicons name="time-outline" size={13} color={COLORS.textTertiary} />
+          <Text style={styles.groupScheduleText}>{group.schedule_text}</Text>
+        </View>
       ) : null}
-      {group.member_count > 0 ? (
-        <Text style={styles.groupCount}>{group.member_count} members</Text>
+      {(group.city || group.state) ? (
+        <View style={styles.groupScheduleRow}>
+          <Ionicons name="location-outline" size={13} color={COLORS.textTertiary} />
+          <Text style={styles.groupScheduleText}>
+            {[group.city, group.state].filter(Boolean).join(', ')}
+          </Text>
+        </View>
       ) : null}
-    </View>
+    </TouchableOpacity>
   );
 }
 
-// ─── Section ──────────────────────────────────────────────────────────────────
+// Section header
 
 function Section({ title, children }) {
   return (
@@ -100,23 +160,40 @@ function Section({ title, children }) {
   );
 }
 
-// ─── Screen ───────────────────────────────────────────────────────────────────
+// Main screen
 
 export default function ChurchProfileScreen({ navigation, route }) {
-  const churchId = route?.params?.churchId;
+  const churchId      = route?.params?.churchId;
+  const distanceMiles = route?.params?.distanceMiles ?? null;
 
-  const [church, setChurch]   = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError]     = useState(null);
+  const [church, setChurch]       = useState(null);
+  const [loading, setLoading]     = useState(true);
+  const [error, setError]         = useState(null);
+  const [isFollowing, setIsFollowing]     = useState(false);
+  const [followerCount, setFollowerCount] = useState(0);
+  const [followLoading, setFollowLoading] = useState(false);
 
   const load = useCallback(async () => {
     if (!churchId) { setError('No church ID provided.'); setLoading(false); return; }
     try {
-      const { data, error: err } = await supabase.rpc('get_church_profile', { p_church_id: churchId });
-      if (err) throw err;
-      const row = Array.isArray(data) ? data[0] : data;
+      // Load church profile + follow status in parallel
+      const [profileRes, followRes] = await Promise.all([
+        supabase.rpc('get_church_profile', { p_church_id: churchId }),
+        supabase.rpc('get_church_follow_status', { p_church_id: churchId }),
+      ]);
+      if (profileRes.error) throw profileRes.error;
+
+      const row = Array.isArray(profileRes.data) ? profileRes.data[0] : profileRes.data;
       setChurch(row ?? null);
       setError(row ? null : 'Church not found.');
+
+      if (!followRes.error && followRes.data) {
+        const fs = typeof followRes.data === 'string'
+          ? JSON.parse(followRes.data)
+          : followRes.data;
+        setIsFollowing(!!fs.is_following);
+        setFollowerCount(Number(fs.follower_count) || 0);
+      }
     } catch (e) {
       setError('Could not load church profile.');
     }
@@ -125,7 +202,36 @@ export default function ChurchProfileScreen({ navigation, route }) {
 
   useEffect(() => { load(); }, [load]);
 
-  // ── Loading ────────────────────────────────────────────────────────────────
+  async function handleFollow() {
+    if (followLoading) return;
+    setFollowLoading(true);
+    // Optimistic
+    const wasFollowing = isFollowing;
+    setIsFollowing(!wasFollowing);
+    setFollowerCount(c => wasFollowing ? Math.max(0, c - 1) : c + 1);
+
+    try {
+      const { data, error: rpcErr } = await supabase.rpc('toggle_church_follow', { p_church_id: churchId });
+      if (rpcErr) {
+        console.warn('[follow] RPC error:', rpcErr.message, rpcErr.code, rpcErr.details);
+        throw rpcErr;
+      }
+      if (data == null) {
+        console.warn('[follow] RPC returned null');
+        throw new Error('null response');
+      }
+      const result = typeof data === 'string' ? JSON.parse(data) : data;
+      setIsFollowing(!!result.following);
+      setFollowerCount(Number(result.follower_count) || 0);
+    } catch (e) {
+      console.warn('[follow] failed, reverting:', e?.message);
+      // Revert on failure
+      setIsFollowing(wasFollowing);
+      setFollowerCount(c => wasFollowing ? c + 1 : Math.max(0, c - 1));
+    }
+    setFollowLoading(false);
+  }
+
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -142,7 +248,6 @@ export default function ChurchProfileScreen({ navigation, route }) {
     );
   }
 
-  // ── Error ──────────────────────────────────────────────────────────────────
   if (error || !church) {
     return (
       <SafeAreaView style={styles.container}>
@@ -164,12 +269,12 @@ export default function ChurchProfileScreen({ navigation, route }) {
   const staff  = Array.isArray(church.staff)  ? church.staff  : [];
   const groups = Array.isArray(church.groups) ? church.groups : [];
   const serviceTimes = formatServiceTimes(church.service_times);
+  const distLabel    = formatDist(distanceMiles);
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
 
-      {/* Header row */}
       <View style={styles.backRow}>
         <TouchableOpacity
           style={styles.backBtn}
@@ -180,95 +285,144 @@ export default function ChurchProfileScreen({ navigation, route }) {
         </TouchableOpacity>
       </View>
 
-      <ScrollView
-        contentContainerStyle={styles.scroll}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* ── Hero ─────────────────────────────────────────────────────── */}
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+
+        {/* Hero */}
         <View style={styles.hero}>
-          <View style={styles.churchAvatar}>
-            <Text style={styles.churchInitials}>{initials(church.name)}</Text>
-          </View>
+          <ChurchLogo name={church.name} logoUrl={church.logo_url} size={90} />
+
+          {church.is_verified ? (
+            <View style={styles.verifiedBadge}>
+              <Ionicons name="checkmark-circle" size={13} color={COLORS.sage} />
+              <Text style={styles.verifiedText}>Verified</Text>
+            </View>
+          ) : null}
+
           <Text style={styles.churchName}>{church.name}</Text>
 
-          {/* Location + denomination */}
           <Text style={styles.churchMeta}>
             {[church.city, church.state].filter(Boolean).join(', ')}
             {church.denomination ? `  ·  ${church.denomination}` : ''}
           </Text>
 
-          {/* Member count */}
-          {church.member_count > 0 ? (
-            <View style={styles.memberBadge}>
-              <Ionicons name="people" size={13} color={COLORS.sage} />
-              <Text style={styles.memberBadgeText}>
-                {church.member_count} {church.member_count === 1 ? 'FOUND member' : 'FOUND members'}
-              </Text>
+          {distLabel ? (
+            <View style={styles.metaRow}>
+              <Ionicons name="location-outline" size={13} color={COLORS.textTertiary} />
+              <Text style={styles.metaText}>{distLabel}</Text>
             </View>
           ) : null}
+
+          {/* Stats row: members + followers */}
+          <View style={styles.statsRow}>
+            {church.member_count > 0 ? (
+              <View style={styles.statChip}>
+                <Ionicons name="people" size={13} color={COLORS.sage} />
+                <Text style={styles.statChipText}>
+                  {church.member_count} {church.member_count === 1 ? 'member' : 'members'}
+                </Text>
+              </View>
+            ) : null}
+            {followerCount > 0 ? (
+              <View style={styles.statChip}>
+                <Ionicons name="heart" size={12} color={COLORS.clay} />
+                <Text style={styles.statChipText}>
+                  {followerCount} {followerCount === 1 ? 'follower' : 'followers'}
+                </Text>
+              </View>
+            ) : null}
+          </View>
         </View>
 
-        {/* ── Message Us CTA ────────────────────────────────────────────── */}
-        <TouchableOpacity
-          style={styles.messageBtn}
-          activeOpacity={0.85}
-          onPress={() => navigation?.navigate('ChurchInbox', {
-            churchId: church.id,
-            churchName: church.name,
-          })}
-        >
-          <Ionicons name="chatbubble-ellipses-outline" size={18} color={COLORS.accentText} />
-          <Text style={styles.messageBtnText}>Message Us</Text>
-        </TouchableOpacity>
+        {/* Action buttons */}
+        <View style={styles.actionRow}>
+          {/* Message Us */}
+          <TouchableOpacity
+            style={styles.messageBtn}
+            activeOpacity={0.85}
+            onPress={() => navigation?.navigate('ChurchInbox', {
+              churchId: church.id,
+              churchName: church.name,
+            })}
+          >
+            <Ionicons name="chatbubble-ellipses-outline" size={17} color={COLORS.accentText} />
+            <Text style={styles.messageBtnText}>Message Us</Text>
+          </TouchableOpacity>
 
-        {/* ── About ────────────────────────────────────────────────────── */}
+          {/* Follow / Following */}
+          <TouchableOpacity
+            style={[styles.followBtn, isFollowing && styles.followBtnActive]}
+            activeOpacity={0.82}
+            onPress={handleFollow}
+            disabled={followLoading}
+          >
+            <Ionicons
+              name={isFollowing ? 'heart' : 'heart-outline'}
+              size={16}
+              color={isFollowing ? COLORS.clay : COLORS.text}
+            />
+            <Text style={[styles.followBtnText, isFollowing && styles.followBtnTextActive]}>
+              {isFollowing ? 'Following' : 'Follow'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Follow explainer — shown only when not yet following */}
+        {!isFollowing ? (
+          <Text style={styles.followHint}>
+            Follow to get notified when this church adds new groups or announcements.
+          </Text>
+        ) : null}
+
+        {/* About */}
         {church.description ? (
           <Section title="About">
             <Text style={styles.description}>{church.description}</Text>
           </Section>
         ) : null}
 
-        {/* ── Details ──────────────────────────────────────────────────── */}
+        {/* Details */}
         {(serviceTimes || church.address || church.website) ? (
           <Section title="Details">
-            {serviceTimes ? (
-              <View style={styles.detailRow}>
-                <Ionicons name="time-outline" size={16} color={COLORS.textTertiary} />
-                <Text style={styles.detailText}>{serviceTimes}</Text>
-              </View>
-            ) : null}
-            {church.address ? (
-              <View style={styles.detailRow}>
-                <Ionicons name="location-outline" size={16} color={COLORS.textTertiary} />
-                <Text style={styles.detailText}>{church.address}</Text>
-              </View>
-            ) : null}
-            {church.website ? (
-              <TouchableOpacity
-                style={styles.detailRow}
-                onPress={() => Linking.openURL(church.website).catch(() => {})}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="globe-outline" size={16} color={COLORS.sage} />
-                <Text style={[styles.detailText, styles.detailLink]}>
-                  {church.website.replace(/^https?:\/\//, '')}
-                </Text>
-              </TouchableOpacity>
-            ) : null}
+            <View style={styles.detailCard}>
+              {serviceTimes ? (
+                <View style={styles.detailRow}>
+                  <Ionicons name="time-outline" size={16} color={COLORS.textTertiary} />
+                  <Text style={styles.detailText}>{serviceTimes}</Text>
+                </View>
+              ) : null}
+              {church.address ? (
+                <View style={styles.detailRow}>
+                  <Ionicons name="location-outline" size={16} color={COLORS.textTertiary} />
+                  <Text style={styles.detailText}>{church.address}</Text>
+                </View>
+              ) : null}
+              {church.website ? (
+                <TouchableOpacity
+                  style={[styles.detailRow, { borderBottomWidth: 0 }]}
+                  onPress={() => Linking.openURL(church.website).catch(() => {})}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="globe-outline" size={16} color={COLORS.sage} />
+                  <Text style={[styles.detailText, styles.detailLink]}>
+                    {church.website.replace(/^https?:\/\//, '')}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
           </Section>
         ) : null}
 
-        {/* ── Staff ────────────────────────────────────────────────────── */}
+        {/* Staff */}
         {staff.length > 0 ? (
           <Section title="Our Team">
-            {staff.map((s) => <StaffCard key={s.id} member={s} />)}
+            {staff.map((s, i) => <StaffCard key={s.id ?? i} member={s} />)}
           </Section>
         ) : null}
 
-        {/* ── Groups ───────────────────────────────────────────────────── */}
+        {/* Groups */}
         {groups.length > 0 ? (
-          <Section title="Groups">
-            {groups.map((g) => <GroupChip key={g.id} group={g} />)}
+          <Section title={`Groups  (${groups.length})`}>
+            {groups.map((g, i) => <GroupCard key={g.id ?? i} group={g} navigation={navigation} />)}
           </Section>
         ) : null}
 
@@ -278,7 +432,7 @@ export default function ChurchProfileScreen({ navigation, route }) {
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
+// Styles
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
@@ -288,25 +442,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: SPACING.md,
     paddingTop: SPACING.sm,
-    paddingBottom: SPACING.xs ?? 4,
+    paddingBottom: 4,
   },
   backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.white,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    width: 36, height: 36, borderRadius: 18,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.border,
   },
 
   center: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingHorizontal: SPACING.xl ?? 32,
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    gap: 8, paddingHorizontal: SPACING.xl ?? 32,
   },
   errorTitle: { fontFamily: FONT.bold, fontSize: 17, color: COLORS.text, marginTop: 8 },
   errorBody:  { fontFamily: FONT.regular, fontSize: 14, color: COLORS.textTertiary, textAlign: 'center' },
@@ -314,120 +460,129 @@ const styles = StyleSheet.create({
   scroll: { paddingHorizontal: SPACING.md },
 
   // Hero
-  hero: { alignItems: 'center', paddingVertical: SPACING.lg ?? 24, gap: 6 },
+  hero: { alignItems: 'center', paddingVertical: SPACING.lg, gap: 6 },
   churchAvatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
     backgroundColor: COLORS.surfaceAlt,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    marginBottom: 4,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: COLORS.border,
+    marginBottom: 4, overflow: 'hidden',
   },
-  churchInitials: { fontFamily: FONT.bold, fontSize: 28, color: COLORS.textSecondary },
+  churchInitials: { fontFamily: FONT.bold, color: COLORS.textSecondary },
   churchName: { fontFamily: FONT.bold, fontSize: 22, color: COLORS.text, textAlign: 'center' },
   churchMeta: { fontFamily: FONT.regular, fontSize: 14, color: COLORS.textSecondary, textAlign: 'center' },
-  memberBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    backgroundColor: COLORS.sageBg,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 20,
-    marginTop: 2,
-  },
-  memberBadgeText: { fontFamily: FONT.semiBold, fontSize: 12, color: COLORS.sage },
 
-  // CTA
+  verifiedBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: COLORS.sageBg, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 99,
+  },
+  verifiedText: { fontFamily: FONT.semiBold, fontSize: 11, color: COLORS.sage },
+
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  metaText: { fontFamily: FONT.regular, fontSize: 13, color: COLORS.textTertiary },
+
+  // Stats row (members + followers)
+  statsRow: {
+    flexDirection: 'row', gap: 8, flexWrap: 'wrap', justifyContent: 'center', marginTop: 4,
+  },
+  statChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: COLORS.surface,
+    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20,
+    borderWidth: 1, borderColor: COLORS.border,
+  },
+  statChipText: { fontFamily: FONT.semiBold, fontSize: 12, color: COLORS.textSecondary },
+
+  // Action buttons row
+  actionRow: {
+    flexDirection: 'row', gap: 10, marginBottom: 10,
+  },
   messageBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: COLORS.accent,
-    borderRadius: 99,
-    paddingVertical: 14,
-    marginBottom: SPACING.lg ?? 24,
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: COLORS.accent, borderRadius: 99, paddingVertical: 14,
   },
   messageBtnText: { fontFamily: FONT.semiBold, fontSize: 15, color: COLORS.accentText },
 
+  followBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    borderRadius: 99, paddingVertical: 14, paddingHorizontal: 20,
+    borderWidth: 1.5, borderColor: COLORS.border,
+    backgroundColor: COLORS.white,
+  },
+  followBtnActive: {
+    borderColor: COLORS.clay,
+    backgroundColor: COLORS.clayBg,
+  },
+  followBtnText: { fontFamily: FONT.semiBold, fontSize: 15, color: COLORS.text },
+  followBtnTextActive: { color: COLORS.clay },
+
+  followHint: {
+    fontFamily: FONT.regular, fontSize: 12, color: COLORS.textTertiary,
+    textAlign: 'center', lineHeight: 17, marginBottom: SPACING.md,
+    paddingHorizontal: SPACING.md,
+  },
+
   // Section
-  section: { marginBottom: SPACING.lg ?? 24 },
+  section: { marginBottom: SPACING.lg },
   sectionTitle: {
-    fontFamily: FONT.semiBold,
-    fontSize: 11,
-    color: COLORS.textTertiary,
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
-    marginBottom: SPACING.sm ?? 8,
+    fontFamily: FONT.semiBold, fontSize: 11, color: COLORS.textTertiary,
+    letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: SPACING.sm,
   },
 
   // About
   description: {
-    fontFamily: FONT.regular,
-    fontSize: 15,
-    color: COLORS.textSecondary,
-    lineHeight: 23,
-    backgroundColor: COLORS.white,
-    borderRadius: RADIUS.lg ?? 16,
-    padding: SPACING.md,
-    borderWidth: 1,
-    borderColor: COLORS.borderLight,
+    fontFamily: FONT.regular, fontSize: 15, color: COLORS.textSecondary, lineHeight: 23,
+    backgroundColor: COLORS.white, borderRadius: RADIUS.lg, padding: SPACING.md,
+    borderWidth: 1, borderColor: COLORS.borderLight,
   },
 
-  // Details
+  // Details card
+  detailCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: RADIUS.lg, borderWidth: 1, borderColor: COLORS.borderLight,
+    paddingHorizontal: SPACING.md,
+  },
   detailRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.borderLight,
+    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
+    paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: COLORS.borderLight,
   },
   detailText: { flex: 1, fontFamily: FONT.regular, fontSize: 14, color: COLORS.textSecondary, lineHeight: 20 },
   detailLink: { color: COLORS.sage },
 
   // Staff
   staffCard: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: SPACING.sm ?? 8,
-    backgroundColor: COLORS.white,
-    borderRadius: RADIUS.lg ?? 16,
-    borderWidth: 1,
-    borderColor: COLORS.borderLight,
-    padding: SPACING.md,
-    marginBottom: 8,
+    flexDirection: 'row', alignItems: 'flex-start', gap: SPACING.sm,
+    backgroundColor: COLORS.white, borderRadius: RADIUS.lg,
+    borderWidth: 1, borderColor: COLORS.borderLight,
+    padding: SPACING.md, marginBottom: 8,
   },
   staffAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 48, height: 48, borderRadius: 24,
     backgroundColor: COLORS.surfaceAlt,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+    overflow: 'hidden',
   },
-  staffInitials: { fontFamily: FONT.semiBold, fontSize: 16, color: COLORS.textSecondary },
+  staffInitials: { fontFamily: FONT.semiBold, fontSize: 17, color: COLORS.textSecondary },
   staffInfo: { flex: 1, gap: 2 },
-  staffName:   { fontFamily: FONT.semiBold, fontSize: 14, color: COLORS.text },
-  staffTitle:  { fontFamily: FONT.regular,  fontSize: 13, color: COLORS.sage },
-  staffBio:    { fontFamily: FONT.regular,  fontSize: 13, color: COLORS.textSecondary, lineHeight: 18, marginTop: 2 },
+  staffName:  { fontFamily: FONT.semiBold, fontSize: 14, color: COLORS.text },
+  staffTitle: { fontFamily: FONT.regular,  fontSize: 13, color: COLORS.sage },
+  staffBio:   { fontFamily: FONT.regular,  fontSize: 13, color: COLORS.textSecondary, lineHeight: 18, marginTop: 2 },
 
   // Groups
-  groupChip: {
-    backgroundColor: COLORS.white,
-    borderRadius: RADIUS.lg ?? 16,
-    borderWidth: 1,
-    borderColor: COLORS.borderLight,
-    padding: SPACING.md,
-    marginBottom: 8,
-    gap: 3,
+  groupCard: {
+    backgroundColor: COLORS.white, borderRadius: RADIUS.lg,
+    borderWidth: 1, borderColor: COLORS.borderLight,
+    padding: SPACING.md, marginBottom: 8, gap: 5,
   },
-  groupName:     { fontFamily: FONT.semiBold, fontSize: 14, color: COLORS.text },
-  groupSchedule: { fontFamily: FONT.regular,  fontSize: 13, color: COLORS.textSecondary },
-  groupCount:    { fontFamily: FONT.regular,  fontSize: 12, color: COLORS.textTertiary },
+  groupHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  groupName: { fontFamily: FONT.semiBold, fontSize: 15, color: COLORS.text, flex: 1 },
+  groupCardRight: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0 },
+  groupCountBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: COLORS.surface, paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: 99, borderWidth: 1, borderColor: COLORS.border,
+  },
+  groupCountText: { fontFamily: FONT.semiBold, fontSize: 11, color: COLORS.textTertiary },
+  groupDesc: { fontFamily: FONT.regular, fontSize: 13, color: COLORS.textSecondary, lineHeight: 19 },
+  groupScheduleRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  groupScheduleText: { fontFamily: FONT.regular, fontSize: 13, color: COLORS.textTertiary },
 });
