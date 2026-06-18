@@ -27,15 +27,27 @@ import {
   Pressable,
   Platform,
   Modal,
+  Image,
   KeyboardAvoidingView,
   PanResponder,
+  useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS, FONT, SPACING, RADIUS, SHADOW } from '../theme';
-import { PrimaryButton, SectionHeader } from '../components/Atoms';
+import { Avatar, PrimaryButton, SectionHeader } from '../components/Atoms';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../auth/AuthContext';
 import { useToast } from '../components/ToastProvider';
+import { useConfirm } from '../components/ConfirmProvider';
+import { pickAndUploadAvatar } from '../lib/uploadAvatar';
+import {
+  pickAndUploadProfilePhoto,
+  pickAndUploadMultipleProfilePhotos,
+  fetchProfilePhotos,
+  deleteProfilePhoto,
+  MAX_PHOTOS,
+} from '../lib/profilePhotos';
 import { geocode, geocodeZip } from '../lib/geocode';
 import { firstViolation } from '../lib/contentFilter';
 import ChurchPicker from '../components/ChurchPicker';
@@ -46,6 +58,106 @@ import {
   DENOMINATIONS,
   HAS_KIDS_STAGES,
 } from '../data/mock';
+
+// ── Avatar / reel helpers ──────────────────────────────────────────────────
+const AVATAR_GRADIENTS = [
+  ['#D4A574', '#C17F3A'], ['#7EB8C9', '#4A9AB5'], ['#9B8EC4', '#7B6BAF'],
+  ['#E8A598', '#D4736A'], ['#8DC4A0', '#5FA876'], ['#C4A882', '#A8845A'],
+];
+function gradientFor(id) {
+  if (!id) return AVATAR_GRADIENTS[0];
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
+  return AVATAR_GRADIENTS[Math.abs(h) % AVATAR_GRADIENTS.length];
+}
+function initialsFor(name) {
+  if (!name) return '··';
+  const parts = name.trim().split(/\s+/);
+  const a = parts[0]?.[0] ?? '';
+  const b = parts.length > 1 ? parts[parts.length - 1][0] : '';
+  return (a + b).toUpperCase() || '··';
+}
+
+const REEL_GAP      = 12;
+const REEL_FADE     = 100;
+const REEL_TARGET   = 5;
+const REEL_TILE_MIN = 140;
+
+function computeTileSize(winWidth) {
+  if (winWidth < 800) return REEL_TILE_MIN;
+  return Math.floor((winWidth - REEL_FADE) / REEL_TARGET) - REEL_GAP;
+}
+
+function HighlightReel({ photos = [], onAdd, onView, onDelete, busyIndex = -1 }) {
+  const showAddTile = photos.length < MAX_PHOTOS;
+  const scrollRef = useRef(null);
+  const offsetRef = useRef(0);
+  const { width: winW } = useWindowDimensions();
+  const tileSize = computeTileSize(winW);
+  const tileStyle = { width: tileSize, height: tileSize };
+  const scrollStep = (tileSize + REEL_GAP) * 2;
+  const scrollBy = (dx) => {
+    const next = Math.max(0, offsetRef.current + dx);
+    scrollRef.current?.scrollTo?.({ x: next, animated: true });
+  };
+  return (
+    <View style={reelStyles.reelWrap}>
+      <ScrollView
+        ref={scrollRef}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        scrollEventThrottle={16}
+        onScroll={(e) => { offsetRef.current = e.nativeEvent.contentOffset.x; }}
+        contentContainerStyle={reelStyles.reelScrollContent}
+      >
+        {photos.map((photo, i) => (
+          <TouchableOpacity key={photo.id} style={[reelStyles.reelSlot, tileStyle]} activeOpacity={0.85} onPress={() => onView?.(photo, i)}>
+            <Image source={{ uri: photo.url }} style={reelStyles.reelImage} />
+            <TouchableOpacity style={reelStyles.reelDeleteBadge} activeOpacity={0.7} hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }} onPress={() => onDelete?.(photo, i)}>
+              <Ionicons name="close" size={13} color={COLORS.white} />
+            </TouchableOpacity>
+          </TouchableOpacity>
+        ))}
+        {showAddTile ? (
+          <TouchableOpacity style={[reelStyles.reelSlot, tileStyle]} activeOpacity={0.8} onPress={onAdd} disabled={busyIndex === photos.length}>
+            <View style={reelStyles.reelEmpty}>
+              {busyIndex === photos.length
+                ? <ActivityIndicator size="small" color={COLORS.textSecondary} />
+                : <Ionicons name="add" size={20} color={COLORS.textTertiary} />}
+            </View>
+          </TouchableOpacity>
+        ) : null}
+      </ScrollView>
+      <LinearGradient pointerEvents="none" colors={['rgba(247,244,239,0)', COLORS.bg]} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={reelStyles.reelFade} />
+      {Platform.OS === 'web' ? (
+        <>
+          <TouchableOpacity style={[reelStyles.reelArrow, reelStyles.reelArrowLeft]} activeOpacity={0.8} onPress={() => scrollBy(-scrollStep)}>
+            <Ionicons name="chevron-back" size={16} color={COLORS.text} />
+          </TouchableOpacity>
+          <TouchableOpacity style={[reelStyles.reelArrow, reelStyles.reelArrowRight]} activeOpacity={0.8} onPress={() => scrollBy(scrollStep)}>
+            <Ionicons name="chevron-forward" size={16} color={COLORS.text} />
+          </TouchableOpacity>
+        </>
+      ) : null}
+    </View>
+  );
+}
+
+function PhotoLightbox({ photo, onClose }) {
+  const { width: winW, height: winH } = useWindowDimensions();
+  return (
+    <Modal visible={!!photo} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', alignItems: 'center', justifyContent: 'center' }} onPress={onClose}>
+        {photo ? (
+          <Image source={{ uri: photo.url }} style={{ width: winW, height: winH * 0.85 }} resizeMode="contain" />
+        ) : null}
+        <TouchableOpacity style={{ position: 'absolute', top: 48, right: 20, width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center' }} onPress={onClose}>
+          <Ionicons name="close" size={20} color={COLORS.white} />
+        </TouchableOpacity>
+      </Pressable>
+    </Modal>
+  );
+}
 
 function BinaryCard({ label, subLabel, selected, onPress }) {
   return (
@@ -84,10 +196,12 @@ function OptionCard({ item, selected, onPress }) {
 export default function EditProfileScreen({ navigation }) {
   const { user, profile, refreshProfile } = useAuth();
   const toast = useToast();
+  const confirm = useConfirm();
 
   // Form state — initialized from current profile once loaded.
   const [fullName, setFullName]         = useState('');
   const [bio, setBio]                   = useState('');
+  const [phone, setPhone]               = useState('');
   // Up to 3 structured hometown city rows: [{ city, state }, ...]
   const [hometownCities, setHometownCities] = useState([
     { city: '', state: '' },
@@ -129,6 +243,12 @@ export default function EditProfileScreen({ navigation }) {
   const [denomination, setDenomination]         = useState(null);
   const [saving, setSaving]                     = useState(false);
   const [scrollEnabled, setScrollEnabled]       = useState(true);
+
+  // Photo state
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [photos, setPhotos]                   = useState([]);
+  const [photoBusyIdx, setPhotoBusyIdx]       = useState(-1);
+  const [viewerPhoto, setViewerPhoto]         = useState(null);
 
   // Interests search + request-modal state
   const [interestsQuery, setInterestsQuery] = useState('');
@@ -252,18 +372,21 @@ export default function EditProfileScreen({ navigation }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [lsR, actR, goalR, profR] = await Promise.all([
+      const [lsR, actR, goalR, profR, phRes] = await Promise.all([
         supabase.from('life_stages').select('id,label,icon,icon_color').order('sort_order'),
         supabase.from('activities').select('id,label,icon,icon_color').order('sort_order'),
         supabase.from('community_goals').select('id,label,icon,icon_color').order('sort_order'),
         user
           ? supabase.from('profiles')
-              .select('full_name,bio,hometown,hometown_cities,city,state,zip,life_stage_id,church_id,is_home_church,political_lean,looking_for_church,love_language_id,school_type_id,is_initiator,is_outgoing,denomination_id,church:churches(name),profile_activities(activity_id),profile_goals(goal_id),profile_values(value_id)')
+              .select('full_name,bio,phone,hometown,hometown_cities,city,state,zip,address,life_stage_id,church_id,is_home_church,political_lean,looking_for_church,love_language_id,school_type_id,is_initiator,is_outgoing,denomination_id,church:churches(name),profile_activities(activity_id),profile_goals(goal_id),profile_values(value_id)')
               .eq('id', user.id)
               .maybeSingle()
           : Promise.resolve({ data: null, error: null }),
+        user ? fetchProfilePhotos(user.id) : Promise.resolve({ photos: [], error: null }),
       ]);
       if (cancelled) return;
+      if (!phRes.error) setPhotos(phRes.photos ?? []);
+      const savedAddress = profR?.data?.address ?? '';
       setLifeStages(lsR.data ?? []);
       setAllActivities(actR.data ?? []);
       setAllGoals(goalR.data ?? []);
@@ -271,6 +394,7 @@ export default function EditProfileScreen({ navigation }) {
       if (p) {
         setFullName(p.full_name ?? '');
         setBio(p.bio ?? '');
+        setPhone(p.phone ?? '');
         // hometown derived from hometownCities[0] on save
         // Parse existing hometown_cities array → structured rows
         // Handles "Miami, FL", "Miami FL", or plain "Miami" gracefully
@@ -307,11 +431,18 @@ export default function EditProfileScreen({ navigation }) {
         setCity(savedCity);
         setState(savedState);
         setZip(savedZip);
-        // Pre-fill the address autocomplete display from stored location data
-        if (savedCity || savedZip) {
-          const parts = [savedCity, savedState].filter(Boolean).join(', ');
-          setAddressQuery(savedZip ? `${parts} ${savedZip}`.trim() : parts);
-          skipFetchRef.current = true; // don't trigger a Nominatim lookup on load
+        // Pre-fill the address autocomplete text as the full address string:
+        // "41 Windrow Way, Inlet Beach, FL 32461"
+        // Build from all parts: street + city + state + zip
+        {
+          const streetPart  = savedAddress ? savedAddress.trim() : '';
+          const cityState   = [savedCity, savedState].filter(Boolean).join(', ');
+          const withZip     = [cityState, savedZip].filter(Boolean).join(' ');
+          const fullDisplay = [streetPart, withZip].filter(Boolean).join(', ');
+          if (fullDisplay) {
+            setAddressQuery(fullDisplay);
+            skipFetchRef.current = true;
+          }
         }
         setLifeStage(p.life_stage_id ?? null);
         setProfileChurchId(p.church_id ?? null);
@@ -337,6 +468,82 @@ export default function EditProfileScreen({ navigation }) {
 
   const toggle = (setter) => (id) =>
     setter((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+
+  // ── Avatar upload ─────────────────────────────────────────────────────────
+  async function runAvatarUpload(source) {
+    if (uploadingAvatar || !user) return;
+    setUploadingAvatar(true);
+    const { url, error } = await pickAndUploadAvatar({ userId: user.id, source });
+    setUploadingAvatar(false);
+    if (error) {
+      toast({ title: 'Could not update photo', message: error.message || 'Try again.', type: 'error' });
+      return;
+    }
+    if (!url) return;
+    await refreshProfile();
+  }
+
+  async function handleChangeAvatar() {
+    if (Platform.OS === 'web') { runAvatarUpload('library'); return; }
+    const ok = await confirm({
+      title: 'Update profile photo',
+      confirmLabel: 'Take photo',
+      cancelLabel: 'Choose from library',
+    });
+    if (ok) { runAvatarUpload('camera'); } else { runAvatarUpload('library'); }
+  }
+
+  // ── Highlight reel ────────────────────────────────────────────────────────
+  async function runPhotoUpload(source) {
+    if (!user) return;
+    if (photos.length >= MAX_PHOTOS) {
+      toast({ title: 'Reel is full', message: `You can add up to ${MAX_PHOTOS} photos. Delete one to add another.`, type: 'info' });
+      return;
+    }
+    const slotsLeft = MAX_PHOTOS - photos.length;
+    if (source === 'camera') {
+      const slotIdx = photos.length;
+      setPhotoBusyIdx(slotIdx);
+      const { photo, error } = await pickAndUploadProfilePhoto({ userId: user.id, source: 'camera' });
+      setPhotoBusyIdx(-1);
+      if (error) { toast({ title: 'Could not add photo', message: error.message || 'Try again.', type: 'error' }); return; }
+      if (!photo) return;
+      setPhotos((prev) => [...prev, photo]);
+    } else {
+      const slotIdx = photos.length;
+      setPhotoBusyIdx(slotIdx);
+      const { photos: added, errors, cancelled } = await pickAndUploadMultipleProfilePhotos({ userId: user.id, maxCount: slotsLeft });
+      setPhotoBusyIdx(-1);
+      if (cancelled) return;
+      if (added.length > 0) setPhotos((prev) => [...prev, ...added]);
+      if (errors.length > 0) {
+        toast({ title: added.length > 0 ? 'Some photos failed' : 'Could not add photos', message: errors[0].message || 'Try again.', type: 'error' });
+      }
+    }
+  }
+
+  async function handleAddPhoto() {
+    if (Platform.OS === 'web') { runPhotoUpload('library'); return; }
+    const ok = await confirm({
+      title: 'Add a photo',
+      message: 'Show off something real — a hobby, your people, where you spend time.',
+      confirmLabel: 'Take photo',
+      cancelLabel: 'Choose from library',
+    });
+    if (ok) { runPhotoUpload('camera'); } else { runPhotoUpload('library'); }
+  }
+
+  async function doDelete(photo) {
+    const prev = photos;
+    setPhotos((p) => p.filter((x) => x.id !== photo.id));
+    const { error } = await deleteProfilePhoto(photo.id, photo.storage_path);
+    if (error) { setPhotos(prev); toast({ title: 'Could not delete', message: error.message, type: 'error' }); }
+  }
+
+  async function handleDeletePhoto(photo) {
+    const ok = await confirm({ title: 'Remove photo?', message: 'Remove this photo from your highlight reel?', confirmLabel: 'Remove', destructive: true });
+    if (ok) doDelete(photo);
+  }
 
   const handleSave = useCallback(async () => {
     if (saving) return;
@@ -397,14 +604,15 @@ export default function EditProfileScreen({ navigation }) {
 
     // Church is committed immediately by ChurchPicker — nothing to do here.
 
-    // 2) Persist denomination + zip (not in update_profile RPC)
+    // 2) Persist denomination, zip, address, phone (not in update_profile RPC)
     await supabase.from('profiles')
-      .update({ denomination_id: denomination ?? null })
+      .update({
+        denomination_id: denomination ?? null,
+        zip:     zip.trim()          || null,
+        address: addressQuery.trim() || null,
+        phone:   phone.trim()        || null,
+      })
       .eq('id', user.id);
-    // 3) Persist zip separately (not in update_profile RPC)
-    if (zip.trim()) {
-      await supabase.from('profiles').update({ zip: zip.trim() }).eq('id', user.id);
-    }
 
     // 3) Geocode → PostGIS point. Non-fatal.
     const hasLocation = city.trim() || zip.trim();
@@ -458,6 +666,39 @@ export default function EditProfileScreen({ navigation }) {
         scrollEnabled={scrollEnabled}
         keyboardShouldPersistTaps="handled"
       >
+        {/* Photos */}
+        <View style={styles.section}>
+          <SectionHeader label="Profile Photo" />
+          <TouchableOpacity onPress={handleChangeAvatar} activeOpacity={0.85} disabled={uploadingAvatar} style={styles.avatarWrap}>
+            <Avatar
+              initials={initialsFor(fullName || profile?.full_name)}
+              size={72}
+              gradientColors={gradientFor(user?.id)}
+              uri={profile?.avatar_url || undefined}
+            />
+            <View style={styles.avatarBadge}>
+              {uploadingAvatar
+                ? <ActivityIndicator size="small" color={COLORS.white} />
+                : <Ionicons name="camera" size={13} color={COLORS.white} />}
+            </View>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.section}>
+          <SectionHeader
+            label={`Highlight Reel  ·  ${photos.length}/${MAX_PHOTOS}`}
+            action={photos.length < MAX_PHOTOS ? 'Add' : undefined}
+            onAction={photos.length < MAX_PHOTOS ? handleAddPhoto : undefined}
+          />
+          <HighlightReel
+            photos={photos}
+            onAdd={handleAddPhoto}
+            onView={(p) => setViewerPhoto(p)}
+            onDelete={handleDeletePhoto}
+            busyIndex={photoBusyIdx}
+          />
+        </View>
+
         {/* Name */}
         <View style={styles.section}>
           <SectionHeader label="Name" />
@@ -467,6 +708,20 @@ export default function EditProfileScreen({ navigation }) {
             onChangeText={setFullName}
             placeholder="Your name"
             placeholderTextColor={COLORS.textTertiary}
+          />
+        </View>
+
+        {/* Phone */}
+        <View style={styles.section}>
+          <SectionHeader label="Phone" />
+          <TextInput
+            style={styles.input}
+            value={phone}
+            onChangeText={setPhone}
+            placeholder="(555) 555-5555"
+            placeholderTextColor={COLORS.textTertiary}
+            keyboardType="phone-pad"
+            autoComplete="tel"
           />
         </View>
 
@@ -887,6 +1142,9 @@ export default function EditProfileScreen({ navigation }) {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* Photo lightbox */}
+      <PhotoLightbox photo={viewerPhoto} onClose={() => setViewerPhoto(null)} />
     </SafeAreaView>
   );
 }
@@ -1325,5 +1583,89 @@ const styles = StyleSheet.create({
     fontFamily: FONT.regular,
     fontSize: 13,
     color: COLORS.text,
+  },
+
+  // Avatar
+  avatarWrap: { position: 'relative', alignSelf: 'flex-start' },
+  avatarBadge: {
+    position: 'absolute',
+    right: -2,
+    bottom: -2,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: COLORS.text,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: COLORS.bg,
+  },
+});
+
+// ── Reel styles (defined outside main StyleSheet so they can reference
+//    the REEL_* constants declared at module scope) ──────────────────────────
+const reelStyles = StyleSheet.create({
+  reelWrap: {
+    position: 'relative',
+    marginHorizontal: -SPACING.lg,
+    overflow: 'hidden',
+  },
+  reelScrollContent: {
+    paddingLeft: SPACING.lg,
+    paddingRight: REEL_FADE,
+    gap: REEL_GAP,
+  },
+  reelFade: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    right: 0,
+    width: REEL_FADE,
+  },
+  reelArrow: {
+    position: 'absolute',
+    top: '50%',
+    marginTop: -16,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...SHADOW.sm,
+  },
+  reelArrowLeft:  { left: 8 },
+  reelArrowRight: { right: 24 },
+  reelSlot: {
+    borderRadius: RADIUS.md,
+    overflow: 'hidden',
+  },
+  reelImage: {
+    width: '100%',
+    height: '100%',
+  },
+  reelDeleteBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reelEmpty: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderStyle: 'dashed',
+    borderRadius: RADIUS.md,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

@@ -15,7 +15,7 @@
 import sharp from 'sharp';
 import { createClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL     = 'https://froqanfagdkjmfrmpfye.supabase.co';
+const SUPABASE_URL     = 'https://cspsglmopchuqkvdfvwc.supabase.co';
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!SERVICE_ROLE_KEY) {

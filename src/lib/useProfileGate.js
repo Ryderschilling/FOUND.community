@@ -75,8 +75,28 @@ export function useProfileGate(navigation) {
 
             <Text style={styles.title}>Complete your profile first</Text>
             <Text style={styles.body}>
-              Add {missingText} so others know who they're connecting with. It only takes a moment.
+              Add what's missing so others know who they're connecting with.
             </Text>
+
+            {/* Visual checklist — shows exactly what's needed */}
+            <View style={styles.checklist}>
+              <View style={styles.checkRow}>
+                <View style={[styles.checkBadge, hasPhoto && styles.checkBadgeDone]}>
+                  <Ionicons name={hasPhoto ? 'checkmark' : 'close'} size={13} color="#fff" />
+                </View>
+                <Text style={[styles.checkLabel, hasPhoto && styles.checkLabelDone]}>
+                  Profile photo
+                </Text>
+              </View>
+              <View style={styles.checkRow}>
+                <View style={[styles.checkBadge, hasBio && styles.checkBadgeDone]}>
+                  <Ionicons name={hasBio ? 'checkmark' : 'close'} size={13} color="#fff" />
+                </View>
+                <Text style={[styles.checkLabel, hasBio && styles.checkLabelDone]}>
+                  Bio
+                </Text>
+              </View>
+            </View>
 
             <TouchableOpacity
               style={styles.primaryBtn}
@@ -152,8 +172,44 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     textAlign: 'center',
     lineHeight: 20,
-    marginBottom: SPACING.xl ?? 24,
+    marginBottom: 16,
     paddingHorizontal: SPACING.sm ?? 8,
+  },
+  checklist: {
+    width: '100%',
+    gap: 8,
+    marginBottom: SPACING.xl ?? 24,
+  },
+  checkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: COLORS.bg ?? '#F7F4EF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+  },
+  checkBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#E8534A',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkBadgeDone: {
+    backgroundColor: '#4CAF50',
+  },
+  checkLabel: {
+    fontFamily: FONT.regular,
+    fontSize: 14,
+    color: COLORS.textSecondary,
+  },
+  checkLabelDone: {
+    fontFamily: FONT.semiBold ?? FONT.bold,
+    color: COLORS.text,
   },
   primaryBtn: {
     backgroundColor: COLORS.text,

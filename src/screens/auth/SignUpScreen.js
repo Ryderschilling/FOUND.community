@@ -237,6 +237,7 @@ export default function SignUpScreen({ navigation }) {
         zip:           zipVal || addressQuery.trim(),
         city:          cityVal,
         state:         stateVal,
+        address:       addressQuery.trim() || null,
         hometown:      homeVal,
         hometown_cities: hometownCitiesArr.length > 0 ? hometownCitiesArr : null,
         lat,

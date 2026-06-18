@@ -239,9 +239,30 @@ function FloatingTabBar({ state, descriptors, navigation }) {
           <Text style={styles.gateTitle}>Complete your profile first</Text>
           <Text style={styles.gateBody}>
             {photoGateTab === 'Messages'
-              ? 'Add a profile photo and a short bio so people know who they\'re talking to before you start messaging.'
-              : 'Add a profile photo and a short bio so members can recognize you before you join a group.'}
+              ? 'People need to know who they\'re talking to before you can message.'
+              : 'Members need to know who you are before you can join a group.'}
           </Text>
+
+          {/* Checklist — shows exactly what's still missing */}
+          <View style={styles.gateChecklist}>
+            <View style={styles.gateCheckRow}>
+              <View style={[styles.gateCheckBadge, hasPhoto && styles.gateCheckBadgeDone]}>
+                <Ionicons name={hasPhoto ? 'checkmark' : 'close'} size={13} color={COLORS.white} />
+              </View>
+              <Text style={[styles.gateCheckLabel, hasPhoto && styles.gateCheckLabelDone]}>
+                Profile photo
+              </Text>
+            </View>
+            <View style={styles.gateCheckRow}>
+              <View style={[styles.gateCheckBadge, hasBio && styles.gateCheckBadgeDone]}>
+                <Ionicons name={hasBio ? 'checkmark' : 'close'} size={13} color={COLORS.white} />
+              </View>
+              <Text style={[styles.gateCheckLabel, hasBio && styles.gateCheckLabelDone]}>
+                Bio
+              </Text>
+            </View>
+          </View>
+
           <TouchableOpacity
             style={styles.gateButton}
             activeOpacity={0.85}
@@ -634,7 +655,43 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     textAlign: 'center',
     lineHeight: 22,
+    marginBottom: 20,
+  },
+  gateChecklist: {
+    width: '100%',
+    gap: 10,
     marginBottom: 28,
+  },
+  gateCheckRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: COLORS.bg,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  gateCheckBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#E8534A',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gateCheckBadgeDone: {
+    backgroundColor: '#4CAF50',
+  },
+  gateCheckLabel: {
+    fontFamily: FONT.regular,
+    fontSize: 15,
+    color: COLORS.textSecondary,
+  },
+  gateCheckLabelDone: {
+    color: COLORS.text,
+    fontFamily: FONT.semiBold,
   },
   gateButton: {
     width: '100%',
