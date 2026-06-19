@@ -425,6 +425,22 @@ export default function ChurchPicker({
       </Text>
 
       <View style={styles.optStack}>
+        {/* Find My Church */}
+        <TouchableOpacity
+          style={styles.optBtn}
+          activeOpacity={0.8}
+          onPress={enterSearch}
+        >
+          <View style={styles.optIconWrap}>
+            <Ionicons name="search-outline" size={20} color={COLORS.text} />
+          </View>
+          <View style={styles.optTextWrap}>
+            <Text style={styles.optBtnTxt}>Find My Church</Text>
+            <Text style={styles.optBtnSub}>Search for my church on FOUND</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={16} color={COLORS.textTertiary} />
+        </TouchableOpacity>
+
         {/* Home Church — selectable toggle, no navigation */}
         <TouchableOpacity
           style={[styles.optBtn, homeSelected && styles.optBtnActive]}
@@ -441,29 +457,13 @@ export default function ChurchPicker({
           <View style={styles.optTextWrap}>
             <Text style={[styles.optBtnTxt, homeSelected && styles.optBtnTxtActive]}>Home Church</Text>
             <Text style={[styles.optBtnSub, homeSelected && styles.optBtnSubActive]}>
-              {homeSelected ? 'Marked — you have a home church' : 'I have a church I call home'}
+              {homeSelected ? 'Marked — you host a home church' : 'You host a church gathering at your home'}
             </Text>
           </View>
           {homeSelected
             ? <Ionicons name="checkmark-circle" size={18} color={COLORS.white} />
             : <View style={{ width: 18 }} />
           }
-        </TouchableOpacity>
-
-        {/* Find My Church */}
-        <TouchableOpacity
-          style={styles.optBtn}
-          activeOpacity={0.8}
-          onPress={enterSearch}
-        >
-          <View style={styles.optIconWrap}>
-            <Ionicons name="search-outline" size={20} color={COLORS.text} />
-          </View>
-          <View style={styles.optTextWrap}>
-            <Text style={styles.optBtnTxt}>Find My Church</Text>
-            <Text style={styles.optBtnSub}>Search for my church on FOUND</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={16} color={COLORS.textTertiary} />
         </TouchableOpacity>
 
         {/* Still Searching */}

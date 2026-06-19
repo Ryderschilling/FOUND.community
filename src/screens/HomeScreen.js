@@ -45,7 +45,6 @@ const FILTERS = [
   { id: 'churches',  label: 'Churches'      },
   { id: 'pending',   label: 'Pending'       },
   { id: 'stage',     label: 'Life Stage'    },
-  { id: 'church',    label: 'My Church'     },
   { id: 'interests', label: 'Interests'     },
   { id: 'new',       label: 'New'           },
   { id: 'saved',     label: 'Connect Later' },
