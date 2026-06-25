@@ -16,6 +16,7 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.found.community",
       "buildNumber": "29",
+      "associatedDomains": ["applinks:found.community"],
       "icon": {
         "light": "./assets/icon.png",
         "dark": "./assets/icon-dark.png"

@@ -1202,8 +1202,9 @@ function PostCreateGroupModal({ group, onClose }) {
 
   if (!group) return null;
 
-  // Shares the FOUND website. Group-specific landing page is a follow-up.
-  const shareUrl = 'https://found.community';
+  const shareUrl = group?.id
+    ? `https://found.community/groups/${group.id}`
+    : 'https://found.community';
 
   async function handleShare() {
     try {

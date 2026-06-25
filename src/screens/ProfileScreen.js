@@ -541,7 +541,7 @@ export default function ProfileScreen({ navigation }) {
       const profileQ = supabase
         .from('profiles')
         .select(`
-          id, full_name, handle, bio, hometown, city, state, is_initiator, is_outgoing, school_type_id, avatar_url, is_visible,
+          id, full_name, handle, bio, hometown, city, state, is_initiator, is_outgoing, school_type_id, avatar_url, is_visible, is_home_church, looking_for_church,
           life_stage:life_stages(id,label,icon,icon_color),
           church:churches(id,name,city,state),
           profile_activities(activity:activities(id,label,icon,icon_color))
@@ -909,7 +909,7 @@ export default function ProfileScreen({ navigation }) {
               { label: 'Your name',      done: !!profile.full_name?.trim() },
               { label: 'City',           done: !!profile.city?.trim() },
               { label: 'Life stage',     done: !!profile.life_stage?.id },
-              { label: 'Church',         done: !!profile.church?.id },
+              { label: 'Church',         done: !!profile.church?.id || !!profile.is_home_church || profile.looking_for_church !== null },
               { label: '3+ interests',   done: (profile.profile_activities?.length ?? 0) >= 3 },
               { label: 'Bio',            done: !!profile.bio?.trim() },
             ];
@@ -1034,19 +1034,27 @@ export default function ProfileScreen({ navigation }) {
             </View>
           ) : null}
 
-          {/* Church */}
-          {profile.church ? (
+          {/* Church — is_home_church takes priority over linked church */}
+          {(profile.church || profile.is_home_church) ? (
             <View style={styles.section}>
               <SectionHeader label="Church" />
               <View style={styles.churchCard}>
                 <View style={styles.churchIconWrap}>
-                  <Ionicons name="business-outline" size={22} color={COLORS.sage} />
+                  <Ionicons
+                    name={profile.is_home_church ? 'home-outline' : 'business-outline'}
+                    size={22}
+                    color={COLORS.sage}
+                  />
                 </View>
                 <View>
-                  <Text style={styles.churchName}>{profile.church.name}</Text>
-                  <Text style={styles.churchMeta}>
-                    {[profile.church.city, profile.church.state].filter(Boolean).join(', ')}
+                  <Text style={styles.churchName}>
+                    {profile.is_home_church ? 'Home Church' : profile.church?.name}
                   </Text>
+                  {!profile.is_home_church && (profile.church?.city || profile.church?.state) ? (
+                    <Text style={styles.churchMeta}>
+                      {[profile.church.city, profile.church.state].filter(Boolean).join(', ')}
+                    </Text>
+                  ) : null}
                 </View>
               </View>
             </View>

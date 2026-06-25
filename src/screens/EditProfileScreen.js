@@ -372,17 +372,19 @@ export default function EditProfileScreen({ navigation }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [lsR, actR, goalR, profR, phRes] = await Promise.all([
+      const [lsR, actR, goalR, profR, phRes, churchPrefsR] = await Promise.all([
         supabase.from('life_stages').select('id,label,icon,icon_color').order('sort_order'),
         supabase.from('activities').select('id,label,icon,icon_color').order('sort_order'),
         supabase.from('community_goals').select('id,label,icon,icon_color').order('sort_order'),
         user
           ? supabase.from('profiles')
-              .select('full_name,bio,phone,hometown,hometown_cities,city,state,zip,address,life_stage_id,church_id,is_home_church,political_lean,looking_for_church,love_language_id,school_type_id,is_initiator,is_outgoing,denomination_id,church:churches(name),profile_activities(activity_id),profile_goals(goal_id),profile_values(value_id)')
+              .select('full_name,bio,phone,hometown,hometown_cities,city,state,zip,address,life_stage_id,church_id,political_lean,looking_for_church,love_language_id,school_type_id,is_initiator,is_outgoing,denomination_id,church:churches(name),profile_activities(activity_id),profile_goals(goal_id),profile_values(value_id)')
               .eq('id', user.id)
               .maybeSingle()
           : Promise.resolve({ data: null, error: null }),
         user ? fetchProfilePhotos(user.id) : Promise.resolve({ photos: [], error: null }),
+        // Use security-definer RPC to bypass PostgREST column permission issue on is_home_church
+        user ? supabase.rpc('get_my_church_prefs') : Promise.resolve({ data: null, error: null }),
       ]);
       if (cancelled) return;
       if (!phRes.error) setPhotos(phRes.photos ?? []);
@@ -446,7 +448,9 @@ export default function EditProfileScreen({ navigation }) {
         }
         setLifeStage(p.life_stage_id ?? null);
         setProfileChurchId(p.church_id ?? null);
-        setProfileIsHome(p.is_home_church ?? false);
+        // is_home_church read via SECURITY DEFINER RPC to bypass PostgREST column permission issue
+        const churchPrefs = churchPrefsR?.data?.[0] ?? null;
+        setProfileIsHome(churchPrefs?.is_home_church ?? false);
         setProfileChurchName(p.church?.name ?? null);
         setActivities((p.profile_activities ?? []).map((r) => r.activity_id));
         setGoals((p.profile_goals ?? []).map((r) => r.goal_id));
@@ -584,7 +588,7 @@ export default function EditProfileScreen({ navigation }) {
       p_city:                city || null,
       p_state:               state || null,
       p_life_stage:          lifeStage,
-      p_church_id:           null,
+      p_church_id:           profileChurchId,
       p_activities:          activities,
       p_goals:               goals,
       p_values:              familyValues,
@@ -604,7 +608,8 @@ export default function EditProfileScreen({ navigation }) {
 
     // Church is committed immediately by ChurchPicker — nothing to do here.
 
-    // 2) Persist denomination, zip, address, phone (not in update_profile RPC)
+    // 2) Persist fields not in update_profile RPC
+    // NOTE: is_home_church is managed exclusively by set_profile_church RPC — do not write it here
     await supabase.from('profiles')
       .update({
         denomination_id: denomination ?? null,
@@ -1053,6 +1058,7 @@ export default function EditProfileScreen({ navigation }) {
             churchName={profileChurchName}
             lookingForChurch={lookingForChurch}
             onLookingChange={setLookingForChurch}
+            toast={toast}
             onSaved={({ churchId, isHomeChurch }) => {
               setProfileChurchId(churchId);
               setProfileIsHome(isHomeChurch);
@@ -1214,7 +1220,7 @@ function PoliticalSlider({ value, onChange, setScrollEnabled }) {
 
       {/* Track — full width touch target */}
       <View
-        style={{ height: THUMB_R * 2, justifyContent: 'center' }}
+        style={{ height: THUMB_R * 2, justifyContent: 'center', touchAction: 'none' }}
         onLayout={(e) => setTrackW(e.nativeEvent.layout.width)}
         {...panResponder.panHandlers}
       >

@@ -66,6 +66,14 @@ import {
   purgeGroupPostPhotoStorage,
   MAX_POST_BODY,
 } from '../lib/groupPosts';
+import {
+  fetchGroupPolls,
+  createGroupPoll,
+  voteGroupPoll,
+  deleteGroupPoll,
+} from '../lib/groupPolls';
+
+import GroupChatPanel from '../components/GroupChatPanel';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 const AVATAR_GRADIENTS = [
@@ -103,6 +111,56 @@ function timeAgo(iso) {
   const days = Math.floor(hrs / 24);
   if (days < 7)      return `${days}d`;
   return new Date(then).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+// ─── Event recurrence helpers ─────────────────────────────────────────────
+const WEEKDAY_NAMES  = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const ORDINAL_LABELS = ['','1st','2nd','3rd','4th'];
+
+function formatRecurrenceLabel(ev) {
+  if (!ev.recurrence) return '';
+  if (ev.recurrence === 'weekly')   return 'Repeats weekly';
+  if (ev.recurrence === 'biweekly') return 'Repeats bi-weekly';
+  if (ev.recurrence === 'monthly')  return 'Repeats monthly';
+  if (ev.recurrence === 'monthly_nth' && ev.recurrence_rule) {
+    const { weekday, weeks } = ev.recurrence_rule;
+    const weekLabels = (weeks ?? []).map(w => ORDINAL_LABELS[w] ?? `${w}th`);
+    return `Repeats every ${weekLabels.join(' & ')} ${WEEKDAY_NAMES[weekday] ?? ''}`;
+  }
+  return `Repeats ${ev.recurrence}`;
+}
+
+/** For monthly_nth events, find the next real occurrence from today.
+ *  For other types, return the raw event_time date. */
+function getDisplayDate(ev) {
+  if (ev.recurrence !== 'monthly_nth' || !ev.recurrence_rule) {
+    return new Date(ev.event_time);
+  }
+  const { weekday, weeks } = ev.recurrence_rule;
+  const base = new Date(ev.event_time);
+  const now  = new Date();
+  const sortedWeeks = [...(weeks ?? [1])].sort((a, b) => a - b);
+
+  function nthWeekdayDate(year, month, wDay, weekNum) {
+    const firstOfMonth = new Date(year, month, 1);
+    let offset = wDay - firstOfMonth.getDay();
+    if (offset < 0) offset += 7;
+    const day = 1 + offset + (weekNum - 1) * 7;
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    if (day > daysInMonth) return null;
+    return new Date(year, month, day, base.getHours(), base.getMinutes());
+  }
+
+  for (let monthOffset = 0; monthOffset <= 2; monthOffset++) {
+    const d = new Date(now);
+    d.setDate(1);
+    d.setMonth(d.getMonth() + monthOffset);
+    for (const w of sortedWeeks) {
+      const candidate = nthWeekdayDate(d.getFullYear(), d.getMonth(), weekday, w);
+      if (candidate && candidate >= now) return candidate;
+    }
+  }
+  return base; // fallback
 }
 
 // ─── Screen ───────────────────────────────────────────────────────────────
@@ -144,6 +202,15 @@ export default function GroupDetailScreen({ route, navigation }) {
   // Group events
   const [groupEvents, setGroupEvents] = useState([]);
 
+  // Polls
+  const [polls, setPolls]             = useState([]);
+  const [pollModalOpen, setPollModalOpen] = useState(false);
+
+  // Chat tab state
+  const [activeTab, setActiveTab]         = useState('overview');
+  const [groupThreadId, setGroupThreadId] = useState(null);
+  const [threadLoading, setThreadLoading] = useState(false);
+
   // Pending invites (invited but not yet accepted) — visible to owner/admin only
   const [pendingInvites, setPendingInvites] = useState([]);
 
@@ -179,13 +246,14 @@ export default function GroupDetailScreen({ route, navigation }) {
     if (!groupId) { setLoading(false); return; }
     if (isRefresh) setRefreshing(true); else setLoading(true);
     try {
-      const [dRes, mRes, pRes, postRes, invRes, evRes] = await Promise.all([
+      const [dRes, mRes, pRes, postRes, invRes, evRes, pollRes] = await Promise.all([
         supabase.rpc('group_detail', { p_group: groupId }),
         supabase.rpc('group_members_list', { p_group: groupId }),
         fetchGroupPhotos(groupId),
         fetchGroupPosts(groupId),
         supabase.rpc('list_group_pending_invites', { p_group: groupId }),
         supabase.rpc('group_events_list', { p_group: groupId }),
+        fetchGroupPolls(groupId),
       ]);
       if (dRes.error) console.warn('[group] detail failed', dRes.error.message);
       else setDetail((dRes.data ?? [])[0] ?? null);
@@ -198,6 +266,7 @@ export default function GroupDetailScreen({ route, navigation }) {
       // Non-fatal — only populated for owner/admin; empty array for regular members
       setPendingInvites(invRes.data ?? []);
       if (!evRes.error) setGroupEvents(evRes.data ?? []);
+      if (!pollRes.error) setPolls(pollRes.polls ?? []);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -225,6 +294,36 @@ export default function GroupDetailScreen({ route, navigation }) {
     const { posts: p } = await fetchGroupPosts(groupId);
     setPosts(p ?? []);
   }, [groupId]);
+
+  const refreshPolls = useCallback(async () => {
+    const { polls: p } = await fetchGroupPolls(groupId);
+    setPolls(p ?? []);
+  }, [groupId]);
+
+  async function handleCreatePoll({ question, options }) {
+    const { error } = await createGroupPoll(groupId, question, options);
+    if (error) { toast({ title: 'Could not create poll', message: error.message, type: 'error' }); return; }
+    await refreshPolls();
+  }
+
+  async function handleVotePoll(pollId, optionId) {
+    const { error } = await voteGroupPoll(pollId, optionId);
+    if (error) { toast({ title: 'Could not vote', message: error.message, type: 'error' }); return; }
+    await refreshPolls();
+  }
+
+  async function handleDeletePoll(pollId) {
+    const ok = await confirm({
+      title: 'Delete poll?',
+      message: 'This will remove the poll and all votes.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    });
+    if (!ok) return;
+    const { error } = await deleteGroupPoll(pollId);
+    if (error) { toast({ title: 'Could not delete poll', message: error.message, type: 'error' }); return; }
+    await refreshPolls();
+  }
 
   const loadJoinRequests = useCallback(async () => {
     if (!groupId || !isAdmin) return;
@@ -263,25 +362,20 @@ export default function GroupDetailScreen({ route, navigation }) {
     await Promise.all([refreshDetail(), refreshMembers()]);
   }
 
-  async function handleOpenChat() {
-    if (openingChat || !groupId) return;
-    setOpeningChat(true);
+  // Lazy-loads the group thread ID on first chat tab open.
+  // open_group_thread is idempotent — safe to call multiple times.
+  const openChatTab = useCallback(async () => {
+    setActiveTab('chat');
+    if (groupThreadId || threadLoading) return;
+    setThreadLoading(true);
     const { data: threadId, error } = await supabase.rpc('open_group_thread', { p_group: groupId });
-    setOpeningChat(false);
-    if (error) { toast({ title: 'Could not open chat', message: error.message, type: 'error' }); return; }
-    navigation.navigate('Chat', {
-      thread_id: threadId,
-      isGroup: true,
-      group: {
-        id: groupId,
-        name,
-        icon,
-        iconColor,
-        iconBg,
-        memberCount,
-      },
-    });
-  }
+    setThreadLoading(false);
+    if (error) {
+      toast({ title: 'Could not open chat', message: error.message, type: 'error' });
+      return;
+    }
+    setGroupThreadId(threadId);
+  }, [groupId, groupThreadId, threadLoading, toast]);
 
   async function handleAddPhoto() {
     if (uploading || !groupId) return;
@@ -543,7 +637,9 @@ export default function GroupDetailScreen({ route, navigation }) {
 
   // ── Share ────────────────────────────────────────────────────────────────
   async function handleShare() {
-    const url = 'https://found.community';
+    const url = detail?.id
+      ? `https://found.community/groups/${detail.id}`
+      : 'https://found.community';
     const name = detail?.name || 'this group';
     try {
       await Share.share({
@@ -621,6 +717,31 @@ export default function GroupDetailScreen({ route, navigation }) {
         </View>
       </View>
 
+      {/* Overview / Chat tab bar — only shown to members */}
+      {isMember ? (
+        <View style={styles.tabBar}>
+          <TouchableOpacity
+            style={[styles.tabItem, activeTab === 'overview' && styles.tabItemActive]}
+            onPress={() => setActiveTab('overview')}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.tabLabel, activeTab === 'overview' && styles.tabLabelActive]}>
+              Overview
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tabItem, activeTab === 'chat' && styles.tabItemActive]}
+            onPress={openChatTab}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.tabLabel, activeTab === 'chat' && styles.tabLabelActive]}>
+              Chat
+            </Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
+      {activeTab === 'overview' ? (
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 130 }}
@@ -823,7 +944,7 @@ export default function GroupDetailScreen({ route, navigation }) {
                 <Text style={styles.emptyText}>No upcoming events</Text>
               ) : (
                 groupEvents.map((ev) => {
-                  const evDate = new Date(ev.event_time);
+                  const evDate = getDisplayDate(ev);
                   const dateStr = evDate.toLocaleDateString('en-US', {
                     weekday: 'short', month: 'short', day: 'numeric',
                   });
@@ -859,7 +980,7 @@ export default function GroupDetailScreen({ route, navigation }) {
                           <View style={styles.eventMeta}>
                             <Ionicons name="repeat-outline" size={11} color={COLORS.textTertiary} />
                             <Text style={[styles.eventMetaText, { color: COLORS.textTertiary }]}>
-                              Repeats {ev.recurrence === 'biweekly' ? 'bi-weekly' : ev.recurrence}
+                              {formatRecurrenceLabel(ev)}
                             </Text>
                           </View>
                         ) : null}
@@ -889,107 +1010,7 @@ export default function GroupDetailScreen({ route, navigation }) {
             </View>
           ) : null}
 
-          {/* Activity feed */}
-          <View style={styles.section}>
-            <View style={styles.sectionHeadRow}>
-              <Text style={styles.sectionLabel}>
-                ACTIVITY{posts.length ? ` · ${posts.length}` : ''}
-              </Text>
-            </View>
-
-            {/* Composer — members + admins only */}
-            {isMember ? (
-              <View style={styles.composer}>
-                <View style={styles.composerTop}>
-                  <Avatar
-                    uri={meMember?.avatar_url || undefined}
-                    initials={initialsFor(meMember?.full_name)}
-                    size={36}
-                    gradientColors={gradientFor(user?.id)}
-                  />
-                  <TextInput
-                    style={styles.composerInput}
-                    value={composerBody}
-                    onChangeText={setComposerBody}
-                    placeholder="Share something with the group…"
-                    placeholderTextColor={COLORS.textTertiary}
-                    multiline
-                    maxLength={MAX_POST_BODY}
-                  />
-                </View>
-
-                {composerImage ? (
-                  <View style={styles.composerPreviewWrap}>
-                    <Image source={{ uri: composerImage.uri }} style={styles.composerPreview} />
-                    <TouchableOpacity
-                      style={styles.composerPreviewRemove}
-                      onPress={() => setComposerImage(null)}
-                      hitSlop={8}
-                      activeOpacity={0.8}
-                    >
-                      <Ionicons name="close" size={14} color={COLORS.white} />
-                    </TouchableOpacity>
-                  </View>
-                ) : null}
-
-                <View style={styles.composerActions}>
-                  <TouchableOpacity
-                    style={styles.composerPhotoBtn}
-                    onPress={handlePickPostImage}
-                    disabled={posting}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons name="image-outline" size={18} color={COLORS.textSecondary} />
-                    <Text style={styles.composerPhotoText}>
-                      {composerImage ? 'Change photo' : 'Photo'}
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.composerPostBtn, !canPost && styles.composerPostBtnDisabled]}
-                    onPress={handleSubmitPost}
-                    disabled={!canPost}
-                    activeOpacity={0.85}
-                  >
-                    {posting ? (
-                      <ActivityIndicator color={COLORS.white} size="small" />
-                    ) : (
-                      <Text style={styles.composerPostText}>Post</Text>
-                    )}
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ) : null}
-
-            {/* Posts */}
-            {posts.length === 0 ? (
-              <View style={styles.postsEmpty}>
-                <Ionicons name="chatbubbles-outline" size={22} color={COLORS.textTertiary} />
-                <Text style={styles.postsEmptyText}>
-                  {isMember
-                    ? 'No posts yet — share the first update.'
-                    : 'No activity in this group yet.'}
-                </Text>
-              </View>
-            ) : (
-              <View style={styles.postList}>
-                {posts.map((post) => (
-                  <PostCard
-                    key={post.id}
-                    post={post}
-                    onDelete={handleDeletePost}
-                    onEdit={(p) => setEditingPost(p)}
-                    onViewPhoto={(url) => setLightbox({ url })}
-                    canReport={post.author_id !== user?.id}
-                    onReport={() => setReportSheet({ visible: true, targetKind: 'group_post', targetId: post.id })}
-                    canPin={isOwner}
-                    onPin={handlePinPost}
-                  />
-                ))}
-              </View>
-            )}
-          </View>
-
-          {/* Photo gallery */}
+          {/* Photo gallery — moved above activity so it's visible right after events */}
           {(photos.length > 0 || isAdmin) ? (
             <View style={styles.section}>
               <View style={styles.sectionHeadRow}>
@@ -1058,6 +1079,126 @@ export default function GroupDetailScreen({ route, navigation }) {
               )}
             </View>
           ) : null}
+
+          {/* Activity feed */}
+          <View style={styles.section}>
+            <View style={styles.sectionHeadRow}>
+              <Text style={styles.sectionLabel}>
+                ACTIVITY{posts.length + polls.length > 0 ? ` · ${posts.length + polls.length}` : ''}
+              </Text>
+            </View>
+
+            {/* Composer — members + admins only */}
+            {isMember ? (
+              <View style={styles.composer}>
+                <View style={styles.composerTop}>
+                  <Avatar
+                    uri={meMember?.avatar_url || undefined}
+                    initials={initialsFor(meMember?.full_name)}
+                    size={36}
+                    gradientColors={gradientFor(user?.id)}
+                  />
+                  <TextInput
+                    style={styles.composerInput}
+                    value={composerBody}
+                    onChangeText={setComposerBody}
+                    placeholder="Share something with the group…"
+                    placeholderTextColor={COLORS.textTertiary}
+                    multiline
+                    maxLength={MAX_POST_BODY}
+                  />
+                </View>
+
+                {composerImage ? (
+                  <View style={styles.composerPreviewWrap}>
+                    <Image source={{ uri: composerImage.uri }} style={styles.composerPreview} />
+                    <TouchableOpacity
+                      style={styles.composerPreviewRemove}
+                      onPress={() => setComposerImage(null)}
+                      hitSlop={8}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="close" size={14} color={COLORS.white} />
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
+
+                <View style={styles.composerActions}>
+                  <TouchableOpacity
+                    style={styles.composerPhotoBtn}
+                    onPress={handlePickPostImage}
+                    disabled={posting}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="image-outline" size={18} color={COLORS.textSecondary} />
+                    <Text style={styles.composerPhotoText}>
+                      {composerImage ? 'Change photo' : 'Photo'}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.composerPhotoBtn}
+                    onPress={() => setPollModalOpen(true)}
+                    disabled={posting}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="bar-chart-outline" size={18} color={COLORS.textSecondary} />
+                    <Text style={styles.composerPhotoText}>Poll</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.composerPostBtn, !canPost && styles.composerPostBtnDisabled]}
+                    onPress={handleSubmitPost}
+                    disabled={!canPost}
+                    activeOpacity={0.85}
+                  >
+                    {posting ? (
+                      <ActivityIndicator color={COLORS.white} size="small" />
+                    ) : (
+                      <Text style={styles.composerPostText}>Post</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : null}
+
+            {/* Polls */}
+            {polls.map((poll) => (
+              <PollCard
+                key={poll.id}
+                poll={poll}
+                currentUserId={user?.id}
+                onVote={handleVotePoll}
+                onDelete={isAdmin || poll.author_id === user?.id ? handleDeletePoll : null}
+              />
+            ))}
+
+            {/* Posts */}
+            {posts.length === 0 && polls.length === 0 ? (
+              <View style={styles.postsEmpty}>
+                <Ionicons name="chatbubbles-outline" size={22} color={COLORS.textTertiary} />
+                <Text style={styles.postsEmptyText}>
+                  {isMember
+                    ? 'No posts yet — share the first update.'
+                    : 'No activity in this group yet.'}
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.postList}>
+                {posts.map((post) => (
+                  <PostCard
+                    key={post.id}
+                    post={post}
+                    onDelete={handleDeletePost}
+                    onEdit={(p) => setEditingPost(p)}
+                    onViewPhoto={(url) => setLightbox({ url })}
+                    canReport={post.author_id !== user?.id}
+                    onReport={() => setReportSheet({ visible: true, targetKind: 'group_post', targetId: post.id })}
+                    canPin={isOwner}
+                    onPin={handlePinPost}
+                  />
+                ))}
+              </View>
+            )}
+          </View>
 
           {/* Members */}
           <View style={styles.section}>
@@ -1164,8 +1305,16 @@ export default function GroupDetailScreen({ route, navigation }) {
           <View style={{ height: 40 }} />
         </View>
       </ScrollView>
+      ) : (
+        <GroupChatPanel
+          threadId={threadLoading ? null : groupThreadId}
+          groupId={groupId}
+          members={members}
+        />
+      )}
 
-      {/* Sticky action bar */}
+      {/* Sticky action bar — hidden on chat tab (chat has its own composer) */}
+      {(activeTab === 'overview' || !isMember) ? (
       <View style={styles.ctaBar}>
         {!isMember ? (
           detail?.has_pending_invite ? (
@@ -1220,36 +1369,20 @@ export default function GroupDetailScreen({ route, navigation }) {
             />
           )
         ) : (
-          <>
-            {!isOwner ? (
-              <TouchableOpacity
-                style={styles.leaveBtn}
-                onPress={handleLeave}
-                disabled={busy}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="exit-outline" size={18} color={COLORS.textSecondary} />
-                <Text style={styles.leaveBtnText}>Leave</Text>
-              </TouchableOpacity>
-            ) : null}
+          !isOwner ? (
             <TouchableOpacity
-              style={styles.chatBtn}
-              onPress={handleOpenChat}
-              disabled={openingChat}
-              activeOpacity={0.85}
+              style={[styles.leaveBtn, { flex: 1 }]}
+              onPress={handleLeave}
+              disabled={busy}
+              activeOpacity={0.8}
             >
-              {openingChat ? (
-                <ActivityIndicator color={COLORS.white} size="small" />
-              ) : (
-                <>
-                  <Ionicons name="chatbubble-outline" size={17} color={COLORS.white} />
-                  <Text style={styles.chatBtnText}>Message Group</Text>
-                </>
-              )}
+              <Ionicons name="exit-outline" size={18} color={COLORS.textSecondary} />
+              <Text style={styles.leaveBtnText}>Leave Group</Text>
             </TouchableOpacity>
-          </>
+          ) : null
         )}
       </View>
+      ) : null}
 
       {/* Lightbox */}
       <PhotoLightbox photo={lightbox} onClose={() => setLightbox(null)} />
@@ -1285,6 +1418,15 @@ export default function GroupDetailScreen({ route, navigation }) {
         post={editingPost}
         onClose={() => setEditingPost(null)}
         onSave={handleSavePostEdit}
+      />
+
+      <CreatePollModal
+        visible={pollModalOpen}
+        onClose={() => setPollModalOpen(false)}
+        onCreate={async (q, opts) => {
+          await handleCreatePoll({ question: q, options: opts });
+          setPollModalOpen(false);
+        }}
       />
 
       {/* Report sheet */}
@@ -2060,6 +2202,175 @@ function EditPostModal({ post, onClose, onSave }) {
   );
 }
 
+// ─── Poll card ────────────────────────────────────────────────────────────
+function PollCard({ poll, currentUserId, onVote, onDelete }) {
+  const totalVotes = poll.options.reduce((sum, o) => sum + (o.vote_count ?? 0), 0);
+  const myVote     = poll.options.find((o) => o.i_voted);
+
+  return (
+    <View style={styles.pollCard}>
+      <View style={styles.postHead}>
+        <Avatar
+          uri={poll.author_avatar || undefined}
+          initials={initialsFor(poll.author_name)}
+          size={36}
+          gradientColors={gradientFor(poll.author_id)}
+        />
+        <View style={styles.postHeadInfo}>
+          <Text style={styles.postAuthor} numberOfLines={1}>{poll.author_name || 'Member'}</Text>
+          <Text style={styles.postTime}>{timeAgo(poll.created_at)}</Text>
+        </View>
+        {onDelete ? (
+          <TouchableOpacity onPress={() => onDelete(poll.id)} hitSlop={10} style={{ marginLeft: 'auto' }}>
+            <Ionicons name="trash-outline" size={16} color={COLORS.textTertiary} />
+          </TouchableOpacity>
+        ) : null}
+      </View>
+
+      <View style={styles.pollQuestionWrap}>
+        <Ionicons name="bar-chart-outline" size={13} color={COLORS.textTertiary} style={{ marginRight: 4 }} />
+        <Text style={styles.pollLabel}>POLL</Text>
+      </View>
+      <Text style={styles.pollQuestion}>{poll.question}</Text>
+
+      <View style={styles.pollOptions}>
+        {poll.options.map((opt) => {
+          const pct = totalVotes > 0 ? Math.round((opt.vote_count / totalVotes) * 100) : 0;
+          const isChosen = !!opt.i_voted;
+          return (
+            <TouchableOpacity
+              key={opt.id}
+              activeOpacity={myVote ? 1 : 0.7}
+              onPress={() => { if (!myVote) onVote(poll.id, opt.id); }}
+              style={[styles.pollOption, isChosen && styles.pollOptionChosen]}
+            >
+              <View style={[styles.pollBar, { width: `${pct}%` }]} />
+              <Text style={[styles.pollOptionText, isChosen && styles.pollOptionTextChosen]} numberOfLines={1}>
+                {opt.option_text}
+              </Text>
+              {myVote ? (
+                <Text style={styles.pollPct}>{pct}%</Text>
+              ) : null}
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+      <Text style={styles.pollMeta}>
+        {totalVotes} vote{totalVotes !== 1 ? 's' : ''}{myVote ? ' · You voted' : ' · Tap to vote'}
+      </Text>
+    </View>
+  );
+}
+
+// ─── Create poll modal ─────────────────────────────────────────────────────
+const MAX_POLL_OPTIONS = 4;
+
+function CreatePollModal({ visible, onClose, onCreate }) {
+  const [question, setQuestion]   = useState('');
+  const [options, setOptions]     = useState(['', '']);
+  const [submitting, setSubmitting] = useState(false);
+
+  function reset() {
+    setQuestion('');
+    setOptions(['', '']);
+    setSubmitting(false);
+  }
+
+  function handleClose() { reset(); onClose(); }
+
+  function addOption() {
+    if (options.length >= MAX_POLL_OPTIONS) return;
+    setOptions([...options, '']);
+  }
+
+  function setOption(i, val) {
+    const next = [...options];
+    next[i] = val;
+    setOptions(next);
+  }
+
+  function removeOption(i) {
+    if (options.length <= 2) return;
+    setOptions(options.filter((_, idx) => idx !== i));
+  }
+
+  async function handleSubmit() {
+    const q    = question.trim();
+    const opts = options.map((o) => o.trim()).filter(Boolean);
+    if (!q || opts.length < 2) return;
+    setSubmitting(true);
+    await onCreate(q, opts);
+    reset();
+  }
+
+  const canSubmit = question.trim().length > 0 && options.filter((o) => o.trim()).length >= 2;
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={handleClose}>
+      <KeyboardAvoidingView
+        style={modalStyles.backdrop}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <View style={[modalStyles.editSheet, { maxHeight: '85%' }]}>
+          <View style={modalStyles.handle} />
+          <View style={modalStyles.headerRow}>
+            <Text style={modalStyles.title}>Create Poll</Text>
+            <TouchableOpacity onPress={handleClose} hitSlop={10}>
+              <Ionicons name="close" size={22} color={COLORS.textSecondary} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            <TextInput
+              style={[modalStyles.input, { marginBottom: SPACING.md }]}
+              value={question}
+              onChangeText={setQuestion}
+              placeholder="Ask a question…"
+              placeholderTextColor={COLORS.textTertiary}
+              maxLength={300}
+              autoFocus
+            />
+
+            {options.map((opt, i) => (
+              <View key={i} style={styles.pollInputRow}>
+                <TextInput
+                  style={[modalStyles.input, { flex: 1 }]}
+                  value={opt}
+                  onChangeText={(v) => setOption(i, v)}
+                  placeholder={`Option ${i + 1}`}
+                  placeholderTextColor={COLORS.textTertiary}
+                  maxLength={100}
+                />
+                {options.length > 2 ? (
+                  <TouchableOpacity onPress={() => removeOption(i)} hitSlop={8} style={{ paddingLeft: 8 }}>
+                    <Ionicons name="close-circle" size={20} color={COLORS.textTertiary} />
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            ))}
+
+            {options.length < MAX_POLL_OPTIONS ? (
+              <TouchableOpacity onPress={addOption} style={styles.pollAddOption} activeOpacity={0.7}>
+                <Ionicons name="add-circle-outline" size={18} color={COLORS.brand} />
+                <Text style={styles.pollAddOptionText}>Add option</Text>
+              </TouchableOpacity>
+            ) : null}
+
+            <View style={{ height: SPACING.md }} />
+            <PrimaryButton
+              label={submitting ? 'Posting…' : 'Post Poll'}
+              onPress={handleSubmit}
+              disabled={submitting || !canSubmit}
+              loading={submitting}
+            />
+            <View style={{ height: SPACING.lg }} />
+          </ScrollView>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
 // ─── Styles ───────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
@@ -2611,6 +2922,34 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
 
+  // Chat / Overview tab bar
+  tabBar: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    backgroundColor: COLORS.bg,
+  },
+  tabItem: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 11,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  tabItemActive: {
+    borderBottomColor: COLORS.accent,
+  },
+  tabLabel: {
+    fontFamily: FONT.semiBold,
+    fontSize: 13,
+    letterSpacing: 0.5,
+    color: COLORS.textSecondary,
+    textTransform: 'uppercase',
+  },
+  tabLabelActive: {
+    color: COLORS.accent,
+  },
+
   // Sticky CTA
   ctaBar: {
     position: 'absolute',
@@ -2834,4 +3173,90 @@ const modalStyles = StyleSheet.create({
     marginTop: 4,
   },
   deleteText: { fontFamily: FONT.semiBold, fontSize: 14, color: '#D24A4A' },
+
+  // ─── Poll styles ───────────────────────────────────────────────────────
+  pollCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: SPACING.md,
+    marginBottom: SPACING.sm,
+  },
+  pollQuestionWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 2,
+    marginTop: SPACING.sm,
+  },
+  pollLabel: {
+    fontFamily: FONT.semiBold,
+    fontSize: 10,
+    color: COLORS.textTertiary,
+    letterSpacing: 0.8,
+  },
+  pollQuestion: {
+    fontFamily: FONT.semiBold,
+    fontSize: 15,
+    color: COLORS.text,
+    marginBottom: SPACING.sm,
+    lineHeight: 21,
+  },
+  pollOptions: { gap: 8, marginBottom: SPACING.sm },
+  pollOption: {
+    borderRadius: RADIUS.md,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    overflow: 'hidden',
+    height: 44,
+    justifyContent: 'center',
+    paddingHorizontal: SPACING.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  pollOptionChosen: { borderColor: COLORS.accent },
+  pollBar: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: COLORS.sageBg,
+    borderRadius: RADIUS.md,
+  },
+  pollOptionText: {
+    fontFamily: FONT.medium,
+    fontSize: 14,
+    color: COLORS.text,
+    flex: 1,
+    zIndex: 1,
+  },
+  pollOptionTextChosen: { color: COLORS.accent, fontFamily: FONT.semiBold },
+  pollPct: {
+    fontFamily: FONT.semiBold,
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    zIndex: 1,
+    marginLeft: 4,
+  },
+  pollMeta: {
+    fontFamily: FONT.regular,
+    fontSize: 12,
+    color: COLORS.textTertiary,
+  },
+  pollInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: SPACING.sm,
+  },
+  pollAddOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: SPACING.sm,
+  },
+  pollAddOptionText: {
+    fontFamily: FONT.semiBold,
+    fontSize: 14,
+    color: COLORS.brand,
+  },
 });

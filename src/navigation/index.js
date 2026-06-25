@@ -23,16 +23,22 @@ export const navigationRef = createNavigationContainerRef();
 
 // Deep-link / universal-link config.
 // Scheme "found" is registered in app.json.
-// found://edit-profile  → EditProfileScreen  (used in nudge emails)
-// found://profile       → Profile tab
+// found://edit-profile        → EditProfileScreen  (used in nudge emails)
+// found://profile             → Profile tab
+// found://groups/:groupId     → GroupDetailScreen
+// found://invite/:shareToken  → EventDetailScreen (resolves token → event)
+// https://found.community/*   → same routes via Universal Links / App Links
 const linking = {
   prefixes: ['found://', 'https://found.community', 'https://found-community.vercel.app'],
   config: {
     screens: {
       EditProfile: 'edit-profile',
+      GroupDetail: 'groups/:groupId',
+      EventDetail: 'invite/:shareToken',
       Main: {
         screens: {
           Profile: 'profile',
+          Groups:  'groups',
         },
       },
     },
@@ -474,7 +480,15 @@ export default function AppNavigator() {
 
     const tryNavigate = () => {
       if (!navigationRef.isReady()) return false;
-      if (url.includes('edit-profile')) {
+      if (url.includes('/groups/')) {
+        // e.g. found://groups/uuid  or  https://found.community/groups/uuid
+        const groupId = url.split('/groups/')[1]?.split('?')[0];
+        if (groupId) navigationRef.navigate('GroupDetail', { groupId });
+      } else if (url.includes('/invite/')) {
+        // e.g. https://found.community/invite/<share_token>
+        const shareToken = url.split('/invite/')[1]?.split('?')[0];
+        if (shareToken) navigationRef.navigate('EventDetail', { shareToken });
+      } else if (url.includes('edit-profile')) {
         navigationRef.navigate('EditProfile');
       } else if (url.includes('profile')) {
         navigationRef.navigate('Main', { screen: 'Profile' });

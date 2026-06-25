@@ -153,24 +153,18 @@ export default function ChurchPicker({
   lookingForChurch  = null,
   onLookingChange,
   onSaved,
+  toast,
 }) {
-  // ── state ──────────────────────────────────────────────────────────────────
-  // Home Church is now an inline toggle — only go to 'done' when a specific church is linked
-  const initialMode = churchId ? 'done' : 'idle';
-
-  const [mode, setMode]                   = useState(initialMode);
+  // ── state — all useState first, then effects ──────────────────────────────
+  const [mode, setMode]                     = useState(churchId ? 'done' : 'idle');
   const [selectedChurch, setSelectedChurch] = useState(
     churchId && churchName ? { id: churchId, name: churchName, city: null, state: null } : null
   );
-  const [homeSelected, setHomeSelected]   = useState(isHomeChurch);
-
   const [query, setQuery]         = useState('');
   const [results, setResults]     = useState([]);
   const [searching, setSearching] = useState(false);
   const [saving, setSaving]       = useState(false);
   const [requestSent, setRequestSent] = useState(false);
-
-  // Request modal state
   const [modalOpen, setModalOpen]       = useState(false);
   const [reqName, setReqName]           = useState('');
   const [reqCity, setReqCity]           = useState('');
@@ -180,6 +174,17 @@ export default function ChurchPicker({
 
   const debounceRef = useRef(null);
   const inputRef    = useRef(null);
+
+  // Sync mode + selectedChurch when parent loads async church data
+  useEffect(() => { if (churchId) setMode('done'); }, [churchId]);
+  useEffect(() => {
+    if (churchId && churchName)
+      setSelectedChurch({ id: churchId, name: churchName, city: null, state: null });
+  }, [churchId, churchName]);
+
+  // homeSelected is derived directly from the isHomeChurch prop — no local state needed.
+  // The parent (EditProfileScreen) owns this value and passes it down after loadData().
+  const homeSelected = isHomeChurch;
 
   // ── search: load all churches immediately, then filter as user types ─────────
   useEffect(() => {
@@ -201,27 +206,29 @@ export default function ChurchPicker({
   // ── handlers ───────────────────────────────────────────────────────────────
   async function handleHomeChurch() {
     const next = !homeSelected;
-    setHomeSelected(next);
-    if (next) {
-      // Mark as home church — save in background, stay on this screen
-      setSaving(true);
-      await supabase.rpc('set_profile_church', { p_church_id: null, p_is_home_church: true });
-      setSaving(false);
-      setSelectedChurch(null);
-      onSaved?.({ churchId: null, isHomeChurch: true });
-    } else {
-      // Deselect — clear home church flag
-      setSaving(true);
-      await supabase.rpc('set_profile_church', { p_church_id: null, p_is_home_church: false });
-      setSaving(false);
-      onSaved?.({ churchId: null, isHomeChurch: false });
+    // Optimistic update: tell parent immediately so display reflects the click
+    onSaved?.({ churchId: null, isHomeChurch: next });
+    setSaving(true);
+    const { error } = await supabase.rpc('set_profile_church', {
+      p_church_id: null,
+      p_is_home_church: next,
+    });
+    setSaving(false);
+    if (error) {
+      // Revert parent state on failure
+      onSaved?.({ churchId: null, isHomeChurch: !next });
+      toast?.({ title: 'Could not save', message: error.message, type: 'error' });
     }
   }
 
   async function handleSelectChurch(church) {
     setSaving(true);
-    await supabase.rpc('set_profile_church', { p_church_id: church.id, p_is_home_church: false });
+    const { error } = await supabase.rpc('set_profile_church', { p_church_id: church.id, p_is_home_church: false });
     setSaving(false);
+    if (error) {
+      toast?.({ title: 'Could not save', message: error.message, type: 'error' });
+      return;
+    }
     setSelectedChurch(church);
     setHomeSelected(false);
     setMode('done');
@@ -470,7 +477,16 @@ export default function ChurchPicker({
         <TouchableOpacity
           style={[styles.optBtn, lookingForChurch === true && styles.optBtnActive]}
           activeOpacity={0.8}
-          onPress={() => onLookingChange?.(lookingForChurch === true ? null : true)}
+          onPress={async () => {
+            const next = lookingForChurch === true ? null : true;
+            onLookingChange?.(next);
+            // If selecting "still searching", also clear church_id via RPC
+            // so the user drops off any church's member list immediately
+            if (next === true) {
+              await supabase.rpc('set_profile_church', { p_church_id: null, p_is_home_church: false });
+              onSaved?.({ churchId: null, isHomeChurch: false });
+            }
+          }}
         >
           <View style={[styles.optIconWrap, lookingForChurch === true && styles.optIconWrapActive]}>
             <Ionicons

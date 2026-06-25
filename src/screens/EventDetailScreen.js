@@ -172,8 +172,30 @@ function getNextEventDate(event) {
 
 // ─── Screen ───────────────────────────────────────────────────────────────
 export default function EventDetailScreen({ navigation, route }) {
-  const { eventId } = route.params ?? {};
+  // eventId   — direct navigation (normal in-app flow)
+  // shareToken — opened via share link (found.community/invite/<token>)
+  //              Resolved to a real eventId on first load.
+  const { eventId: _paramEventId, shareToken } = route.params ?? {};
+  const [eventId, setEventId] = useState(_paramEventId ?? null);
   const { user } = useAuth();
+
+  // Resolve shareToken → eventId when the screen is opened via a share link
+  useEffect(() => {
+    if (eventId || !shareToken) return;
+    supabase
+      .from('events')
+      .select('id')
+      .eq('share_token', shareToken)
+      .single()
+      .then(({ data, error: err }) => {
+        if (data?.id) {
+          setEventId(data.id);
+        } else {
+          console.error('[EventDetail] share_token lookup failed:', err?.message);
+          // setError called via the main load effect once eventId remains null
+        }
+      });
+  }, [shareToken, eventId]);
   const confirm = useConfirm();
 
   const [event, setEvent]         = useState(null);
@@ -377,12 +399,9 @@ export default function EventDetailScreen({ navigation, route }) {
   };
 
   const handleShare = async () => {
-    // TODO (launch): replace with deep-link invite URL once
-    // found.community/invite/[token] page is built.
-    // The share_token is already on the event row — just swap
-    // the URL to `https://found.community/invite/${event.share_token}`
-    // and build the static invite page on Netlify.
-    const url = 'https://found.community';
+    const url = event?.share_token
+      ? `https://found.community/invite/${event.share_token}`
+      : 'https://found.community';
     try {
       await Share.share({
         title: event.title,
