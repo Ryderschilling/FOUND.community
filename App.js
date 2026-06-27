@@ -15,10 +15,19 @@ import {
   JetBrainsMono_400Regular,
 } from '@expo-google-fonts/jetbrains-mono';
 import AppNavigator from './src/navigation';
-import { AuthProvider } from './src/auth/AuthContext';
+import { AuthProvider, useAuth } from './src/auth/AuthContext';
 import { ConfirmProvider } from './src/components/ConfirmProvider';
 import { ToastProvider }   from './src/components/ToastProvider';
 import ErrorBoundary       from './src/components/ErrorBoundary';
+import { useAppReview }    from './src/lib/useAppReview';
+
+// Sits inside AuthProvider so it can read the session.
+// Starts the 5-minute review timer once the user is authenticated.
+function AppReviewGate() {
+  const { user } = useAuth();
+  useAppReview({ enabled: !!user });
+  return null;
+}
 
 // On web, lock the viewport so pinch-zoom and double-tap-zoom can't kick in.
 // Without this, mobile Safari/Chrome will zoom into inputs on focus and let
@@ -103,6 +112,7 @@ function App() {
         <View style={styles.backdrop}>
           <View style={styles.phone}>
             <AuthProvider>
+              <AppReviewGate />
               <ConfirmProvider>
                 <ToastProvider>
                   <AppNavigator />

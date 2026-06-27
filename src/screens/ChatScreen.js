@@ -129,6 +129,7 @@ export default function ChatScreen({ route, navigation }) {
   const [senderMap, setSenderMap] = useState({});
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
+  const [groupMenuOpen, setGroupMenuOpen] = useState(false);
   const listRef = useRef(null);
 
   // Group mode: load the roster once so each message can show a name + avatar.
@@ -338,9 +339,9 @@ export default function ChatScreen({ route, navigation }) {
           style={styles.moreBtn}
           activeOpacity={0.7}
           onPress={() => {
-            if (isGroup && groupId) {
-              navigation.navigate('GroupDetail', { groupId });
-            } else if (!isGroup) {
+            if (isGroup) {
+              setGroupMenuOpen(true);
+            } else {
               setMoreMenuOpen(true);
             }
           }}
@@ -420,6 +421,36 @@ export default function ChatScreen({ route, navigation }) {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+
+      {/* Action menu for group threads */}
+      {isGroup && (
+        <Modal
+          visible={groupMenuOpen}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setGroupMenuOpen(false)}
+        >
+          <TouchableOpacity
+            style={styles.menuBackdrop}
+            activeOpacity={1}
+            onPress={() => setGroupMenuOpen(false)}
+          >
+            <View style={styles.menuSheet}>
+              <TouchableOpacity
+                style={styles.menuItem}
+                activeOpacity={0.7}
+                onPress={() => {
+                  setGroupMenuOpen(false);
+                  if (groupId) navigation.navigate('GroupDetail', { groupId });
+                }}
+              >
+                <Ionicons name="information-circle-outline" size={18} color={COLORS.text} />
+                <Text style={styles.menuItemText}>View Group Details</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </Modal>
+      )}
 
       {/* Action menu for direct threads */}
       {!isGroup && (

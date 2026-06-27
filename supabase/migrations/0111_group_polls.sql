@@ -4,6 +4,8 @@
 -- Adds group poll tables: group_polls, group_poll_options, group_poll_votes
 -- One vote per user per poll (unique constraint on poll_id + voter_id).
 -- Cascades on group/poll delete.
+--
+-- NOTE: group_members has NO status column — every row is an active member.
 -- ─────────────────────────────────────────────────────────────────────────
 
 -- ── group_polls ────────────────────────────────────────────────────────────
@@ -46,7 +48,7 @@ alter table group_polls        enable row level security;
 alter table group_poll_options enable row level security;
 alter table group_poll_votes   enable row level security;
 
--- group_polls: group members can read; members can insert; author/admin can delete
+-- group_polls: any group member can read/insert; author or admin can delete
 create policy "group members can view polls"
   on group_polls for select
   using (
@@ -54,7 +56,6 @@ create policy "group members can view polls"
       select 1 from group_members
       where group_id = group_polls.group_id
         and profile_id = auth.uid()
-        and status = 'active'
     )
   );
 
@@ -66,7 +67,6 @@ create policy "group members can create polls"
       select 1 from group_members
       where group_id = group_polls.group_id
         and profile_id = auth.uid()
-        and status = 'active'
     )
   );
 
@@ -79,11 +79,10 @@ create policy "author or admin can delete polls"
       where group_id = group_polls.group_id
         and profile_id = auth.uid()
         and role in ('owner', 'admin')
-        and status = 'active'
     )
   );
 
--- group_poll_options: readable if poll is readable; insertable by poll author only (handled in app)
+-- group_poll_options: readable by group members; insertable by poll author
 create policy "group members can view poll options"
   on group_poll_options for select
   using (
@@ -92,7 +91,6 @@ create policy "group members can view poll options"
       join group_members gm on gm.group_id = gp.group_id
       where gp.id = group_poll_options.poll_id
         and gm.profile_id = auth.uid()
-        and gm.status = 'active'
     )
   );
 
@@ -116,7 +114,7 @@ create policy "cascade delete handles option deletion"
     )
   );
 
--- group_poll_votes: group members can read & insert; voters can delete own vote
+-- group_poll_votes: group members can read & vote; voters can delete own vote
 create policy "group members can view votes"
   on group_poll_votes for select
   using (
@@ -125,7 +123,6 @@ create policy "group members can view votes"
       join group_members gm on gm.group_id = gp.group_id
       where gp.id = group_poll_votes.poll_id
         and gm.profile_id = auth.uid()
-        and gm.status = 'active'
     )
   );
 
@@ -138,7 +135,6 @@ create policy "group members can vote"
       join group_members gm on gm.group_id = gp.group_id
       where gp.id = group_poll_votes.poll_id
         and gm.profile_id = auth.uid()
-        and gm.status = 'active'
     )
   );
 
