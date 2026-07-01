@@ -17,6 +17,57 @@ const RESEND_API_URL = "https://api.resend.com/emails";
 const FROM_ADDRESS   = "FOUND <hello@found.community>";
 const LOGO_URL       = "https://found.community/brand-mark.png";
 
+// How long (seconds) to suppress duplicate sends for the same email+action.
+// Prevents retry loops and accidental double-sends.
+const DEDUP_WINDOW_SECONDS = 60;
+
+// ---------------------------------------------------------------------------
+// Dedup helpers — read/write email_send_log via Supabase REST API directly
+// (no client library needed; service role key bypasses RLS)
+// ---------------------------------------------------------------------------
+async function wasRecentlySent(
+  supabaseUrl: string,
+  serviceKey: string,
+  email: string,
+  actionType: string,
+): Promise<boolean> {
+  const since = new Date(Date.now() - DEDUP_WINDOW_SECONDS * 1000).toISOString();
+  const url =
+    `${supabaseUrl}/rest/v1/email_send_log` +
+    `?email=eq.${encodeURIComponent(email)}` +
+    `&action_type=eq.${encodeURIComponent(actionType)}` +
+    `&sent_at=gte.${encodeURIComponent(since)}` +
+    `&limit=1`;
+  const res = await fetch(url, {
+    headers: {
+      apikey: serviceKey,
+      Authorization: `Bearer ${serviceKey}`,
+      Accept: "application/json",
+    },
+  });
+  if (!res.ok) return false; // fail open — don't block sends if DB is unreachable
+  const rows = await res.json();
+  return Array.isArray(rows) && rows.length > 0;
+}
+
+async function recordSend(
+  supabaseUrl: string,
+  serviceKey: string,
+  email: string,
+  actionType: string,
+): Promise<void> {
+  await fetch(`${supabaseUrl}/rest/v1/email_send_log`, {
+    method: "POST",
+    headers: {
+      apikey: serviceKey,
+      Authorization: `Bearer ${serviceKey}`,
+      "Content-Type": "application/json",
+      Prefer: "return=minimal",
+    },
+    body: JSON.stringify({ email, action_type: actionType }),
+  }).catch(() => {/* non-fatal */});
+}
+
 // ---------------------------------------------------------------------------
 // HTML: App signup — Welcome to FOUND
 // ---------------------------------------------------------------------------
@@ -319,7 +370,10 @@ Deno.serve(async (req: Request) => {
     return new Response("ok", { status: 200 });
   }
 
-  const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
+  const RESEND_API_KEY    = Deno.env.get("RESEND_API_KEY");
+  const SUPABASE_URL      = Deno.env.get("SUPABASE_URL");
+  const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
   if (!RESEND_API_KEY) {
     console.error("RESEND_API_KEY secret is not set");
     return new Response("Missing RESEND_API_KEY", { status: 500 });
@@ -351,6 +405,23 @@ Deno.serve(async (req: Request) => {
   const userMeta     = user.user_metadata ?? {};
   const isAppSignup  = userMeta.source === "app";
   const firstName    = (userMeta.full_name ?? "").split(" ")[0] ?? "";
+
+  // -------------------------------------------------------------------------
+  // Dedup check — skip if same email+action was sent within DEDUP_WINDOW_SECONDS
+  // This prevents Supabase retry loops from multiplying sends when Resend errors.
+  // -------------------------------------------------------------------------
+  if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
+    const alreadySent = await wasRecentlySent(
+      SUPABASE_URL,
+      SUPABASE_SERVICE_ROLE_KEY,
+      userEmail,
+      email_action_type,
+    );
+    if (alreadySent) {
+      console.log(`Dedup: skipping ${email_action_type} to ${userEmail} (sent within ${DEDUP_WINDOW_SECONDS}s)`);
+      return new Response("ok", { status: 200 });
+    }
+  }
 
   // Build the confirmation URL — same format Supabase uses internally
   const confirmationUrl =
@@ -391,10 +462,24 @@ Deno.serve(async (req: Request) => {
   });
 
   if (!res.ok) {
-    const body = await res.text();
-    console.error("Resend error:", res.status, body);
-    // Return a non-2xx so Supabase knows the hook failed and can retry
-    return new Response(`Resend error: ${body}`, { status: 502 });
+    const errBody = await res.text();
+    console.error("Resend error:", res.status, errBody);
+
+    if (res.status >= 400 && res.status < 500) {
+      // 4xx = client-side problem (quota exceeded, invalid address, etc.)
+      // DO NOT return a non-2xx here — that would cause Supabase to retry
+      // indefinitely, multiplying sends and burning through quota.
+      // Log it and return 200 so the hook is considered handled.
+      return new Response("ok", { status: 200 });
+    }
+
+    // 5xx = Resend is down — safe to retry
+    return new Response(`Resend error: ${errBody}`, { status: 502 });
+  }
+
+  // Record successful send for dedup
+  if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
+    await recordSend(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, userEmail, email_action_type);
   }
 
   return new Response("ok", { status: 200 });
