@@ -15,7 +15,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.found.community",
-      "buildNumber": "33",
+      "buildNumber": "34",
       "appStoreUrl": "https://apps.apple.com/app/id6775085856",
       "associatedDomains": [
         "applinks:found.community"
@@ -162,6 +162,7 @@
         "backgroundColor": "#F7F4EF"
       },
       "package": "com.found.community",
+      "versionCode": 1,
       "permissions": [
         "android.permission.READ_CALENDAR",
         "android.permission.WRITE_CALENDAR",

@@ -33,6 +33,9 @@
       "ios": {
         "simulator": false
       },
+      "android": {
+        "buildType": "app-bundle"
+      },
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://cspsglmopchuqkvdfvwc.supabase.co",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNzcHNnbG1vcGNodXFrdmRmdndjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwMjI0MjQsImV4cCI6MjA5NjU5ODQyNH0.811KFB_tVhs6BUZZeRl1mlXsWz9cnWVzD0tQ9v8pXpY",
