@@ -119,17 +119,19 @@ index c90363f..cbc842c 100644
      val androidComponents = project.extensions.getByType(ApplicationAndroidComponentsExtension::class.java)
      logger.quiet(" ${Emojis.INFORMATION}  ${"Applying gradle plugin".withColor(Colors.YELLOW)} '${"expo-max-sdk-override-plugin".withColor(Colors.GREEN)}'")
 diff --git a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-max-sdk-override-plugin/src/main/kotlin/expo/modules/plugin/FindPermissionsToOverride.kt b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-max-sdk-override-plugin/src/main/kotlin/expo/modules/plugin/FindPermissionsToOverride.kt
-index f47d28b..24205b1 100644
+index f47d28b..744b969 100644
 --- a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-max-sdk-override-plugin/src/main/kotlin/expo/modules/plugin/FindPermissionsToOverride.kt
 +++ b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-max-sdk-override-plugin/src/main/kotlin/expo/modules/plugin/FindPermissionsToOverride.kt
-@@ -1,7 +1,9 @@
+@@ -1,9 +1,11 @@
  package expo.modules.plugin
  
 -import org.gradle.internal.cc.base.logger
 +import org.gradle.api.logging.Logging
  import java.io.File
-+
-+private val logger = Logging.getLogger("expo-max-sdk-override-plugin")
  import javax.xml.parsers.DocumentBuilderFactory
  
++private val logger = Logging.getLogger("expo-max-sdk-override-plugin")
++
  /**
+  * Based on a map of `String` and `PermissionInfo` read and parse manifest files, finds cases where
+  * a permission is defined in one place with `android:maxSdkVersion` and in another without that annotation.

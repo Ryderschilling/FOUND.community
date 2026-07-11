@@ -2,7 +2,7 @@
   "expo": {
     "name": "FOUND",
     "slug": "found-community-app",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "scheme": "found",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
@@ -162,7 +162,7 @@
         "backgroundColor": "#F7F4EF"
       },
       "package": "com.found.community",
-      "versionCode": 1,
+      "versionCode": 9,
       "permissions": [
         "android.permission.READ_CALENDAR",
         "android.permission.WRITE_CALENDAR",
