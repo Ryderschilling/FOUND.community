@@ -34,7 +34,8 @@
         "simulator": false
       },
       "android": {
-        "buildType": "app-bundle"
+        "buildType": "app-bundle",
+        "image": "ubuntu-24.04-jdk-17-ndk-r27b-sdk-55"
       },
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://cspsglmopchuqkvdfvwc.supabase.co",

@@ -1,0 +1,53 @@
+diff --git a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/.gradle/buildOutputCleanup/buildOutputCleanup.lock b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/.gradle/buildOutputCleanup/buildOutputCleanup.lock
+new file mode 100644
+index 0000000..bc38f20
+Binary files /dev/null and b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/.gradle/buildOutputCleanup/buildOutputCleanup.lock differ
+diff --git a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/.gradle/buildOutputCleanup/cache.properties b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/.gradle/buildOutputCleanup/cache.properties
+new file mode 100644
+index 0000000..1051110
+--- /dev/null
++++ b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/.gradle/buildOutputCleanup/cache.properties
+@@ -0,0 +1,2 @@
++#Thu Jul 09 14:16:15 CDT 2026
++gradle.version=9.0.0
+diff --git a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-settings-plugin/src/main/kotlin/expo/modules/plugin/ExpoAutolinkingSettingsPlugin.kt b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-settings-plugin/src/main/kotlin/expo/modules/plugin/ExpoAutolinkingSettingsPlugin.kt
+index d66e371..86f0c07 100644
+--- a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-settings-plugin/src/main/kotlin/expo/modules/plugin/ExpoAutolinkingSettingsPlugin.kt
++++ b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-settings-plugin/src/main/kotlin/expo/modules/plugin/ExpoAutolinkingSettingsPlugin.kt
+@@ -9,11 +9,13 @@ import expo.modules.plugin.utils.getPropertiesPrefixedBy
+ import org.gradle.api.Plugin
+ import org.gradle.api.UnknownProjectException
+ import org.gradle.api.initialization.Settings
+-import org.gradle.internal.cc.base.logger
++import org.gradle.api.logging.Logging
+ import java.io.File
+ import java.util.Properties
+ 
+ open class ExpoAutolinkingSettingsPlugin : Plugin<Settings> {
++  private val logger = Logging.getLogger(ExpoAutolinkingSettingsPlugin::class.java)
++
+   override fun apply(settings: Settings) {
+     // Adds a property to the settings that indicates that the `expo-autolinking-plugin` is available.
+     settings.gradle.extensions.extraProperties.set("expoAutolinkingSettingsPlugin", true)
+diff --git a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-settings-plugin/src/main/kotlin/expo/modules/plugin/SettingsManager.kt b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-settings-plugin/src/main/kotlin/expo/modules/plugin/SettingsManager.kt
+index 98ee3dd..624b0ff 100644
+--- a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-settings-plugin/src/main/kotlin/expo/modules/plugin/SettingsManager.kt
++++ b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-settings-plugin/src/main/kotlin/expo/modules/plugin/SettingsManager.kt
+@@ -21,7 +21,7 @@ import groovy.lang.GroovyShell
+ import org.gradle.api.Project
+ import org.gradle.api.initialization.Settings
+ import org.gradle.api.logging.Logging
+-import org.gradle.internal.extensions.core.extra
++import org.gradle.api.plugins.ExtraPropertiesExtension
+ import java.io.File
+ 
+ class SettingsManager(
+@@ -107,7 +107,7 @@ class SettingsManager(
+ 
+     // Defines the required features for the core module
+     settings.gradle.beforeProject("expo-modules-core") { project ->
+-      project.extra.set("coreFeatures", config.coreFeatures)
++      project.extensions.getByType(ExtraPropertiesExtension::class.java).set("coreFeatures", config.coreFeatures)
+     }
+ 
+     settings.gradle.beforeRootProject { rootProject: Project ->
