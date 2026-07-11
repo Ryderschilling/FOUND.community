@@ -10,6 +10,51 @@ index 0000000..1051110
 @@ -0,0 +1,2 @@
 +#Thu Jul 09 14:16:15 CDT 2026
 +gradle.version=9.0.0
+diff --git a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin/src/main/kotlin/expo/modules/plugin/ExpoRootProjectPlugin.kt b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin/src/main/kotlin/expo/modules/plugin/ExpoRootProjectPlugin.kt
+index 00715ac..d5dc864 100644
+--- a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin/src/main/kotlin/expo/modules/plugin/ExpoRootProjectPlugin.kt
++++ b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin/src/main/kotlin/expo/modules/plugin/ExpoRootProjectPlugin.kt
+@@ -7,7 +7,6 @@ import org.gradle.api.Project
+ import org.gradle.api.artifacts.VersionCatalog
+ import org.gradle.api.artifacts.VersionCatalogsExtension
+ import org.gradle.api.plugins.ExtraPropertiesExtension
+-import org.gradle.internal.extensions.core.extra
+ import java.util.Optional
+ import kotlin.jvm.optionals.getOrNull
+ 
+@@ -23,22 +22,23 @@ class ExpoRootProjectPlugin : Plugin<Project> {
+ }
+ 
+ fun Project.defineDefaultProperties(versionCatalogs: Optional<VersionCatalog>) {
++  val extraProps = extensions.extraProperties
+   // Android related
+-  val buildTools = extra.setIfNotExist("buildToolsVersion") { versionCatalogs.getVersionOrDefault("buildTools", "35.0.0") }
+-  val minSdk = extra.setIfNotExist("minSdkVersion") { Integer.parseInt(versionCatalogs.getVersionOrDefault("minSdk", "24")) }
+-  val compileSdk = extra.setIfNotExist("compileSdkVersion") { Integer.parseInt(versionCatalogs.getVersionOrDefault("compileSdk", "35")) }
+-  val targetSdk = extra.setIfNotExist("targetSdkVersion") { Integer.parseInt(versionCatalogs.getVersionOrDefault("targetSdk", "35")) }
+-  val ndk = extra.setIfNotExist("ndkVersion") { versionCatalogs.getVersionOrDefault("ndkVersion", "27.1.12297006") }
++  val buildTools = extraProps.setIfNotExist("buildToolsVersion") { versionCatalogs.getVersionOrDefault("buildTools", "35.0.0") }
++  val minSdk = extraProps.setIfNotExist("minSdkVersion") { Integer.parseInt(versionCatalogs.getVersionOrDefault("minSdk", "24")) }
++  val compileSdk = extraProps.setIfNotExist("compileSdkVersion") { Integer.parseInt(versionCatalogs.getVersionOrDefault("compileSdk", "35")) }
++  val targetSdk = extraProps.setIfNotExist("targetSdkVersion") { Integer.parseInt(versionCatalogs.getVersionOrDefault("targetSdk", "35")) }
++  val ndk = extraProps.setIfNotExist("ndkVersion") { versionCatalogs.getVersionOrDefault("ndkVersion", "27.1.12297006") }
+ 
+   // Kotlin related
+-  val kotlin = extra.setIfNotExist("kotlinVersion") { versionCatalogs.getVersionOrDefault("kotlin", "2.0.21") }
+-  val ksp = extra.setIfNotExist("kspVersion") {
++  val kotlin = extraProps.setIfNotExist("kotlinVersion") { versionCatalogs.getVersionOrDefault("kotlin", "2.0.21") }
++  val ksp = extraProps.setIfNotExist("kspVersion") {
+     versionCatalogs.getVersionOrDefault("ksp") {
+       try {
+-        return@getVersionOrDefault KSPLookup.getValue(extra.get("kotlinVersion") as String)
++        return@getVersionOrDefault KSPLookup.getValue(extraProps.get("kotlinVersion") as String)
+       } catch (e: Throwable) {
+         throw IllegalStateException(
+-          "Can't find KSP version for Kotlin version '${extra.get("kotlinVersion")}'. You're probably using an unsupported version of Kotlin. Supported versions are: '${KSPLookup.keys.joinToString(", ")}'",
++          "Can't find KSP version for Kotlin version '${extraProps.get("kotlinVersion")}'. You're probably using an unsupported version of Kotlin. Supported versions are: '${KSPLookup.keys.joinToString(", ")}'",
+           e
+         )
+       }
 diff --git a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-settings-plugin/src/main/kotlin/expo/modules/plugin/ExpoAutolinkingSettingsPlugin.kt b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-settings-plugin/src/main/kotlin/expo/modules/plugin/ExpoAutolinkingSettingsPlugin.kt
 index d66e371..86f0c07 100644
 --- a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-settings-plugin/src/main/kotlin/expo/modules/plugin/ExpoAutolinkingSettingsPlugin.kt
@@ -51,3 +96,40 @@ index 98ee3dd..624b0ff 100644
      }
  
      settings.gradle.beforeRootProject { rootProject: Project ->
+diff --git a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-max-sdk-override-plugin/src/main/kotlin/expo/modules/plugin/ExpoMaxSdkOverridePlugin.kt b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-max-sdk-override-plugin/src/main/kotlin/expo/modules/plugin/ExpoMaxSdkOverridePlugin.kt
+index c90363f..cbc842c 100644
+--- a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-max-sdk-override-plugin/src/main/kotlin/expo/modules/plugin/ExpoMaxSdkOverridePlugin.kt
++++ b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-max-sdk-override-plugin/src/main/kotlin/expo/modules/plugin/ExpoMaxSdkOverridePlugin.kt
+@@ -7,7 +7,7 @@ import com.android.build.api.variant.ApplicationAndroidComponentsExtension
+ import expo.modules.plugin.text.Colors
+ import expo.modules.plugin.text.Emojis
+ import expo.modules.plugin.text.withColor
+-import org.gradle.internal.cc.base.logger
++import org.gradle.api.logging.Logging
+ 
+ /**
+  * Plugin, which registers ExpoMaxSdkOverrideTask and schedules it to run with `app:processDebugManifest`.
+@@ -16,6 +16,8 @@ import org.gradle.internal.cc.base.logger
+  * defines the task without `android:maxSdkVersion` the task will remove the `android:maxSdkVersion` from the final merged manifest
+  */
+ class ExpoMaxSdkOverridePlugin : Plugin<Project> {
++  private val logger = Logging.getLogger(ExpoMaxSdkOverridePlugin::class.java)
++
+   override fun apply(project: Project) {
+     val androidComponents = project.extensions.getByType(ApplicationAndroidComponentsExtension::class.java)
+     logger.quiet(" ${Emojis.INFORMATION}  ${"Applying gradle plugin".withColor(Colors.YELLOW)} '${"expo-max-sdk-override-plugin".withColor(Colors.GREEN)}'")
+diff --git a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-max-sdk-override-plugin/src/main/kotlin/expo/modules/plugin/FindPermissionsToOverride.kt b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-max-sdk-override-plugin/src/main/kotlin/expo/modules/plugin/FindPermissionsToOverride.kt
+index f47d28b..24205b1 100644
+--- a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-max-sdk-override-plugin/src/main/kotlin/expo/modules/plugin/FindPermissionsToOverride.kt
++++ b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-max-sdk-override-plugin/src/main/kotlin/expo/modules/plugin/FindPermissionsToOverride.kt
+@@ -1,7 +1,9 @@
+ package expo.modules.plugin
+ 
+-import org.gradle.internal.cc.base.logger
++import org.gradle.api.logging.Logging
+ import java.io.File
++
++private val logger = Logging.getLogger("expo-max-sdk-override-plugin")
+ import javax.xml.parsers.DocumentBuilderFactory
+ 
+ /**
