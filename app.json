@@ -162,7 +162,7 @@
         "backgroundColor": "#F7F4EF"
       },
       "package": "com.found.community",
-      "versionCode": 9,
+      "versionCode": 10,
       "permissions": [
         "android.permission.READ_CALENDAR",
         "android.permission.WRITE_CALENDAR",
