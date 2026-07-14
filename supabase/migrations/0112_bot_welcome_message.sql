@@ -154,10 +154,11 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  v_bot_id      CONSTANT uuid := '00000000-0000-0000-0000-000000000001';
+  v_bot_id        CONSTANT uuid := '00000000-0000-0000-0000-000000000001';
   v_in_bot_thread boolean;
-  v_sender_name text;
-  v_resend_key  text;
+  v_sender_name   text;
+  v_resend_key    text;
+  v_prior_msg_count int;
 BEGIN
   -- Skip messages FROM the bot
   IF NEW.sender_id = v_bot_id THEN
@@ -171,6 +172,17 @@ BEGIN
   ) INTO v_in_bot_thread;
 
   IF NOT v_in_bot_thread THEN
+    RETURN NEW;
+  END IF;
+
+  -- Only alert on the user's FIRST message in the bot thread (prevents quota bleed)
+  SELECT COUNT(*) INTO v_prior_msg_count
+  FROM messages
+  WHERE thread_id = NEW.thread_id
+    AND sender_id = NEW.sender_id
+    AND id != NEW.id;
+
+  IF v_prior_msg_count > 0 THEN
     RETURN NEW;
   END IF;
 
@@ -196,7 +208,7 @@ BEGIN
       'to',      jsonb_build_array('hello@found.community'),
       'subject', '💬 ' || COALESCE(v_sender_name, 'A user') || ' replied to Sam in FOUND',
       'html',    '<p><strong>' || COALESCE(v_sender_name, 'A user') ||
-                 '</strong> replied to Sam''s welcome message:</p>' ||
+                 '</strong> sent their first reply to Sam:</p>' ||
                  '<blockquote style="border-left:3px solid #ccc;padding-left:12px;color:#444">' ||
                  replace(NEW.body, chr(10), '<br>') ||
                  '</blockquote>' ||
