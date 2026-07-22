@@ -27,6 +27,10 @@ import { stripExif } from './imageSanitize';
 const BUCKET = 'group-post-photos';
 export const MAX_POST_BODY = 3000;
 
+// Preset emoji reactions (iMessage-style). Kept short + tappable — the picker
+// is a single row. 👍 and 🔥 requested by Sam; the rest are the common set.
+export const POST_REACTIONS = ['👍', '❤️', '🙏', '🔥', '🎉', '😂'];
+
 // Simple uuid v4 generator — avoids pulling in a dep just for this.
 function uuid() {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -234,6 +238,26 @@ export async function unpinGroupPost(postId) {
   if (!postId) return { error: new Error('Missing post id') };
   const { error } = await supabase.rpc('unpin_group_post', { p_post: postId });
   return { error: error ?? null };
+}
+
+/**
+ * Toggle the caller's emoji reaction on a post (one reaction per user per post).
+ *   - no reaction yet         → adds it
+ *   - same emoji tapped again  → removes it
+ *   - different emoji tapped   → switches to it
+ * Server enforces group membership.
+ * @returns {Promise<{ emoji: string|null|undefined, error: Error|null }>}
+ *          emoji === the caller's reaction after the toggle (null = removed).
+ */
+export async function toggleGroupPostReaction(postId, emoji) {
+  if (!postId) return { emoji: undefined, error: new Error('Missing post id') };
+  if (!emoji)  return { emoji: undefined, error: new Error('Missing emoji') };
+  const { data, error } = await supabase.rpc('toggle_group_post_reaction', {
+    p_post:  postId,
+    p_emoji: emoji,
+  });
+  if (error) return { emoji: undefined, error };
+  return { emoji: data ?? null, error: null };
 }
 
 /**

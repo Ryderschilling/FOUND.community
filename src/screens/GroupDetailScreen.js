@@ -64,6 +64,8 @@ import {
   pickGroupPostImage,
   uploadGroupPostPhoto,
   purgeGroupPostPhotoStorage,
+  toggleGroupPostReaction,
+  POST_REACTIONS,
   MAX_POST_BODY,
 } from '../lib/groupPosts';
 import {
@@ -95,6 +97,22 @@ function initialsFor(name) {
   const a = parts[0]?.[0] ?? '';
   const b = parts.length > 1 ? parts[parts.length - 1][0] : '';
   return (a + b).toUpperCase() || '··';
+}
+
+// Pure, reversible reaction transition used for optimistic UI. Moves the
+// caller's reaction on `post` from emoji `from` to emoji `to` (either may be
+// null), adjusting the { emoji, count } summary. Swapping from/to reverts it.
+function applyReaction(post, from, to) {
+  const counts = new Map((post.reactions ?? []).map((r) => [r.emoji, r.count]));
+  if (from) {
+    const next = (counts.get(from) ?? 0) - 1;
+    if (next > 0) counts.set(from, next);
+    else counts.delete(from);
+  }
+  if (to) counts.set(to, (counts.get(to) ?? 0) + 1);
+  const reactions = Array.from(counts, ([emoji, count]) => ({ emoji, count }))
+    .sort((a, b) => b.count - a.count || a.emoji.localeCompare(b.emoji));
+  return { ...post, reactions, my_reaction: to ?? null };
 }
 
 // Compact relative time for the activity feed: "now", "5m", "3h", "2d", or a date.
@@ -491,6 +509,19 @@ export default function GroupDetailScreen({ route, navigation }) {
           ...updated.filter((p) => !p.is_pinned),
         ];
       });
+    }
+  }
+
+  async function handleReactPost(post, emoji) {
+    const prevMine = post.my_reaction ?? null;
+    const nextMine = prevMine === emoji ? null : emoji;
+    // Optimistic: update the feed immediately, reconcile on error.
+    setPosts((prev) => prev.map((p) => p.id === post.id ? applyReaction(p, prevMine, nextMine) : p));
+    const { error } = await toggleGroupPostReaction(post.id, emoji);
+    if (error) {
+      // Revert by transitioning back the other way.
+      setPosts((prev) => prev.map((p) => p.id === post.id ? applyReaction(p, nextMine, prevMine) : p));
+      toast({ title: 'Could not react', message: error.message, type: 'error' });
     }
   }
 
@@ -1194,6 +1225,8 @@ export default function GroupDetailScreen({ route, navigation }) {
                     onReport={() => setReportSheet({ visible: true, targetKind: 'group_post', targetId: post.id })}
                     canPin={isOwner}
                     onPin={handlePinPost}
+                    canReact={isMember}
+                    onReact={handleReactPost}
                   />
                 ))}
               </View>
@@ -1633,8 +1666,14 @@ function PhotoLightbox({ photo, onClose }) {
 }
 
 // ─── Post card ────────────────────────────────────────────────────────────
-function PostCard({ post, onDelete, onEdit, onViewPhoto, canReport, onReport, canPin, onPin }) {
+function PostCard({ post, onDelete, onEdit, onViewPhoto, canReport, onReport, canPin, onPin, canReact, onReact }) {
   const isStaff = post.author_role === 'owner' || post.author_role === 'admin';
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const reactions = post.reactions ?? [];
+
+  const openPicker = canReact ? () => setPickerOpen(true) : undefined;
+  const pick = (emoji) => { setPickerOpen(false); onReact?.(post, emoji); };
+
   return (
     <View style={[styles.postCard, post.is_pinned && styles.postCardPinned]}>
       {post.is_pinned ? (
@@ -1685,13 +1724,84 @@ function PostCard({ post, onDelete, onEdit, onViewPhoto, canReport, onReport, ca
         ) : null}
       </View>
 
-      {post.body ? <Text style={styles.postBody}>{post.body}</Text> : null}
+      {post.body ? (
+        <TouchableOpacity
+          activeOpacity={canReact ? 0.7 : 1}
+          onLongPress={openPicker}
+          delayLongPress={220}
+          disabled={!canReact}
+        >
+          <Text style={styles.postBody}>{post.body}</Text>
+        </TouchableOpacity>
+      ) : null}
 
       {post.photo_url ? (
-        <TouchableOpacity activeOpacity={0.9} onPress={() => onViewPhoto(post.photo_url)}>
+        <TouchableOpacity
+          activeOpacity={0.9}
+          onPress={() => onViewPhoto(post.photo_url)}
+          onLongPress={openPicker}
+          delayLongPress={220}
+        >
           <Image source={{ uri: post.photo_url }} style={styles.postPhoto} />
         </TouchableOpacity>
       ) : null}
+
+      {/* Reaction summary — tap a chip to toggle your own reaction */}
+      {reactions.length > 0 ? (
+        <View style={styles.reactionRow}>
+          {reactions.map((r) => {
+            const mine = post.my_reaction === r.emoji;
+            return (
+              <TouchableOpacity
+                key={r.emoji}
+                activeOpacity={0.7}
+                onPress={canReact ? () => onReact?.(post, r.emoji) : undefined}
+                disabled={!canReact}
+                style={[styles.reactionChip, mine && styles.reactionChipMine]}
+              >
+                <Text style={styles.reactionEmoji}>{r.emoji}</Text>
+                <Text style={[styles.reactionCount, mine && styles.reactionCountMine]}>{r.count}</Text>
+              </TouchableOpacity>
+            );
+          })}
+          {canReact ? (
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={openPicker}
+              style={styles.reactionAddBtn}
+            >
+              <Ionicons name="add" size={16} color={COLORS.textSecondary} />
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      ) : null}
+
+      {/* Long-press reaction picker */}
+      <Modal
+        visible={pickerOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPickerOpen(false)}
+      >
+        <TouchableOpacity
+          style={styles.reactPickerBackdrop}
+          activeOpacity={1}
+          onPress={() => setPickerOpen(false)}
+        >
+          <View style={styles.reactPicker}>
+            {POST_REACTIONS.map((emoji) => (
+              <TouchableOpacity
+                key={emoji}
+                activeOpacity={0.7}
+                onPress={() => pick(emoji)}
+                style={[styles.reactPickerItem, post.my_reaction === emoji && styles.reactPickerItemMine]}
+              >
+                <Text style={styles.reactPickerEmoji}>{emoji}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -2739,6 +2849,75 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surfaceAlt,
     marginTop: SPACING.sm,
   },
+
+  // ── Reactions ──────────────────────────────────────────────────────────
+  reactionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: SPACING.sm,
+  },
+  reactionChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.surfaceAlt,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  reactionChipMine: {
+    backgroundColor: COLORS.sageBg,
+    borderColor: COLORS.sage,
+  },
+  reactionEmoji: { fontSize: 14 },
+  reactionCount: {
+    fontFamily: FONT.semiBold,
+    fontSize: 12,
+    color: COLORS.textSecondary,
+  },
+  reactionCountMine: { color: COLORS.sage },
+  reactionAddBtn: {
+    width: 28,
+    height: 26,
+    borderRadius: RADIUS.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.surfaceAlt,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  reactPickerBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reactPicker: {
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    ...SHADOW.lg,
+  },
+  reactPickerItem: {
+    width: 46,
+    height: 46,
+    borderRadius: RADIUS.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reactPickerItemMine: {
+    backgroundColor: COLORS.sageBg,
+  },
+  reactPickerEmoji: { fontSize: 28 },
 
   // Gallery
   galleryRow: { gap: 10, paddingRight: SPACING.lg },
