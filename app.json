@@ -15,7 +15,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.found.community",
-      "buildNumber": "35",
+      "buildNumber": "36",
       "appStoreUrl": "https://apps.apple.com/app/id6775085856",
       "associatedDomains": [
         "applinks:found.community"
